@@ -688,13 +688,25 @@ function renderPackersAdmin(packers) {
   list.innerHTML = packers.map(p => `
     <div class="packer-row">
       <span>${escapeHtml(p.name)}</span>
-      <button class="toggle ${p.active ? 'on' : ''}" data-name="${escapeHtml(p.name)}" data-active="${p.active}"><span class="knob"></span></button>
+      <div style="display:flex;align-items:center;gap:10px;">
+        <button class="toggle ${p.active ? 'on' : ''}" data-name="${escapeHtml(p.name)}" data-active="${p.active}"><span class="knob"></span></button>
+        <button class="icon-btn" style="background:#f3d6d6;color:#a11;width:32px;height:32px;font-size:14px;" data-delete-name="${escapeHtml(p.name)}" title="Delete packer">✕</button>
+      </div>
     </div>`).join('');
   list.querySelectorAll('.toggle').forEach(btn => {
     btn.onclick = () => {
       const name = btn.getAttribute('data-name');
       const nowActive = btn.getAttribute('data-active') !== 'true';
-      apiPost('setPackerActive', { name: name, active: nowActive }).then(() => loadAdminData()).catch(err => alert(err.message));
+      btn.disabled = true;
+      apiPost('setPackerActive', { name: name, active: nowActive }).then(packers => renderPackersAdmin(packers)).catch(err => { alert(err.message); btn.disabled = false; });
+    };
+  });
+  list.querySelectorAll('[data-delete-name]').forEach(btn => {
+    btn.onclick = () => {
+      const name = btn.getAttribute('data-delete-name');
+      if (!confirm(`Delete packer "${name}"? This can't be undone — if they might come back, use the toggle to switch them off instead.`)) return;
+      btn.disabled = true;
+      apiPost('deletePacker', { name: name }).then(packers => renderPackersAdmin(packers)).catch(err => { alert(err.message); btn.disabled = false; });
     };
   });
 }
@@ -785,7 +797,16 @@ function wireStaticEvents() {
     const input = document.getElementById('new-packer-name');
     const name = input.value.trim();
     if (!name) return;
-    apiPost('addPacker', { name: name }).then(() => { input.value = ''; loadAdminData(); }).catch(err => alert(err.message));
+    const btn = document.getElementById('add-packer-btn');
+    btn.disabled = true;
+    btn.textContent = 'Adding…';
+    apiPost('addPacker', { name: name }).then(packers => {
+      input.value = '';
+      renderPackersAdmin(packers);
+    }).catch(err => alert(err.message)).finally(() => {
+      btn.disabled = false;
+      btn.textContent = 'Add packer';
+    });
   };
   document.getElementById('save-settings-btn').onclick = saveSettings;
 }
