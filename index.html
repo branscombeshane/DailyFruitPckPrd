@@ -230,6 +230,7 @@
     position:fixed;bottom:0;left:0;right:0;background:var(--crit);color:#fff;
     text-align:center;padding:9px;font-size:14px;font-weight:600;z-index:200;
   }
+  .conn-banner #conn-banner-detail{font-weight:400;opacity:.85;font-size:12.5px;}
 
   /* ---------- site lock screen ---------- */
   #lock-screen{
@@ -473,7 +474,7 @@
   </div>
 </div>
 
-<div class="conn-banner hidden" id="conn-banner">Can't reach the server — check the connection. Retrying…</div>
+<div class="conn-banner hidden" id="conn-banner">Can't reach the server — check the connection. Retrying… <span id="conn-banner-detail"></span></div>
 
 <script>
 /* =====================================================================
@@ -520,7 +521,10 @@ function handleApiResponse(res) {
   }
   return res.data;
 }
-function showConnBanner() { document.getElementById('conn-banner').classList.remove('hidden'); }
+function showConnBanner(detail) {
+  document.getElementById('conn-banner-detail').textContent = detail ? ('(' + detail + ', last tried ' + fmtTime(new Date().toISOString()) + ')') : '';
+  document.getElementById('conn-banner').classList.remove('hidden');
+}
 function hideConnBanner() { document.getElementById('conn-banner').classList.add('hidden'); }
 
 /* ===================== SITE LOCK ===================== */
@@ -587,8 +591,21 @@ function applyBoardView() {
   document.getElementById('company-title').textContent = companyName + (boardView === 'production' ? ' — Production' : ' — Packing');
 }
 
+// Guards against overlapping polls: the board refreshes on a short timer (as
+// little as every 3 seconds), and if the server ever takes longer than that
+// to respond, a plain setInterval would fire the NEXT poll before the first
+// one has come back - stacking up multiple requests in flight at once, which
+// makes a slow response slower still and can itself produce the "Can't reach
+// the server" banner in a burst that then clears itself a few seconds later.
+// Skipping a tick when one's already in flight (rather than piling on) keeps
+// that from snowballing; a first load or a manual action-triggered refresh
+// still always goes through.
+let boardFetchInFlight = false;
 function loadBoard(isFirstLoad) {
+  if (boardFetchInFlight && !isFirstLoad) return;
+  boardFetchInFlight = true;
   apiGet('getBoard').then(data => {
+    boardFetchInFlight = false;
     boardData = data;
     document.getElementById('slip-company').textContent = data.settings.companyName || 'Daily Fruit';
     if (data.settings.boardRefreshSeconds && pollTimer) {
@@ -599,8 +616,9 @@ function loadBoard(isFirstLoad) {
     renderBoard();
     renderProductionBoard();
   }).catch(err => {
+    boardFetchInFlight = false;
     console.error(err);
-    showConnBanner();
+    showConnBanner(err && err.message ? err.message : 'unknown error');
   });
 }
 
