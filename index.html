@@ -209,9 +209,37 @@
     position:fixed;bottom:0;left:0;right:0;background:var(--crit);color:#fff;
     text-align:center;padding:9px;font-size:14px;font-weight:600;z-index:200;
   }
+
+  /* ---------- site lock screen ---------- */
+  #lock-screen{
+    position:fixed;inset:0;background:var(--green-dark);z-index:300;
+    display:flex;align-items:center;justify-content:center;padding:20px;
+  }
+  .lock-box{
+    background:#fff;border-radius:18px;padding:36px 30px;max-width:360px;width:100%;text-align:center;
+  }
+  .lock-badge{font-size:40px;margin-bottom:6px;}
+  .lock-box h1{font-size:21px;margin:0 0 6px;color:var(--green-dark);}
+  .lock-box p{color:var(--muted);font-size:14px;margin:0 0 20px;}
+  .lock-box input{
+    width:100%;padding:14px;border:2px solid var(--line);border-radius:10px;font-size:20px;
+    text-align:center;letter-spacing:4px;margin-bottom:12px;
+  }
 </style>
 </head>
 <body>
+
+<!-- ============ SITE LOCK SCREEN ============ -->
+<div id="lock-screen" class="hidden">
+  <div class="lock-box">
+    <div class="lock-badge">🍈</div>
+    <h1>Daily Fruit — Packing</h1>
+    <p>Staff only. Enter the floor passcode to continue.</p>
+    <input type="password" id="lock-input" inputmode="numeric" placeholder="Passcode" autocomplete="off">
+    <div class="result-box error hidden" id="lock-error"></div>
+    <button class="btn-confirm" id="lock-unlock-btn" style="width:100%;padding:15px;font-size:17px;">Unlock</button>
+  </div>
+</div>
 
 <!-- ============ TOP BAR ============ -->
 <div id="topbar">
@@ -335,6 +363,11 @@
     <div class="field"><label>Sage categories that mean "Production" (comma-separated)</label><input type="text" id="set-prod-cats"></div>
     <div class="field"><label>Board refresh interval (seconds)</label><input type="number" id="set-refresh"></div>
     <div class="field"><label>Admin PIN</label><input type="text" id="set-pin"></div>
+    <div class="field">
+      <label>Floor passcode (gates the whole app before anyone sees an order)</label>
+      <input type="text" id="set-site-passcode">
+      <p style="color:var(--muted);font-size:12.5px;margin:6px 0 0;">Changing this signs every device out — everyone (including this one) will need the new passcode next time they load the page.</p>
+    </div>
     <button class="btn-primary" id="save-settings-btn">Save settings</button>
     <div class="result-box hidden" id="settings-result"></div>
   </div>
@@ -380,11 +413,13 @@ let currentPacker = sessionStorage.getItem('df_current_packer') || '';
 let pollTimer = null;
 let pendingAssignOrderId = null;
 let adminPinVerified = false;
+let sitePasscode = localStorage.getItem('df_site_passcode') || '';
 
 /* ===================== API HELPERS ===================== */
 function apiGet(action, params) {
   const url = new URL(APP_CONFIG.API_URL);
   url.searchParams.set('action', action);
+  url.searchParams.set('passcode', sitePasscode);
   Object.keys(params || {}).forEach(k => url.searchParams.set(k, params[k]));
   return fetch(url.toString()).then(r => r.json()).then(handleApiResponse);
 }
@@ -392,22 +427,76 @@ function apiPost(action, payload) {
   return fetch(APP_CONFIG.API_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-    body: JSON.stringify(Object.assign({ action: action }, payload || {}))
+    body: JSON.stringify(Object.assign({ action: action, passcode: sitePasscode }, payload || {}))
   }).then(r => r.json()).then(handleApiResponse);
 }
 function handleApiResponse(res) {
   hideConnBanner();
-  if (!res.ok) throw new Error(res.error || 'Unknown server error');
+  if (!res.ok) {
+    if (res.error === 'Incorrect passcode.') {
+      lockSite('That passcode isn\'t valid anymore — please re-enter it.');
+    }
+    throw new Error(res.error || 'Unknown server error');
+  }
   return res.data;
 }
 function showConnBanner() { document.getElementById('conn-banner').classList.remove('hidden'); }
 function hideConnBanner() { document.getElementById('conn-banner').classList.add('hidden'); }
 
+/* ===================== SITE LOCK ===================== */
+function lockSite(message) {
+  sitePasscode = '';
+  localStorage.removeItem('df_site_passcode');
+  if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+  document.getElementById('packer-select').classList.add('hidden');
+  document.getElementById('board-view').classList.add('hidden');
+  document.getElementById('admin-overlay').classList.add('hidden');
+  document.getElementById('lock-error').textContent = message || '';
+  document.getElementById('lock-error').classList.toggle('hidden', !message);
+  document.getElementById('lock-input').value = '';
+  document.getElementById('lock-screen').classList.remove('hidden');
+  setTimeout(() => document.getElementById('lock-input').focus(), 50);
+}
+function submitSitePasscode() {
+  const entered = document.getElementById('lock-input').value;
+  const btn = document.getElementById('lock-unlock-btn');
+  btn.disabled = true;
+  fetch(APP_CONFIG.API_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+    body: JSON.stringify({ action: 'verifySitePasscode', passcode: entered })
+  }).then(r => r.json()).then(res => {
+    btn.disabled = false;
+    if (!res.ok) { document.getElementById('lock-error').textContent = res.error; document.getElementById('lock-error').classList.remove('hidden'); return; }
+    if (res.data.valid) {
+      sitePasscode = entered;
+      localStorage.setItem('df_site_passcode', entered);
+      document.getElementById('lock-screen').classList.add('hidden');
+      init();
+    } else {
+      document.getElementById('lock-error').textContent = 'Incorrect passcode.';
+      document.getElementById('lock-error').classList.remove('hidden');
+    }
+  }).catch(() => {
+    btn.disabled = false;
+    document.getElementById('lock-error').textContent = 'Could not reach the server — check the connection.';
+    document.getElementById('lock-error').classList.remove('hidden');
+  });
+}
+
 /* ===================== INIT ===================== */
+let appStarted = false;
 function init() {
-  wireStaticEvents();
+  if (!sitePasscode) { lockSite(); return; }
+  if (!appStarted) { wireStaticEvents(); appStarted = true; }
   loadBoard(true);
+  if (pollTimer) clearInterval(pollTimer);
   pollTimer = setInterval(() => loadBoard(false), 5000);
+}
+
+function wireLockScreenEvents() {
+  document.getElementById('lock-unlock-btn').onclick = submitSitePasscode;
+  document.getElementById('lock-input').addEventListener('keyup', e => { if (e.key === 'Enter') submitSitePasscode(); });
 }
 
 function loadBoard(isFirstLoad) {
@@ -680,6 +769,7 @@ function loadAdminData() {
     document.getElementById('set-prod-cats').value = data.settings.ProductionCategoryNames || 'Prepped';
     document.getElementById('set-refresh').value = data.settings.BoardRefreshSeconds || 5;
     document.getElementById('set-pin').value = data.settings.AdminPIN || '';
+    document.getElementById('set-site-passcode').value = data.settings.SitePasscode || '';
   }).catch(err => alert(err.message));
 }
 
@@ -735,16 +825,22 @@ function doImport() {
 }
 
 function saveSettings() {
+  const newPasscode = document.getElementById('set-site-passcode').value;
   const settings = {
     CompanyName: document.getElementById('set-company').value,
     FlagWarningMinutes: document.getElementById('set-warn').value,
     FlagCriticalMinutes: document.getElementById('set-crit').value,
     ProductionCategoryNames: document.getElementById('set-prod-cats').value,
     BoardRefreshSeconds: document.getElementById('set-refresh').value,
-    AdminPIN: document.getElementById('set-pin').value
+    AdminPIN: document.getElementById('set-pin').value,
+    SitePasscode: newPasscode
   };
   const resultBox = document.getElementById('settings-result');
   apiPost('updateSettings', { settings: settings }).then(() => {
+    // Keep this device unlocked under the new passcode so the admin isn't
+    // immediately locked out of the device they just changed it from.
+    sitePasscode = newPasscode;
+    localStorage.setItem('df_site_passcode', newPasscode);
     resultBox.className = 'result-box';
     resultBox.textContent = 'Saved.';
     resultBox.classList.remove('hidden');
@@ -814,7 +910,7 @@ function wireStaticEvents() {
 /* Refresh age badges every second without waiting for a full board reload */
 setInterval(() => { if (boardData && currentPacker) renderBoard(); }, 15000);
 
-window.addEventListener('load', init);
+window.addEventListener('load', () => { wireLockScreenEvents(); init(); });
 </script>
 </body>
 </html>
