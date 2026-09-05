@@ -825,19 +825,20 @@ function renderNeedsReviewList(needsReview) {
   el.innerHTML = needsReview.map(p => `
     <div class="packer-row" style="align-items:flex-start;flex-wrap:wrap;gap:8px;">
       <div style="min-width:180px;">
-        <div style="font-weight:700;">${escapeHtml(p.productCode || '(no code)')}</div>
-        <div style="color:var(--muted);font-size:13px;">${escapeHtml(p.description || '')} — on ${p.orderCount} order line(s)</div>
+        <div style="font-weight:700;">${p.productCode ? escapeHtml(p.productCode) : escapeHtml(p.description || '(no description)')}</div>
+        <div style="color:var(--muted);font-size:13px;">${p.productCode ? escapeHtml(p.description || '') + ' — ' : ''}on ${p.orderCount} order line(s)${p.productCode ? '' : ' — no Sage code on this one, matched by description'}</div>
       </div>
       <div style="display:flex;gap:8px;flex:1;min-width:220px;">
-        <input type="text" placeholder="Category (e.g. Prepped)" data-review-category="${escapeHtml(p.productCode)}" style="flex:1;padding:9px 10px;border:2px solid var(--line);border-radius:8px;">
-        <button class="btn-secondary" data-review-save="${escapeHtml(p.productCode)}" data-review-desc="${escapeHtml(p.description || '')}">Save</button>
+        <input type="text" placeholder="Category (e.g. Prepped)" data-review-category="${escapeHtml(p.reviewKey)}" style="flex:1;padding:9px 10px;border:2px solid var(--line);border-radius:8px;">
+        <button class="btn-secondary" data-review-save="${escapeHtml(p.reviewKey)}" data-review-code="${escapeHtml(p.productCode || '')}" data-review-desc="${escapeHtml(p.description || '')}">Save</button>
       </div>
     </div>`).join('');
   el.querySelectorAll('[data-review-save]').forEach(btn => {
     btn.onclick = () => {
-      const code = btn.getAttribute('data-review-save');
+      const key = btn.getAttribute('data-review-save');
+      const code = btn.getAttribute('data-review-code');
       const desc = btn.getAttribute('data-review-desc');
-      const input = el.querySelector(`[data-review-category="${CSS.escape(code)}"]`);
+      const input = el.querySelector(`[data-review-category="${CSS.escape(key)}"]`);
       const category = input.value.trim();
       if (!category) { input.focus(); return; }
       btn.disabled = true;
@@ -856,7 +857,7 @@ function renderProductsList(products) {
   if (!products.length) { el.innerHTML = '<div class="log-row">No products imported yet.</div>'; return; }
   el.innerHTML = products.map(p => `
     <div class="log-row" style="display:flex;justify-content:space-between;gap:10px;">
-      <span><strong>${escapeHtml(p.productCode)}</strong> ${escapeHtml(p.description || '')}</span>
+      <span>${p.productCode ? `<strong>${escapeHtml(p.productCode)}</strong> ` : ''}${escapeHtml(p.description || '')}</span>
       <span>${escapeHtml(p.category || '')}</span>
     </div>`).join('');
 }
