@@ -90,6 +90,7 @@
   .order-card-head{display:flex;justify-content:space-between;align-items:flex-start;gap:8px;}
   .order-ref{font-size:18px;font-weight:800;}
   .order-customer{font-size:14px;color:var(--muted);margin-top:2px;}
+  .order-arrived{font-size:12px;color:var(--muted);margin-top:2px;}
   .age-badge{
     font-size:13px;font-weight:700;padding:4px 10px;border-radius:20px;white-space:nowrap;
     background:#e9efe9;color:var(--green-dark);
@@ -591,11 +592,12 @@ function renderBoard() {
         <div>
           <div class="order-ref">${escapeHtml(o.sageRef)}</div>
           <div class="order-customer">${escapeHtml(o.customerName || '')}</div>
+          <div class="order-arrived">Arrived ${fmtTime(o.createdAt)}</div>
         </div>
         <div class="age-badge">${fmtAge(age)}</div>
       </div>
       <ul class="item-list">${itemListHtml(o.items)}</ul>
-      <button class="assign-btn">Assign to me</button>
+      <button class="assign-btn">Assign</button>
     </div>`;
   }).join('');
 
@@ -829,7 +831,11 @@ function renderNeedsReviewList(needsReview) {
         <div style="color:var(--muted);font-size:13px;">${p.productCode ? escapeHtml(p.description || '') + ' — ' : ''}on ${p.orderCount} order line(s)${p.productCode ? '' : ' — no Sage code on this one, matched by description'}</div>
       </div>
       <div style="display:flex;gap:8px;flex:1;min-width:220px;">
-        <input type="text" placeholder="Category (e.g. Prepped)" data-review-category="${escapeHtml(p.reviewKey)}" style="flex:1;padding:9px 10px;border:2px solid var(--line);border-radius:8px;">
+        <select data-review-category="${escapeHtml(p.reviewKey)}" style="flex:1;padding:9px 10px;border:2px solid var(--line);border-radius:8px;">
+          <option value="">Select category…</option>
+          <option value="Packing">Packing</option>
+          <option value="Prepped">Prepped</option>
+        </select>
         <button class="btn-secondary" data-review-save="${escapeHtml(p.reviewKey)}" data-review-code="${escapeHtml(p.productCode || '')}" data-review-desc="${escapeHtml(p.description || '')}">Save</button>
       </div>
     </div>`).join('');
