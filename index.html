@@ -140,6 +140,28 @@
   .dept-tag.production{background:#ece7f7;color:#5b3fa0;}
   .dept-tag.unclassified{background:var(--warn);color:#3a2a00;}
 
+  .item-summary{margin:10px 0 2px;font-size:13.5px;color:var(--muted);display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
+
+  /* ---------- quick bar: search + jump-to-section counts ---------- */
+  #quick-bar{
+    position:sticky;top:0;z-index:15;background:var(--bg);
+    padding:10px 18px;display:flex;align-items:center;gap:14px;flex-wrap:wrap;
+    border-bottom:1px solid var(--line);max-width:1400px;margin:0 auto;
+  }
+  #order-search{
+    padding:9px 14px;border:2px solid var(--line);border-radius:20px;font-size:14px;
+    min-width:220px;flex:0 1 260px;background:var(--card);color:var(--ink);
+  }
+  .quick-pills{display:flex;gap:8px;flex-wrap:wrap;}
+  .quick-pill{
+    background:var(--card);border:2px solid var(--line);border-radius:20px;
+    padding:6px 14px;font-size:13.5px;font-weight:700;color:var(--ink);
+    display:flex;align-items:center;gap:6px;
+  }
+  .quick-pill b{color:var(--green-dark);font-weight:800;}
+  .section-heading{scroll-margin-top:var(--sticky-h, 120px);}
+  .order-card.search-hidden{display:none;}
+
   .assigned-strip{
     margin-top:10px;font-size:13.5px;font-weight:600;color:var(--green-dark);
     display:flex;justify-content:space-between;align-items:center;
@@ -277,16 +299,23 @@
   </div>
 </div>
 
+<!-- ============ QUICK BAR: search + jump-to-section counts ============ -->
+<div id="quick-bar">
+  <input type="search" id="order-search" placeholder="Search order # or customer…">
+  <div class="quick-pills" id="quick-pills-packing"></div>
+  <div class="quick-pills hidden" id="quick-pills-production"></div>
+</div>
+
 <!-- ============ BOARD ============ -->
 <div id="board-view" class="hidden">
-  <div class="section-heading">Needs a packer <span class="count" id="unassigned-count">0</span></div>
+  <div class="section-heading" id="unassigned-heading">Needs a packer <span class="count" id="unassigned-count">0</span></div>
   <div class="order-grid" id="unassigned-grid"></div>
   <div class="empty-board hidden" id="unassigned-empty">All caught up — no unassigned orders 🎉</div>
 
-  <div class="section-heading">In progress <span class="count" id="assigned-count">0</span></div>
+  <div class="section-heading" id="assigned-heading">In progress <span class="count" id="assigned-count">0</span></div>
   <div class="order-grid" id="assigned-grid"></div>
 
-  <div class="section-heading">Scheduled <span class="count" id="scheduled-count">0</span></div>
+  <div class="section-heading" id="scheduled-heading">Scheduled <span class="count" id="scheduled-count">0</span></div>
   <div class="order-grid" id="scheduled-grid"></div>
   <div class="empty-board hidden" id="scheduled-empty">Nothing loaded ahead of time right now.</div>
 
@@ -304,11 +333,11 @@
   <div class="tally-panel" id="production-tally"></div>
   <div class="empty-board hidden" id="tally-empty">Nothing to prep right now.</div>
 
-  <div class="section-heading">Needs processing <span class="count" id="prod-needs-count">0</span></div>
+  <div class="section-heading" id="prod-needs-heading">Needs processing <span class="count" id="prod-needs-count">0</span></div>
   <div class="order-grid" id="prod-needs-grid"></div>
   <div class="empty-board hidden" id="prod-needs-empty">All caught up — nothing waiting on production 🎉</div>
 
-  <div class="section-heading">Scheduled <span class="count" id="prod-scheduled-count">0</span></div>
+  <div class="section-heading" id="prod-scheduled-heading">Scheduled <span class="count" id="prod-scheduled-count">0</span></div>
   <div class="order-grid" id="prod-scheduled-grid"></div>
   <div class="empty-board hidden" id="prod-scheduled-empty">Nothing loaded ahead of time right now.</div>
 
@@ -587,8 +616,11 @@ function applyBoardView() {
   document.getElementById('production-view').classList.toggle('hidden', boardView !== 'production');
   document.getElementById('view-toggle-packing').classList.toggle('active', boardView === 'packing');
   document.getElementById('view-toggle-production').classList.toggle('active', boardView === 'production');
+  document.getElementById('quick-pills-packing').classList.toggle('hidden', boardView !== 'packing');
+  document.getElementById('quick-pills-production').classList.toggle('hidden', boardView !== 'production');
   const companyName = (boardData && boardData.settings.companyName) || 'Daily Fruit';
   document.getElementById('company-title').textContent = companyName + (boardView === 'production' ? ' — Production' : ' — Packing');
+  measureStickyOffset();
 }
 
 // Guards against overlapping polls: the board refreshes on a short timer (as
@@ -712,6 +744,74 @@ function itemListHtml(items, primaryDept) {
   }).join('');
 }
 
+// A one-line stand-in for the full item list, used on board cards (tap the
+// card to see everything via itemListHtml in the view modal / print slip).
+// Keeps cards short so more of them fit on screen at once at high order
+// volumes - just a count in the department this board cares about, how many
+// belong to the other department, and how many still need classifying.
+function itemSummaryHtml(items, primaryDept) {
+  const primary = primaryDept || 'Packing';
+  const other = primary === 'Packing' ? 'Production' : 'Packing';
+  const primaryCount = items.filter(it => it.department === primary).length;
+  const otherCount = items.length - primaryCount;
+  const reviewCount = items.filter(it => it.needsReview).length;
+  let text = primaryCount + (primaryCount === 1 ? ' item' : ' items');
+  if (otherCount > 0) text += ` + ${otherCount} ${other.toLowerCase()}`;
+  const reviewBadge = reviewCount ? `<span class="dept-tag unclassified">${reviewCount} need review</span>` : '';
+  return `<div class="item-summary"><span>${escapeHtml(text)}</span>${reviewBadge}</div>`;
+}
+
+// Lowercased "ref + customer" blob stashed on each card as data-search, so
+// the search box (see applySearchFilter) can filter without re-parsing
+// rendered DOM text.
+function searchBlob(o) {
+  return escapeHtml((o.sageRef + ' ' + (o.customerName || '')).toLowerCase());
+}
+
+let orderSearchQuery = '';
+function applySearchFilter() {
+  const q = orderSearchQuery.trim().toLowerCase();
+  document.querySelectorAll('.order-card[data-search]').forEach(card => {
+    const match = !q || card.getAttribute('data-search').includes(q);
+    card.classList.toggle('search-hidden', !match);
+  });
+}
+
+function jumpToSection(id) {
+  const el = document.getElementById(id);
+  if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function renderQuickBar() {
+  const packing = [
+    ['Needs a packer', 'unassigned-heading', document.getElementById('unassigned-count').textContent],
+    ['In progress', 'assigned-heading', document.getElementById('assigned-count').textContent],
+    ['Scheduled', 'scheduled-heading', document.getElementById('scheduled-count').textContent],
+    ['Printed', 'printed-heading', document.getElementById('printed-count').textContent]
+  ];
+  const production = [
+    ['Needs processing', 'prod-needs-heading', document.getElementById('prod-needs-count').textContent],
+    ['Scheduled', 'prod-scheduled-heading', document.getElementById('prod-scheduled-count').textContent],
+    ['Completed', 'prod-completed-heading', document.getElementById('prod-completed-count').textContent]
+  ];
+  const pillsHtml = rows => rows.map(([label, id, count]) =>
+    `<button class="quick-pill" data-jump="${id}">${escapeHtml(label)} <b>${escapeHtml(count)}</b></button>`).join('');
+  document.getElementById('quick-pills-packing').innerHTML = pillsHtml(packing);
+  document.getElementById('quick-pills-production').innerHTML = pillsHtml(production);
+  document.querySelectorAll('.quick-pill').forEach(btn => {
+    btn.onclick = () => jumpToSection(btn.getAttribute('data-jump'));
+  });
+  measureStickyOffset();
+}
+
+function measureStickyOffset() {
+  const topbar = document.getElementById('topbar');
+  const quickBar = document.getElementById('quick-bar');
+  const h = (topbar ? topbar.offsetHeight : 0) + (quickBar ? quickBar.offsetHeight : 0);
+  document.documentElement.style.setProperty('--sticky-h', h + 'px');
+  quickBar.style.top = (topbar ? topbar.offsetHeight : 0) + 'px';
+}
+
 function renderBoard() {
   if (!boardData) return;
   const warnMin = boardData.settings.flagWarningMinutes;
@@ -762,7 +862,7 @@ function renderBoard() {
     const deliverLine = overdue
       ? `<div class="order-overdue">⚠ Should've been packed ${fmtDateLong(o._packDate)}</div>`
       : (o.deliveryDate ? `<div class="order-deliver">Deliver ${fmtDateLong(o.deliveryDate)}</div>` : '');
-    return `<div class="order-card ${flagClass}" data-order-id="${o.orderId}" data-action="assign">
+    return `<div class="order-card ${flagClass}" data-order-id="${o.orderId}" data-action="assign" data-search="${searchBlob(o)}">
       <div class="order-card-head">
         <div>
           <div class="order-ref">${escapeHtml(o.sageRef)}</div>
@@ -772,14 +872,14 @@ function renderBoard() {
         </div>
         <div class="age-badge">${fmtAge(age)}</div>
       </div>
-      <ul class="item-list">${itemListHtml(o.items)}</ul>
+      ${itemSummaryHtml(o.items)}
       <button class="assign-btn">Assign</button>
     </div>`;
   }).join('');
 
   const sGrid = document.getElementById('scheduled-grid');
   sGrid.innerHTML = scheduled.map(o => `
-    <div class="order-card scheduled" data-order-id="${o.orderId}" data-action="view">
+    <div class="order-card scheduled" data-order-id="${o.orderId}" data-action="view" data-search="${searchBlob(o)}">
       <div class="order-card-head">
         <div>
           <div class="order-ref">${escapeHtml(o.sageRef)}</div>
@@ -789,25 +889,25 @@ function renderBoard() {
         </div>
         <div class="schedule-badge">Pack ${fmtDateLong(o._packDate)}</div>
       </div>
-      <ul class="item-list">${itemListHtml(o.items)}</ul>
+      ${itemSummaryHtml(o.items)}
     </div>`).join('');
 
   const aGrid = document.getElementById('assigned-grid');
   aGrid.innerHTML = assigned.map(o => `
-    <div class="order-card assigned" data-order-id="${o.orderId}" data-action="view">
+    <div class="order-card assigned" data-order-id="${o.orderId}" data-action="view" data-search="${searchBlob(o)}">
       <div class="order-card-head">
         <div>
           <div class="order-ref">${escapeHtml(o.sageRef)}</div>
           <div class="order-customer">${escapeHtml(o.customerName || '')}</div>
         </div>
       </div>
-      <ul class="item-list">${itemListHtml(o.items)}</ul>
+      ${itemSummaryHtml(o.items)}
       <div class="assigned-strip"><span>👤 ${escapeHtml(o.assignedTo)}</span><span>${fmtTime(o.assignedAt)}</span></div>
     </div>`).join('');
 
   const pGrid = document.getElementById('printed-grid');
   pGrid.innerHTML = printed.map(o => `
-    <div class="order-card assigned" data-order-id="${o.orderId}" data-action="view" style="opacity:.7;">
+    <div class="order-card assigned" data-order-id="${o.orderId}" data-action="view" data-search="${searchBlob(o)}" style="opacity:.7;">
       <div class="order-card-head">
         <div>
           <div class="order-ref">${escapeHtml(o.sageRef)}</div>
@@ -819,6 +919,8 @@ function renderBoard() {
     </div>`).join('');
 
   attachCardHandlers();
+  renderQuickBar();
+  applySearchFilter();
 }
 
 function attachCardHandlers() {
@@ -959,7 +1061,7 @@ function renderProductionBoard() {
       ? `<div class="order-overdue">⚠ Should've been processed ${fmtDateLong(o._packDate)}</div>`
       : (o.deliveryDate ? `<div class="order-deliver">Deliver ${fmtDateLong(o.deliveryDate)}</div>` : '');
     const printedNote = o.productionPrintedAt ? `<div class="prod-done-note">🖨 Printed ${fmtTime(o.productionPrintedAt)}</div>` : '';
-    return `<div class="order-card ${flagClass}" data-order-id="${o.orderId}">
+    return `<div class="order-card ${flagClass}" data-order-id="${o.orderId}" data-search="${searchBlob(o)}">
       <div class="order-card-head">
         <div>
           <div class="order-ref">${escapeHtml(o.sageRef)}</div>
@@ -970,7 +1072,7 @@ function renderProductionBoard() {
         </div>
         <div class="age-badge">${fmtAge(age)}</div>
       </div>
-      <ul class="item-list">${itemListHtml(o.items, 'Production')}</ul>
+      ${itemSummaryHtml(o.items, 'Production')}
       <div class="prod-actions">
         <button class="btn-secondary" data-prod-print="${o.orderId}">Print</button>
         <button class="btn-primary" data-prod-complete="${o.orderId}">Complete</button>
@@ -980,7 +1082,7 @@ function renderProductionBoard() {
 
   const schedGrid = document.getElementById('prod-scheduled-grid');
   schedGrid.innerHTML = scheduled.map(o => `
-    <div class="order-card scheduled" data-order-id="${o.orderId}">
+    <div class="order-card scheduled" data-order-id="${o.orderId}" data-search="${searchBlob(o)}">
       <div class="order-card-head">
         <div>
           <div class="order-ref">${escapeHtml(o.sageRef)}</div>
@@ -990,19 +1092,19 @@ function renderProductionBoard() {
         </div>
         <div class="schedule-badge">Process ${fmtDateLong(o._packDate)}</div>
       </div>
-      <ul class="item-list">${itemListHtml(o.items, 'Production')}</ul>
+      ${itemSummaryHtml(o.items, 'Production')}
     </div>`).join('');
 
   const compGrid = document.getElementById('prod-completed-grid');
   compGrid.innerHTML = completed.map(o => `
-    <div class="order-card assigned" data-order-id="${o.orderId}" style="opacity:.7;">
+    <div class="order-card assigned" data-order-id="${o.orderId}" data-search="${searchBlob(o)}" style="opacity:.7;">
       <div class="order-card-head">
         <div>
           <div class="order-ref">${escapeHtml(o.sageRef)}</div>
           <div class="order-customer">${escapeHtml(o.customerName || '')}</div>
         </div>
       </div>
-      <ul class="item-list">${itemListHtml(o.items, 'Production')}</ul>
+      ${itemSummaryHtml(o.items, 'Production')}
       <div class="assigned-strip"><span>✅ Completed</span><span>${fmtTime(o.productionCompletedAt)}</span></div>
       <div class="card-actions">
         <button class="btn-secondary" data-prod-incomplete="${o.orderId}">↩ Not complete</button>
@@ -1011,6 +1113,8 @@ function renderProductionBoard() {
     </div>`).join('');
 
   attachProductionCardHandlers();
+  renderQuickBar();
+  applySearchFilter();
 }
 
 function findProductionOrder(orderId) {
@@ -1433,6 +1537,12 @@ function wireStaticEvents() {
 
   document.getElementById('assign-cancel-btn').onclick = closeAssignModal;
   document.getElementById('view-close-btn').onclick = closeViewModal;
+
+  document.getElementById('order-search').addEventListener('input', (e) => {
+    orderSearchQuery = e.target.value;
+    applySearchFilter();
+  });
+  window.addEventListener('resize', measureStickyOffset);
 
   document.querySelectorAll('.admin-tab').forEach(tab => {
     tab.onclick = () => {
