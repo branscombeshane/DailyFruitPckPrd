@@ -112,6 +112,7 @@
   }
   .dept-tag.packing{background:var(--ok-bg);color:var(--green-dark);}
   .dept-tag.production{background:#ece7f7;color:#5b3fa0;}
+  .dept-tag.unclassified{background:var(--warn);color:#3a2a00;}
 
   .assigned-strip{
     margin-top:10px;font-size:13.5px;font-weight:600;color:var(--green-dark);
@@ -309,25 +310,49 @@
   </div>
   <div class="admin-tabs">
     <button class="admin-tab active" data-tab="import">Import orders</button>
+    <button class="admin-tab" data-tab="products">Products</button>
     <button class="admin-tab" data-tab="packers">Packers</button>
     <button class="admin-tab" data-tab="settings">Settings</button>
   </div>
 
   <div class="admin-panel" id="tab-import">
     <h3>Import orders from Sage</h3>
-    <p style="color:var(--muted);font-size:14px;">Export your order/invoice list from Sage as a CSV, then upload it or paste the contents below. Rows are grouped into orders by the order/invoice number. Items already imported (same order/invoice number) are skipped automatically.</p>
+    <p style="color:var(--muted);font-size:14px;">Export your order/invoice list from Sage as a CSV, then upload it or paste the contents below. Rows are grouped into orders by the order/invoice number. Items already imported (same order/invoice number) are skipped automatically. Sage's order export doesn't include a category per line, so each item's Packing/Production split comes from the <strong>Products</strong> tab instead — keep that list up to date.</p>
     <div class="field">
       <label>Upload CSV file</label>
       <input type="file" id="csv-file-input" accept=".csv,text/csv">
     </div>
     <div class="field">
       <label>...or paste CSV contents</label>
-      <textarea id="csv-text-input" rows="8" placeholder="Order,Customer,Code,Description,Category,Qty,Unit&#10;SO-1001,ABC Foods,BUT001,Butternut - kg,Fresh,20,kg"></textarea>
+      <textarea id="csv-text-input" rows="8" placeholder="Order,Customer,Code,Description,Qty,Unit&#10;SO-1001,ABC Foods,BUT001,Butternut - kg,20,kg"></textarea>
     </div>
     <button class="btn-primary" id="import-btn">Import</button>
     <div class="result-box hidden" id="import-result"></div>
     <h3 style="margin-top:26px;">Recent imports</h3>
     <div id="import-log-list" style="max-height:200px;overflow-y:auto;"></div>
+  </div>
+
+  <div class="admin-panel hidden" id="tab-products">
+    <h3>Unclassified products</h3>
+    <p style="color:var(--muted);font-size:14px;">Order lines whose product code wasn't found in the list below — they defaulted to Packing on the board. Classify them here (or via a fresh product-list import) and any matching orders already on the board are corrected automatically.</p>
+    <div id="needs-review-list"></div>
+    <div class="empty-note hidden" id="needs-review-empty" style="text-align:left;">Nothing outstanding — every product on the board is classified.</div>
+
+    <h3 style="margin-top:26px;">Import the Sage product list</h3>
+    <p style="color:var(--muted);font-size:14px;">Export Sage's item/product list (code, description, category) as a CSV. New products get added there periodically, so re-export and re-import this every so often (e.g. daily) to pick them up — importing again just updates existing products, it won't duplicate them.</p>
+    <div class="field">
+      <label>Upload CSV file</label>
+      <input type="file" id="products-csv-file-input" accept=".csv,text/csv">
+    </div>
+    <div class="field">
+      <label>...or paste CSV contents</label>
+      <textarea id="products-csv-text-input" rows="6" placeholder="Code,Description,Category&#10;BUT001,Butternut,Fresh&#10;BUT002,Butternut - diced,Prepped"></textarea>
+    </div>
+    <button class="btn-primary" id="import-products-btn">Import</button>
+    <div class="result-box hidden" id="import-products-result"></div>
+
+    <h3 style="margin-top:26px;">All products (<span id="products-count">0</span>)</h3>
+    <div id="products-list" style="max-height:260px;overflow-y:auto;"></div>
   </div>
 
   <div class="admin-panel hidden" id="tab-packers">
@@ -377,6 +402,7 @@
     <thead><tr><th>Description</th><th>Category</th><th>Qty</th><th>Unit</th></tr></thead>
     <tbody id="slip-items-body"></tbody>
   </table>
+  <div class="slip-meta hidden" id="slip-unclassified-note">* unclassified product — defaulted to Packing, needs checking in Admin</div>
   <div class="slip-footer">
     <span>Packer signature: ____________________</span>
     <span id="slip-printed-time"></span>
@@ -521,8 +547,11 @@ function itemListHtml(items) {
   return items.map(it => {
     const deptClass = it.department === 'Production' ? 'production' : 'packing';
     const descClass = it.department === 'Production' ? 'is-production' : '';
+    const tagLabel = it.needsReview ? (it.department + '?') : it.department;
+    const tagClass = it.needsReview ? 'unclassified' : deptClass;
+    const tagTitle = it.needsReview ? 'title="Unrecognised product code — defaulted, needs classifying in Admin > Products"' : '';
     return `<li>
-      <span class="item-desc ${descClass}">${escapeHtml(it.description)}<span class="dept-tag ${deptClass}">${it.department}</span></span>
+      <span class="item-desc ${descClass}">${escapeHtml(it.description)}<span class="dept-tag ${tagClass}" ${tagTitle}>${tagLabel}</span></span>
       <span class="item-qty">${escapeHtml(String(it.qty))} ${escapeHtml(it.unit || '')}</span>
     </li>`;
   }).join('');
@@ -677,10 +706,11 @@ function printSlipForOrder(order) {
   document.getElementById('slip-items-body').innerHTML = order.items.map(it => `
     <tr class="${it.department === 'Production' ? 'prod-row' : ''}">
       <td>${escapeHtml(it.description)}</td>
-      <td>${escapeHtml(it.department)}</td>
+      <td>${escapeHtml(it.department)}${it.needsReview ? ' *' : ''}</td>
       <td>${escapeHtml(String(it.qty))}</td>
       <td>${escapeHtml(it.unit || '')}</td>
     </tr>`).join('');
+  document.getElementById('slip-unclassified-note').classList.toggle('hidden', !order.items.some(it => it.needsReview));
 
   const onAfterPrint = () => {
     window.removeEventListener('afterprint', onAfterPrint);
@@ -722,6 +752,8 @@ function loadAdminData() {
   apiGet('getAdminData').then(data => {
     renderPackersAdmin(data.packers);
     renderImportLog(data.importLog);
+    renderNeedsReviewList(data.needsReview);
+    renderProductsList(data.products);
     document.getElementById('set-company').value = data.settings.CompanyName || '';
     document.getElementById('set-warn').value = data.settings.FlagWarningMinutes || 10;
     document.getElementById('set-crit').value = data.settings.FlagCriticalMinutes || 20;
@@ -774,8 +806,72 @@ function doImport() {
   resultBox.classList.remove('hidden');
   apiPost('importCsv', { csvText: text }).then(res => {
     resultBox.className = 'result-box';
-    resultBox.textContent = `Imported ${res.ordersImported} order(s), ${res.itemsImported} item(s). Skipped ${res.ordersSkipped} already-imported order(s).`;
+    let msg = `Imported ${res.ordersImported} order(s), ${res.itemsImported} item(s). Skipped ${res.ordersSkipped} already-imported order(s).`;
+    if (res.itemsNeedingReview) msg += ` ${res.itemsNeedingReview} item(s) had an unrecognised product code and defaulted to Packing — see the Products tab.`;
+    resultBox.textContent = msg;
     loadAdminData();
+    loadBoard(false);
+  }).catch(err => {
+    resultBox.className = 'result-box error';
+    resultBox.textContent = err.message;
+  });
+}
+
+/* ===================== PRODUCTS ===================== */
+function renderNeedsReviewList(needsReview) {
+  const el = document.getElementById('needs-review-list');
+  const empty = document.getElementById('needs-review-empty');
+  empty.classList.toggle('hidden', needsReview.length > 0);
+  el.innerHTML = needsReview.map(p => `
+    <div class="packer-row" style="align-items:flex-start;flex-wrap:wrap;gap:8px;">
+      <div style="min-width:180px;">
+        <div style="font-weight:700;">${escapeHtml(p.productCode || '(no code)')}</div>
+        <div style="color:var(--muted);font-size:13px;">${escapeHtml(p.description || '')} — on ${p.orderCount} order line(s)</div>
+      </div>
+      <div style="display:flex;gap:8px;flex:1;min-width:220px;">
+        <input type="text" placeholder="Category (e.g. Prepped)" data-review-category="${escapeHtml(p.productCode)}" style="flex:1;padding:9px 10px;border:2px solid var(--line);border-radius:8px;">
+        <button class="btn-secondary" data-review-save="${escapeHtml(p.productCode)}" data-review-desc="${escapeHtml(p.description || '')}">Save</button>
+      </div>
+    </div>`).join('');
+  el.querySelectorAll('[data-review-save]').forEach(btn => {
+    btn.onclick = () => {
+      const code = btn.getAttribute('data-review-save');
+      const desc = btn.getAttribute('data-review-desc');
+      const input = el.querySelector(`[data-review-category="${CSS.escape(code)}"]`);
+      const category = input.value.trim();
+      if (!category) { input.focus(); return; }
+      btn.disabled = true;
+      apiPost('classifyProduct', { productCode: code, description: desc, category: category }).then(res => {
+        renderNeedsReviewList(res.needsReview);
+        renderProductsList(res.products);
+        loadBoard(false);
+      }).catch(err => { alert(err.message); btn.disabled = false; });
+    };
+  });
+}
+
+function renderProductsList(products) {
+  document.getElementById('products-count').textContent = products.length;
+  const el = document.getElementById('products-list');
+  if (!products.length) { el.innerHTML = '<div class="log-row">No products imported yet.</div>'; return; }
+  el.innerHTML = products.map(p => `
+    <div class="log-row" style="display:flex;justify-content:space-between;gap:10px;">
+      <span><strong>${escapeHtml(p.productCode)}</strong> ${escapeHtml(p.description || '')}</span>
+      <span>${escapeHtml(p.category || '')}</span>
+    </div>`).join('');
+}
+
+function doImportProducts() {
+  const text = document.getElementById('products-csv-text-input').value;
+  const resultBox = document.getElementById('import-products-result');
+  resultBox.className = 'result-box';
+  resultBox.textContent = 'Importing…';
+  resultBox.classList.remove('hidden');
+  apiPost('importProductsCsv', { csvText: text }).then(res => {
+    resultBox.className = 'result-box';
+    resultBox.textContent = `Added/updated ${res.productsUpserted} product(s). ${res.itemsBackfilled} order line(s) that were waiting on classification just got corrected.`;
+    renderNeedsReviewList(res.needsReview);
+    renderProductsList(res.products);
     loadBoard(false);
   }).catch(err => {
     resultBox.className = 'result-box error';
@@ -828,7 +924,7 @@ function wireStaticEvents() {
     tab.onclick = () => {
       document.querySelectorAll('.admin-tab').forEach(t => t.classList.remove('active'));
       tab.classList.add('active');
-      ['import', 'packers', 'settings'].forEach(name => {
+      ['import', 'products', 'packers', 'settings'].forEach(name => {
         document.getElementById('tab-' + name).classList.toggle('hidden', name !== tab.getAttribute('data-tab'));
       });
     };
@@ -842,6 +938,16 @@ function wireStaticEvents() {
     reader.readAsText(file);
   });
   document.getElementById('import-btn').onclick = doImport;
+
+  document.getElementById('products-csv-file-input').addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => { document.getElementById('products-csv-text-input').value = reader.result; };
+    reader.readAsText(file);
+  });
+  document.getElementById('import-products-btn').onclick = doImportProducts;
+
   document.getElementById('add-packer-btn').onclick = () => {
     const input = document.getElementById('new-packer-name');
     const name = input.value.trim();
