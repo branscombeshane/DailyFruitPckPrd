@@ -1452,6 +1452,7 @@ function renderProductsListFiltered() {
           <option value="Prepped" ${isPrepped ? 'selected' : ''}>Prepped</option>
         </select>
         <button class="btn-secondary" data-product-save="${rowKey}" data-product-code="${escapeHtml(p.productCode || '')}" data-product-desc="${escapeHtml(p.description || '')}">Save</button>
+        <button class="icon-btn" style="background:#f3d6d6;color:#a11;width:38px;height:38px;font-size:14px;flex:0 0 auto;" data-product-delete="${rowKey}" data-product-code="${escapeHtml(p.productCode || '')}" data-product-desc="${escapeHtml(p.description || '')}" title="Delete product">✕</button>
       </div>
     </div>`;
   }).join('');
@@ -1474,6 +1475,23 @@ function renderProductsListFiltered() {
         alert(err.message);
         btn.disabled = false;
         btn.textContent = original;
+      });
+    };
+  });
+
+  el.querySelectorAll('[data-product-delete]').forEach(btn => {
+    btn.onclick = () => {
+      const code = btn.getAttribute('data-product-code');
+      const desc = btn.getAttribute('data-product-desc');
+      const label = code || desc;
+      if (!confirm(`Delete "${label}" from the product list? This only removes the classification - past orders aren't affected, but the next order carrying this product will need reclassifying.`)) return;
+      btn.disabled = true;
+      apiPost('deleteProduct', { productCode: code, description: desc }).then(res => {
+        renderNeedsReviewList(res.needsReview);
+        renderProductsList(res.products);
+      }).catch(err => {
+        alert(err.message);
+        btn.disabled = false;
       });
     };
   });
