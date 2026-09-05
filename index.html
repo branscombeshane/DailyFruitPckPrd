@@ -1523,7 +1523,7 @@ function renderProductsListFiltered() {
     const rowKey = 'p' + i;
     return `
     <div class="packer-row" style="align-items:flex-start;flex-wrap:wrap;gap:8px;">
-      <div style="min-width:180px;flex:2;">
+      <div style="min-width:180px;flex:2;user-select:text;">
         <span>${p.productCode ? `<strong>${escapeHtml(p.productCode)}</strong> ` : ''}${escapeHtml(p.description || '')}</span>
       </div>
       <div style="display:flex;gap:8px;flex:1;min-width:220px;">
