@@ -432,6 +432,9 @@
     <p style="color:var(--muted);font-size:14px;">Order lines whose product code wasn't found in the list below — they defaulted to Packing on the board. Classify them here (or via a fresh product-list import) and any matching orders already on the board are corrected automatically.</p>
     <div id="needs-review-list"></div>
     <div class="empty-note hidden" id="needs-review-empty" style="text-align:left;">Nothing outstanding — every product on the board is classified.</div>
+    <button class="btn-secondary" id="resync-items-btn" style="margin-top:10px;">↻ Recheck unclassified items</button>
+    <p style="color:var(--muted);font-size:12.5px;margin-top:6px;">If something above is already correctly set up in the list below but an order still shows it as unclassified, click this to re-run the match against everything currently classified — no need to edit or re-save the product itself.</p>
+    <div class="result-box hidden" id="resync-items-result"></div>
 
     <h3 style="margin-top:26px;">Import the Sage product list</h3>
     <p style="color:var(--muted);font-size:14px;">Export Sage's item/product list (code, description, category) as a CSV. New products get added there periodically, so re-export and re-import this every so often (e.g. daily) to pick up anything new — importing only ever <strong>adds</strong> products that aren't in the list below yet; it never changes the category of a product that's already there, so anything you've classified here won't get overwritten by a stale or re-categorised Sage export.</p>
@@ -1595,6 +1598,25 @@ function doImportProducts() {
   });
 }
 
+function doResyncItems() {
+  const resultBox = document.getElementById('resync-items-result');
+  resultBox.className = 'result-box';
+  resultBox.textContent = 'Rechecking…';
+  resultBox.classList.remove('hidden');
+  apiPost('resyncOrderItems', {}).then(res => {
+    resultBox.className = 'result-box';
+    resultBox.textContent = res.itemsBackfilled
+      ? `Fixed ${res.itemsBackfilled} order line(s) that were stuck unclassified despite already having a matching product.`
+      : 'Nothing to fix — every order line already matches its product correctly.';
+    renderNeedsReviewList(res.needsReview);
+    renderProductsList(res.products);
+    loadBoard(false);
+  }).catch(err => {
+    resultBox.className = 'result-box error';
+    resultBox.textContent = err.message;
+  });
+}
+
 function saveSettings() {
   const newPasscode = document.getElementById('set-site-passcode').value;
   const settings = {
@@ -1669,6 +1691,7 @@ function wireStaticEvents() {
     reader.readAsText(file);
   });
   document.getElementById('import-products-btn').onclick = doImportProducts;
+  document.getElementById('resync-items-btn').onclick = doResyncItems;
   document.getElementById('products-filter-input').addEventListener('input', renderProductsListFiltered);
 
   document.getElementById('add-packer-btn').onclick = () => {
