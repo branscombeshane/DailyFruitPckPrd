@@ -20,6 +20,8 @@
     --crit:#d1392b;
     --crit-bg:#fdecea;
     --ok-bg:#eef7ee;
+    --info:#3a6ea8;
+    --info-bg:#eaf1fa;
   }
   *{box-sizing:border-box;}
   html,body{height:100%;}
@@ -85,12 +87,19 @@
   .order-card.flag-warn{border-left:8px solid var(--warn);background:var(--warn-bg);}
   .order-card.flag-crit{border-left:8px solid var(--crit);background:var(--crit-bg);animation:pulse 1.6s infinite;}
   .order-card.assigned{border-left:8px solid var(--green);opacity:.92;}
+  .order-card.scheduled{border-left:8px solid var(--info);}
   @keyframes pulse{0%,100%{box-shadow:0 1px 3px rgba(0,0,0,.06);}50%{box-shadow:0 0 0 4px rgba(209,57,43,.18);}}
 
   .order-card-head{display:flex;justify-content:space-between;align-items:flex-start;gap:8px;}
   .order-ref{font-size:18px;font-weight:800;}
   .order-customer{font-size:14px;color:var(--muted);margin-top:2px;}
   .order-arrived{font-size:12px;color:var(--muted);margin-top:2px;}
+  .order-deliver{font-size:12px;color:var(--info);font-weight:700;margin-top:2px;}
+  .order-overdue{font-size:12px;color:var(--crit);font-weight:700;margin-top:2px;}
+  .schedule-badge{
+    font-size:13px;font-weight:700;padding:4px 10px;border-radius:20px;white-space:nowrap;
+    background:var(--info-bg);color:var(--info);
+  }
   .age-badge{
     font-size:13px;font-weight:700;padding:4px 10px;border-radius:20px;white-space:nowrap;
     background:#e9efe9;color:var(--green-dark);
@@ -255,6 +264,10 @@
 
   <div class="section-heading">In progress <span class="count" id="assigned-count">0</span></div>
   <div class="order-grid" id="assigned-grid"></div>
+
+  <div class="section-heading">Scheduled <span class="count" id="scheduled-count">0</span></div>
+  <div class="order-grid" id="scheduled-grid"></div>
+  <div class="empty-board hidden" id="scheduled-empty">Nothing loaded ahead of time right now.</div>
 
   <div class="section-heading" id="printed-heading">
     <span id="printed-heading-label">Printed today</span> <span class="count" id="printed-count">0</span>
@@ -553,6 +566,47 @@ function fmtDateLong(dateStr) {
   const [y, m, d] = dateStr.split('-').map(Number);
   return new Date(y, m - 1, d).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' });
 }
+
+/* ---- Packing-schedule helpers ----
+ * Every order has a delivery date (when it must reach the customer). The rule:
+ * an order loaded the same day it needs to go out gets packed that day; anything
+ * loaded ahead of time gets packed the day before delivery, not the moment it
+ * arrives. So "pack date" (the day an order should actually be worked on) is
+ * either the delivery date itself (same-day order) or delivery date minus one day.
+ * Orders whose pack date hasn't arrived yet sit in "Scheduled" instead of
+ * cluttering "Needs a packer".
+ */
+function dateOnlyStr(isoOrDate) {
+  const d = (isoOrDate instanceof Date) ? isoOrDate : new Date(isoOrDate);
+  const pad = n => String(n).padStart(2, '0');
+  return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
+}
+function parseDateOnlyLocal(dateStr) {
+  const [y, m, d] = dateStr.split('-').map(Number);
+  return new Date(y, m - 1, d);
+}
+function addDaysStr(dateStr, n) {
+  const d = parseDateOnlyLocal(dateStr);
+  d.setDate(d.getDate() + n);
+  return dateOnlyStr(d);
+}
+function computePackDate(o) {
+  const createdDateStr = dateOnlyStr(o.createdAt);
+  // Unknown delivery date (legacy order, or a PDF/CSV that didn't carry one) ->
+  // safest default is "pack today", same as this app's original behaviour.
+  const deliveryDateStr = o.deliveryDate || createdDateStr;
+  return deliveryDateStr === createdDateStr ? deliveryDateStr : addDaysStr(deliveryDateStr, -1);
+}
+// How long an order has actually been sitting in TODAY'S actionable queue - not
+// simply "time since it arrived", since a same-day order becomes actionable the
+// moment it lands, but an order loaded days ago only becomes actionable at the
+// start of its pack date (that's when it should visually "start the clock").
+function queueAgeMinutes(o, packDate) {
+  const created = new Date(o.createdAt);
+  const packDayStart = parseDateOnlyLocal(packDate);
+  const queueEnteredAt = created > packDayStart ? created : packDayStart;
+  return (Date.now() - queueEnteredAt.getTime()) / 60000;
+}
 function fmtAge(mins) {
   if (mins < 1) return 'just in';
   if (mins < 60) return Math.floor(mins) + ' min';
@@ -579,13 +633,19 @@ function renderBoard() {
   const warnMin = boardData.settings.flagWarningMinutes;
   const critMin = boardData.settings.flagCriticalMinutes;
 
-  const unassigned = [];
+  const needsPacker = [];
+  const scheduled = [];
   const assigned = [];
   let printed = [];
   const isToday = printedDate === todayDateStr();
+  const today = todayDateStr();
 
   boardData.orders.forEach(o => {
-    if (!o.assignedTo) unassigned.push(o);
+    if (!o.assignedTo) {
+      const packDate = computePackDate(o);
+      if (packDate <= today) needsPacker.push(Object.assign({ _packDate: packDate }, o));
+      else scheduled.push(Object.assign({ _packDate: packDate }, o));
+    }
     else if (!o.printedAt) assigned.push(o);
     else if (isToday && new Date(o.printedAt).toDateString() === new Date().toDateString()) printed.push(o);
   });
@@ -594,27 +654,37 @@ function renderBoard() {
     printed = printedHistoryOrders || [];
   }
 
-  unassigned.sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
+  needsPacker.sort((a, b) => a._packDate !== b._packDate
+    ? (a._packDate < b._packDate ? -1 : 1)
+    : queueAgeMinutes(b, b._packDate) - queueAgeMinutes(a, a._packDate));
+  scheduled.sort((a, b) => a._packDate !== b._packDate ? (a._packDate < b._packDate ? -1 : 1) : new Date(a.createdAt) - new Date(b.createdAt));
   assigned.sort((a, b) => new Date(a.assignedAt) - new Date(b.assignedAt));
   printed.sort((a, b) => new Date(b.printedAt) - new Date(a.printedAt));
 
-  document.getElementById('unassigned-count').textContent = unassigned.length;
+  document.getElementById('unassigned-count').textContent = needsPacker.length;
   document.getElementById('assigned-count').textContent = assigned.length;
+  document.getElementById('scheduled-count').textContent = scheduled.length;
+  document.getElementById('scheduled-empty').classList.toggle('hidden', scheduled.length > 0);
   document.getElementById('printed-count').textContent = printed.length;
   document.getElementById('printed-empty').classList.toggle('hidden', printed.length > 0);
   document.getElementById('printed-heading-label').textContent = isToday ? 'Printed today' : 'Printed on ' + fmtDateLong(printedDate);
-  document.getElementById('unassigned-empty').classList.toggle('hidden', unassigned.length > 0);
+  document.getElementById('unassigned-empty').classList.toggle('hidden', needsPacker.length > 0);
 
   const uGrid = document.getElementById('unassigned-grid');
-  uGrid.innerHTML = unassigned.map(o => {
-    const age = minutesSince(o.createdAt);
+  uGrid.innerHTML = needsPacker.map(o => {
+    const age = queueAgeMinutes(o, o._packDate);
     const flagClass = age >= critMin ? 'flag-crit' : age >= warnMin ? 'flag-warn' : 'flag-ok';
+    const overdue = o._packDate < today;
+    const deliverLine = overdue
+      ? `<div class="order-overdue">⚠ Should've been packed ${fmtDateLong(o._packDate)}</div>`
+      : (o.deliveryDate ? `<div class="order-deliver">Deliver ${fmtDateLong(o.deliveryDate)}</div>` : '');
     return `<div class="order-card ${flagClass}" data-order-id="${o.orderId}" data-action="assign">
       <div class="order-card-head">
         <div>
           <div class="order-ref">${escapeHtml(o.sageRef)}</div>
           <div class="order-customer">${escapeHtml(o.customerName || '')}</div>
           <div class="order-arrived">Arrived ${fmtTime(o.createdAt)}</div>
+          ${deliverLine}
         </div>
         <div class="age-badge">${fmtAge(age)}</div>
       </div>
@@ -622,6 +692,21 @@ function renderBoard() {
       <button class="assign-btn">Assign</button>
     </div>`;
   }).join('');
+
+  const sGrid = document.getElementById('scheduled-grid');
+  sGrid.innerHTML = scheduled.map(o => `
+    <div class="order-card scheduled" data-order-id="${o.orderId}" data-action="view">
+      <div class="order-card-head">
+        <div>
+          <div class="order-ref">${escapeHtml(o.sageRef)}</div>
+          <div class="order-customer">${escapeHtml(o.customerName || '')}</div>
+          <div class="order-arrived">Arrived ${fmtTime(o.createdAt)}</div>
+          <div class="order-deliver">Deliver ${fmtDateLong(o.deliveryDate || o._packDate)}</div>
+        </div>
+        <div class="schedule-badge">Pack ${fmtDateLong(o._packDate)}</div>
+      </div>
+      <ul class="item-list">${itemListHtml(o.items)}</ul>
+    </div>`).join('');
 
   const aGrid = document.getElementById('assigned-grid');
   aGrid.innerHTML = assigned.map(o => `
@@ -713,8 +798,16 @@ function assignOrderTo(orderId, packerName, tileBtn) {
 function openViewModal(order) {
   document.getElementById('view-modal-ref').textContent = order.sageRef;
   document.getElementById('view-modal-customer').textContent = order.customerName || '';
-  const status = order.printedAt ? ('✅ Printed ' + fmtTime(order.printedAt)) : ('In progress');
-  document.getElementById('view-modal-assigned').innerHTML = `<span>👤 ${escapeHtml(order.assignedTo)} — assigned ${fmtTime(order.assignedAt)}</span><span>${status}</span>`;
+  let assignedHtml;
+  if (order.assignedTo) {
+    const status = order.printedAt ? ('✅ Printed ' + fmtTime(order.printedAt)) : ('In progress');
+    assignedHtml = `<span>👤 ${escapeHtml(order.assignedTo)} — assigned ${fmtTime(order.assignedAt)}</span><span>${status}</span>`;
+  } else {
+    const packDate = computePackDate(order);
+    const deliverText = order.deliveryDate ? ('Deliver ' + fmtDateLong(order.deliveryDate)) : '';
+    assignedHtml = `<span>Not yet assigned — scheduled to pack ${fmtDateLong(packDate)}</span><span>${deliverText}</span>`;
+  }
+  document.getElementById('view-modal-assigned').innerHTML = assignedHtml;
   document.getElementById('view-modal-items').innerHTML = itemListHtml(order.items);
   document.getElementById('view-modal').classList.remove('hidden');
 }
