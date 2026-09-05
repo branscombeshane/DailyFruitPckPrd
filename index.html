@@ -109,6 +109,7 @@
   .order-card-head{display:flex;justify-content:space-between;align-items:flex-start;gap:8px;}
   .order-ref{font-size:18px;font-weight:800;}
   .order-customer{font-size:14px;color:var(--muted);margin-top:2px;}
+  .order-notes{font-size:12px;color:var(--ink);font-weight:600;margin-top:2px;}
   .order-arrived{font-size:12px;color:var(--muted);margin-top:2px;}
   .order-deliver{font-size:12px;color:var(--info);font-weight:700;margin-top:2px;}
   .order-overdue{font-size:12px;color:var(--crit);font-weight:700;margin-top:2px;}
@@ -374,6 +375,7 @@
   <div class="modal-box">
     <h2 id="view-modal-ref"></h2>
     <div class="modal-sub" id="view-modal-customer"></div>
+    <div class="order-notes hidden" id="view-modal-notes"></div>
     <div class="assigned-strip" id="view-modal-assigned"></div>
     <ul class="item-list" id="view-modal-items"></ul>
     <div class="modal-actions">
@@ -494,6 +496,7 @@
     </div>
   </div>
   <div class="slip-meta"><strong>Customer:</strong> <span id="slip-customer"></span></div>
+  <div class="slip-meta hidden" id="slip-notes-row"><strong>Notes:</strong> <span id="slip-notes"></span></div>
   <div class="slip-meta" id="slip-assigned-row"><strong>Assigned to:</strong> <span id="slip-packer"></span> at <span id="slip-assigned-time"></span></div>
   <table class="slip-items">
     <thead><tr><th>Description</th><th>Category</th><th>Qty</th><th>Unit</th></tr></thead>
@@ -772,6 +775,14 @@ function searchBlob(o) {
   return escapeHtml((o.sageRef + ' ' + (o.customerName || '')).toLowerCase());
 }
 
+// The customer's own PO/reference number (and Bay, when present) is captured
+// off the Sage invoice's "REFERENCE:" field but wasn't being shown anywhere -
+// this renders it as a small line under the customer name wherever a card
+// shows one, so it's visible on the floor, not just stored.
+function orderNotesLine(o) {
+  return o.notes ? `<div class="order-notes">${escapeHtml(o.notes)}</div>` : '';
+}
+
 let orderSearchQuery = '';
 function applySearchFilter() {
   const q = orderSearchQuery.trim().toLowerCase();
@@ -889,6 +900,7 @@ function renderBoard() {
         <div>
           <div class="order-ref">${escapeHtml(o.sageRef)}</div>
           <div class="order-customer">${escapeHtml(o.customerName || '')}</div>
+          ${orderNotesLine(o)}
           <div class="order-arrived">Arrived ${fmtTime(o.createdAt)}</div>
           ${deliverLine}
         </div>
@@ -906,6 +918,7 @@ function renderBoard() {
         <div>
           <div class="order-ref">${escapeHtml(o.sageRef)}</div>
           <div class="order-customer">${escapeHtml(o.customerName || '')}</div>
+          ${orderNotesLine(o)}
           <div class="order-arrived">Arrived ${fmtTime(o.createdAt)}</div>
           <div class="order-deliver">Deliver ${fmtDateLong(o.deliveryDate || o._packDate)}</div>
         </div>
@@ -921,6 +934,7 @@ function renderBoard() {
         <div>
           <div class="order-ref">${escapeHtml(o.sageRef)}</div>
           <div class="order-customer">${escapeHtml(o.customerName || '')}</div>
+          ${orderNotesLine(o)}
         </div>
       </div>
       ${itemSummaryHtml(o.items)}
@@ -934,6 +948,7 @@ function renderBoard() {
         <div>
           <div class="order-ref">${escapeHtml(o.sageRef)}</div>
           <div class="order-customer">${escapeHtml(o.customerName || '')}</div>
+          ${orderNotesLine(o)}
         </div>
       </div>
       <div class="assigned-strip"><span>✅ ${escapeHtml(o.assignedTo)}</span><span>printed ${fmtTime(o.printedAt)}</span></div>
@@ -1088,6 +1103,7 @@ function renderProductionBoard() {
         <div>
           <div class="order-ref">${escapeHtml(o.sageRef)}</div>
           <div class="order-customer">${escapeHtml(o.customerName || '')}</div>
+          ${orderNotesLine(o)}
           <div class="order-arrived">Arrived ${fmtTime(o.createdAt)}</div>
           ${deliverLine}
           ${printedNote}
@@ -1109,6 +1125,7 @@ function renderProductionBoard() {
         <div>
           <div class="order-ref">${escapeHtml(o.sageRef)}</div>
           <div class="order-customer">${escapeHtml(o.customerName || '')}</div>
+          ${orderNotesLine(o)}
           <div class="order-arrived">Arrived ${fmtTime(o.createdAt)}</div>
           <div class="order-deliver">Deliver ${fmtDateLong(o.deliveryDate || o._packDate)}</div>
         </div>
@@ -1124,6 +1141,7 @@ function renderProductionBoard() {
         <div>
           <div class="order-ref">${escapeHtml(o.sageRef)}</div>
           <div class="order-customer">${escapeHtml(o.customerName || '')}</div>
+          ${orderNotesLine(o)}
         </div>
       </div>
       ${itemSummaryHtml(o.items, 'Production')}
@@ -1201,6 +1219,7 @@ function printProductionSlipForOrder(order) {
   document.getElementById('slip-ref').textContent = order.sageRef;
   document.getElementById('slip-created').textContent = 'Order in: ' + fmtTime(order.createdAt);
   document.getElementById('slip-customer').textContent = order.customerName || '';
+  setSlipNotes_(order);
   document.getElementById('slip-assigned-row').classList.add('hidden');
   document.getElementById('slip-signature-label').textContent = 'Prepared by: ____________________';
   document.getElementById('slip-printed-time').textContent = 'Printed: ' + fmtDateTimeFull(new Date());
@@ -1274,6 +1293,14 @@ function openViewModal(order, primaryDept) {
   const primary = primaryDept || 'Packing';
   document.getElementById('view-modal-ref').textContent = order.sageRef;
   document.getElementById('view-modal-customer').textContent = order.customerName || '';
+  const notesEl = document.getElementById('view-modal-notes');
+  if (order.notes) {
+    notesEl.textContent = order.notes;
+    notesEl.classList.remove('hidden');
+  } else {
+    notesEl.textContent = '';
+    notesEl.classList.add('hidden');
+  }
   let assignedHtml;
   if (primary === 'Production') {
     const packDate = computePackDate(order);
@@ -1299,10 +1326,21 @@ function openViewModal(order, primaryDept) {
 function closeViewModal() { document.getElementById('view-modal').classList.add('hidden'); }
 
 /* ===================== PRINT SLIP ===================== */
+function setSlipNotes_(order) {
+  const row = document.getElementById('slip-notes-row');
+  if (order.notes) {
+    document.getElementById('slip-notes').textContent = order.notes;
+    row.classList.remove('hidden');
+  } else {
+    document.getElementById('slip-notes').textContent = '';
+    row.classList.add('hidden');
+  }
+}
 function printSlipForOrder(order) {
   document.getElementById('slip-ref').textContent = order.sageRef;
   document.getElementById('slip-created').textContent = 'Order in: ' + fmtTime(order.createdAt);
   document.getElementById('slip-customer').textContent = order.customerName || '';
+  setSlipNotes_(order);
   document.getElementById('slip-packer').textContent = order.assignedTo;
   document.getElementById('slip-assigned-time').textContent = fmtTime(order.assignedAt);
   document.getElementById('slip-printed-time').textContent = 'Printed: ' + fmtDateTimeFull(new Date());
