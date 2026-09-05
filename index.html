@@ -617,12 +617,15 @@ function minutesSince(iso) {
 function fmtTime(iso) {
   if (!iso) return '';
   const d = new Date(iso);
-  return d.toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+  return d.toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false });
 }
 function fmtDateLong(dateStr) {
   // dateStr is 'YYYY-MM-DD'; parse as local (not UTC) so it matches the date picker
   const [y, m, d] = dateStr.split('-').map(Number);
   return new Date(y, m - 1, d).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' });
+}
+function fmtDateTimeFull(d) {
+  return d.toLocaleString([], { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
 }
 
 /* ---- Packing-schedule helpers ----
@@ -1046,7 +1049,7 @@ function printProductionSlipForOrder(order) {
   document.getElementById('slip-customer').textContent = order.customerName || '';
   document.getElementById('slip-assigned-row').classList.add('hidden');
   document.getElementById('slip-signature-label').textContent = 'Prepared by: ____________________';
-  document.getElementById('slip-printed-time').textContent = 'Printed: ' + new Date().toLocaleString();
+  document.getElementById('slip-printed-time').textContent = 'Printed: ' + fmtDateTimeFull(new Date());
   document.getElementById('slip-items-body').innerHTML = prodItems.map(it => `
     <tr>
       <td>${escapeHtml(it.description)}</td>
@@ -1138,7 +1141,7 @@ function printSlipForOrder(order) {
   document.getElementById('slip-customer').textContent = order.customerName || '';
   document.getElementById('slip-packer').textContent = order.assignedTo;
   document.getElementById('slip-assigned-time').textContent = fmtTime(order.assignedAt);
-  document.getElementById('slip-printed-time').textContent = 'Printed: ' + new Date().toLocaleString();
+  document.getElementById('slip-printed-time').textContent = 'Printed: ' + fmtDateTimeFull(new Date());
   document.getElementById('slip-items-body').innerHTML = order.items.map(it => `
     <tr class="${it.department === 'Production' ? 'prod-row' : ''}">
       <td>${escapeHtml(it.description)}</td>
