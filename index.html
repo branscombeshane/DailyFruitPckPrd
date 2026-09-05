@@ -93,6 +93,8 @@
   .prod-actions .btn-secondary{flex:1;margin-top:0;}
   .prod-actions .btn-primary{flex:1;margin-top:0;}
   .prod-done-note{font-size:12px;color:var(--green-dark);font-weight:600;margin-top:2px;}
+  .card-actions{display:flex;gap:8px;margin-top:12px;}
+  .card-actions .btn-secondary{flex:1;margin-top:0;padding:9px 12px;font-size:13px;}
   .order-card{
     background:var(--card);border-radius:14px;border:2px solid var(--line);
     padding:16px;box-shadow:0 1px 3px rgba(0,0,0,.06);position:relative;overflow:hidden;
@@ -792,6 +794,7 @@ function renderBoard() {
         </div>
       </div>
       <div class="assigned-strip"><span>✅ ${escapeHtml(o.assignedTo)}</span><span>printed ${fmtTime(o.printedAt)}</span></div>
+      <div class="card-actions"><button class="btn-secondary" data-reprint="${o.orderId}">🖨 Reprint</button></div>
     </div>`).join('');
 
   attachCardHandlers();
@@ -807,6 +810,15 @@ function attachCardHandlers() {
       if (!order) return;
       if (action === 'assign') openAssignModal(order);
       else openViewModal(order);
+    };
+  });
+  document.querySelectorAll('#board-view [data-reprint]').forEach(btn => {
+    btn.onclick = (e) => {
+      e.stopPropagation();
+      const orderId = btn.getAttribute('data-reprint');
+      const order = boardData.orders.find(o => o.orderId === orderId)
+        || (printedHistoryOrders || []).find(o => o.orderId === orderId);
+      if (order) printSlipForOrder(order);
     };
   });
 }
@@ -971,9 +983,18 @@ function renderProductionBoard() {
       </div>
       <ul class="item-list">${itemListHtml(o.items, 'Production')}</ul>
       <div class="assigned-strip"><span>✅ Completed</span><span>${fmtTime(o.productionCompletedAt)}</span></div>
+      <div class="card-actions">
+        <button class="btn-secondary" data-prod-incomplete="${o.orderId}">↩ Not complete</button>
+        <button class="btn-secondary" data-prod-reprint="${o.orderId}">🖨 Reprint</button>
+      </div>
     </div>`).join('');
 
   attachProductionCardHandlers();
+}
+
+function findProductionOrder(orderId) {
+  return (boardData.orders || []).find(o => o.orderId === orderId)
+    || (prodCompletedHistoryOrders || []).find(o => o.orderId === orderId);
 }
 
 function attachProductionCardHandlers() {
@@ -981,7 +1002,7 @@ function attachProductionCardHandlers() {
     btn.onclick = (e) => {
       e.stopPropagation();
       const orderId = btn.getAttribute('data-prod-print');
-      const order = boardData.orders.find(o => o.orderId === orderId);
+      const order = findProductionOrder(orderId);
       if (order) printProductionSlipForOrder(order);
     };
   });
@@ -989,11 +1010,30 @@ function attachProductionCardHandlers() {
     btn.onclick = (e) => {
       e.stopPropagation();
       const orderId = btn.getAttribute('data-prod-complete');
-      const order = boardData.orders.find(o => o.orderId === orderId);
+      const order = findProductionOrder(orderId);
       if (!order) return;
       if (!confirm(`Mark order ${order.sageRef} as complete? This removes it from the prep tally.`)) return;
       btn.disabled = true;
       apiPost('markProductionComplete', { orderId: orderId }).then(() => loadBoard(false)).catch(err => { alert(err.message); btn.disabled = false; });
+    };
+  });
+  document.querySelectorAll('[data-prod-incomplete]').forEach(btn => {
+    btn.onclick = (e) => {
+      e.stopPropagation();
+      const orderId = btn.getAttribute('data-prod-incomplete');
+      const order = findProductionOrder(orderId);
+      if (!order) return;
+      if (!confirm(`Mark order ${order.sageRef} as NOT complete? It'll move back to "Needs processing" and count in the prep tally again.`)) return;
+      btn.disabled = true;
+      apiPost('markProductionIncomplete', { orderId: orderId }).then(() => loadBoard(false)).catch(err => { alert(err.message); btn.disabled = false; });
+    };
+  });
+  document.querySelectorAll('[data-prod-reprint]').forEach(btn => {
+    btn.onclick = (e) => {
+      e.stopPropagation();
+      const orderId = btn.getAttribute('data-prod-reprint');
+      const order = findProductionOrder(orderId);
+      if (order) printProductionSlipForOrder(order);
     };
   });
 }
