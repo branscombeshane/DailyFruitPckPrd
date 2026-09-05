@@ -1,826 +1,1724 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-  <base target="_top">
-  <meta charset="utf-8">
-  <title>Daily Fruit - Dispatch</title>
-  <meta name="theme-color" content="#3F6C4B">
-  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='22' fill='%233F6C4B'/%3E%3Crect x='16' y='34' width='44' height='28' rx='3' fill='white'/%3E%3Crect x='60' y='44' width='22' height='18' rx='2' fill='white'/%3E%3Crect x='65' y='48' width='9' height='8' rx='1' fill='%233F6C4B'/%3E%3Ccircle cx='32' cy='65' r='8' fill='white'/%3E%3Ccircle cx='32' cy='65' r='3' fill='%233F6C4B'/%3E%3Ccircle cx='70' cy='65' r='8' fill='white'/%3E%3Ccircle cx='70' cy='65' r='3' fill='%233F6C4B'/%3E%3C/svg%3E">
-  <style>
-    :root {
-      --green: #3F6C4B;
-      --green-dark: #2c4c35;
-      --red: #c62828;
-      --amber: #e6a400;
-      --grey: #6b7280;
-      --bg: #f4f6f5;
-      --card: #ffffff;
-      --border: #dfe3e0;
-      --text: #1f2a24;
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Daily Fruit — Packing</title>
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA2NCA2NCI+PHJlY3Qgd2lkdGg9IjY0IiBoZWlnaHQ9IjY0IiByeD0iMTQiIGZpbGw9IiMzRjZDNEIiLz48dGV4dCB4PSIzMiIgeT0iNDQiIGZvbnQtZmFtaWx5PSJBcmlhbCwgc2Fucy1zZXJpZiIgZm9udC13ZWlnaHQ9IjcwMCIgZm9udC1zaXplPSIyOCIgZmlsbD0iI0ZGRkZGRiIgdGV4dC1hbmNob3I9Im1pZGRsZSI+UFA8L3RleHQ+PC9zdmc+">
+<meta name="theme-color" content="#3F6C4B">
+<style>
+  :root{
+    --green:#1e7d3c;
+    --green-dark:#145c2a;
+    --bg:#f4f6f4;
+    --card:#ffffff;
+    --ink:#182018;
+    --muted:#6b7a6d;
+    --line:#e1e7e1;
+    --warn:#e8a325;
+    --warn-bg:#fff6e2;
+    --crit:#d1392b;
+    --crit-bg:#fdecea;
+    --ok-bg:#eef7ee;
+    --info:#3a6ea8;
+    --info-bg:#eaf1fa;
+  }
+  *{box-sizing:border-box;}
+  html,body{height:100%;}
+  body{
+    margin:0;
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    background:var(--bg);
+    color:var(--ink);
+    -webkit-tap-highlight-color:transparent;
+    user-select:none;
+  }
+  input,textarea{user-select:text;}
+  button{font-family:inherit;cursor:pointer;}
+  .hidden{display:none !important;}
+
+  /* ---------- top bar ---------- */
+  #topbar{
+    display:flex;align-items:center;justify-content:space-between;
+    padding:14px 20px;background:var(--green);color:#fff;
+    position:sticky;top:0;z-index:20;
+  }
+  #topbar .title{font-size:20px;font-weight:700;letter-spacing:.3px;}
+  #topbar .sub{font-size:13px;opacity:.85;font-weight:400;}
+  #topbar .right{display:flex;align-items:center;gap:10px;}
+  .pill-btn{
+    background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.4);
+    color:#fff;padding:8px 14px;border-radius:20px;font-size:14px;font-weight:600;
+  }
+  .icon-btn{
+    background:rgba(255,255,255,.15);border:none;color:#fff;
+    width:38px;height:38px;border-radius:50%;font-size:18px;
+    display:flex;align-items:center;justify-content:center;
+  }
+  .view-toggle{display:flex;background:rgba(255,255,255,.15);border-radius:20px;padding:3px;gap:2px;}
+  .view-toggle-btn{background:transparent;border:none;color:#fff;padding:8px 16px;border-radius:16px;font-size:14px;font-weight:700;opacity:.85;}
+  .view-toggle-btn.active{background:#fff;color:var(--green-dark);opacity:1;}
+
+  /* ---------- packer tiles (used inside the assign modal) ---------- */
+  .tile-grid{
+    display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));
+    gap:16px;width:100%;max-width:900px;
+  }
+  .packer-tile{
+    background:var(--card);border:2px solid var(--line);border-radius:16px;
+    padding:26px 14px;font-size:19px;font-weight:700;color:var(--ink);
+    text-align:center;box-shadow:0 1px 3px rgba(0,0,0,.06);
+  }
+  .packer-tile:active{background:var(--green);color:#fff;border-color:var(--green);}
+  .empty-note{color:var(--muted);text-align:center;font-size:15px;max-width:420px;}
+
+  /* ---------- board ---------- */
+  #board-view{padding:18px;max-width:1400px;margin:0 auto;}
+  .section-heading{
+    font-size:15px;font-weight:700;color:var(--muted);text-transform:uppercase;
+    letter-spacing:.6px;margin:26px 0 12px;display:flex;align-items:center;gap:10px;
+  }
+  .section-heading .count{
+    background:var(--line);color:var(--ink);border-radius:12px;padding:1px 9px;font-size:13px;
+  }
+  .order-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(310px,1fr));gap:14px;}
+
+  .tally-panel{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:14px;}
+  .tally-card{background:var(--card);border-radius:14px;border:2px solid var(--line);padding:14px 16px;}
+  .tally-family{font-size:16px;font-weight:800;display:flex;justify-content:space-between;align-items:baseline;gap:8px;}
+  .tally-family-total{font-size:15px;font-weight:800;color:var(--green-dark);white-space:nowrap;}
+  .tally-variant{display:flex;justify-content:space-between;gap:8px;font-size:13.5px;color:var(--muted);padding:4px 0;border-top:1px dashed var(--line);margin-top:6px;}
+  .tally-variant:first-of-type{margin-top:8px;}
+  .prod-actions{display:flex;gap:8px;margin-top:12px;}
+  .prod-actions .btn-secondary{flex:1;margin-top:0;}
+  .prod-actions .btn-primary{flex:1;margin-top:0;}
+  .prod-done-note{font-size:12px;color:var(--green-dark);font-weight:600;margin-top:2px;}
+  .card-actions{display:flex;gap:8px;margin-top:12px;}
+  .card-actions .btn-secondary{flex:1;margin-top:0;padding:9px 12px;font-size:13px;}
+  .order-card{
+    background:var(--card);border-radius:14px;border:2px solid var(--line);
+    padding:16px;box-shadow:0 1px 3px rgba(0,0,0,.06);position:relative;overflow:hidden;
+  }
+  .order-card.flag-ok{border-left:8px solid #79b98a;}
+  .order-card.flag-warn{border-left:8px solid var(--warn);background:var(--warn-bg);}
+  .order-card.flag-crit{border-left:8px solid var(--crit);background:var(--crit-bg);animation:pulse 1.6s infinite;}
+  .order-card.assigned{border-left:8px solid var(--green);opacity:.92;}
+  .order-card.scheduled{border-left:8px solid var(--info);}
+  @keyframes pulse{0%,100%{box-shadow:0 1px 3px rgba(0,0,0,.06);}50%{box-shadow:0 0 0 4px rgba(209,57,43,.18);}}
+
+  .order-card-head{display:flex;justify-content:space-between;align-items:flex-start;gap:8px;}
+  .order-ref{font-size:18px;font-weight:800;}
+  .order-customer{font-size:14px;color:var(--muted);margin-top:2px;}
+  .order-arrived{font-size:12px;color:var(--muted);margin-top:2px;}
+  .order-deliver{font-size:12px;color:var(--info);font-weight:700;margin-top:2px;}
+  .order-overdue{font-size:12px;color:var(--crit);font-weight:700;margin-top:2px;}
+  .schedule-badge{
+    font-size:13px;font-weight:700;padding:4px 10px;border-radius:20px;white-space:nowrap;
+    background:var(--info-bg);color:var(--info);
+  }
+  .age-badge{
+    font-size:13px;font-weight:700;padding:4px 10px;border-radius:20px;white-space:nowrap;
+    background:#e9efe9;color:var(--green-dark);
+  }
+  .flag-warn .age-badge{background:var(--warn);color:#3a2a00;}
+  .flag-crit .age-badge{background:var(--crit);color:#fff;}
+
+  .item-list{margin:12px 0 6px;padding:0;list-style:none;}
+  .item-list li{
+    display:flex;justify-content:space-between;gap:10px;font-size:14px;
+    padding:5px 0;border-bottom:1px dashed var(--line);
+  }
+  .item-list li:last-child{border-bottom:none;}
+  .item-desc{font-weight:600;}
+  .item-desc.is-production{color:var(--muted);font-weight:500;}
+  .item-qty{white-space:nowrap;color:var(--muted);font-variant-numeric:tabular-nums;}
+  .dept-tag{
+    font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;
+    padding:1px 6px;border-radius:4px;margin-left:6px;vertical-align:middle;
+  }
+  .dept-tag.packing{background:var(--ok-bg);color:var(--green-dark);}
+  .dept-tag.production{background:#ece7f7;color:#5b3fa0;}
+  .dept-tag.unclassified{background:var(--warn);color:#3a2a00;}
+
+  .item-summary{margin:10px 0 2px;font-size:13.5px;color:var(--muted);display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
+
+  /* ---------- quick bar: search + jump-to-section counts ---------- */
+  #quick-bar{
+    position:sticky;top:0;z-index:15;background:var(--bg);
+    padding:10px 18px;display:flex;align-items:center;gap:14px;flex-wrap:wrap;
+    border-bottom:1px solid var(--line);max-width:1400px;margin:0 auto;
+  }
+  #order-search{
+    padding:9px 14px;border:2px solid var(--line);border-radius:20px;font-size:14px;
+    min-width:220px;flex:0 1 260px;background:var(--card);color:var(--ink);
+  }
+  .quick-pills{display:flex;gap:8px;flex-wrap:wrap;}
+  .quick-pill{
+    background:var(--card);border:2px solid var(--line);border-radius:20px;
+    padding:6px 14px;font-size:13.5px;font-weight:700;color:var(--ink);
+    display:flex;align-items:center;gap:6px;
+  }
+  .quick-pill b{color:var(--green-dark);font-weight:800;}
+  .section-heading{scroll-margin-top:var(--sticky-h, 120px);}
+  .order-card.search-hidden{display:none;}
+
+  .assigned-strip{
+    margin-top:10px;font-size:13.5px;font-weight:600;color:var(--green-dark);
+    display:flex;justify-content:space-between;align-items:center;
+  }
+  .assign-btn{
+    width:100%;margin-top:12px;background:var(--green);color:#fff;border:none;
+    padding:13px;border-radius:10px;font-size:16px;font-weight:700;
+  }
+  .assign-btn:active{background:var(--green-dark);}
+
+  .empty-board{color:var(--muted);text-align:center;padding:60px 20px;font-size:16px;}
+
+  /* ---------- modal ---------- */
+  .modal-overlay{
+    position:fixed;inset:0;background:rgba(10,20,10,.55);
+    display:flex;align-items:center;justify-content:center;z-index:100;padding:16px;
+  }
+  .modal-box{
+    background:#fff;border-radius:16px;padding:24px;max-width:440px;width:100%;
+    max-height:88vh;overflow-y:auto;
+  }
+  .modal-box h2{margin:0 0 6px;font-size:20px;}
+  .modal-box .modal-sub{color:var(--muted);font-size:14px;margin-bottom:16px;}
+  .modal-actions{display:flex;gap:10px;margin-top:20px;}
+  .modal-actions button{
+    flex:1;padding:14px;border-radius:10px;font-size:16px;font-weight:700;border:none;
+  }
+  .btn-cancel{background:#eee;color:var(--ink);}
+  .btn-confirm{background:var(--green);color:#fff;}
+
+  /* ---------- packer tile keypad style ---------- */
+  .field{margin-bottom:14px;}
+  .field label{display:block;font-size:13px;font-weight:700;color:var(--muted);margin-bottom:5px;}
+  .field input,.field textarea,.field select{
+    width:100%;padding:11px 12px;border:2px solid var(--line);border-radius:9px;font-size:15px;
+  }
+
+  /* ---------- admin ---------- */
+  #admin-overlay{
+    position:fixed;inset:0;background:var(--bg);z-index:90;overflow-y:auto;
+  }
+  .admin-header{
+    background:var(--green-dark);color:#fff;padding:16px 20px;
+    display:flex;justify-content:space-between;align-items:center;position:sticky;top:0;
+  }
+  .admin-tabs{display:flex;gap:8px;padding:14px 20px 0;}
+  .admin-tab{
+    padding:10px 16px;border-radius:10px 10px 0 0;background:#e6ece6;border:none;
+    font-weight:700;color:var(--muted);font-size:14px;
+  }
+  .admin-tab.active{background:#fff;color:var(--green-dark);}
+  .admin-panel{background:#fff;padding:22px;max-width:760px;margin:0 auto 40px;border-radius:0 0 14px 14px;}
+  .admin-panel h3{margin-top:0;}
+  .btn-primary{background:var(--green);color:#fff;border:none;padding:12px 18px;border-radius:9px;font-weight:700;font-size:15px;}
+  .btn-secondary{background:#eee;color:var(--ink);border:none;padding:10px 16px;border-radius:9px;font-weight:700;font-size:14px;}
+  .packer-row{display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--line);}
+  .toggle{
+    width:46px;height:26px;border-radius:14px;background:#ccc;position:relative;border:none;flex-shrink:0;
+  }
+  .toggle.on{background:var(--green);}
+  .toggle .knob{
+    position:absolute;top:3px;left:3px;width:20px;height:20px;border-radius:50%;background:#fff;
+    transition:left .15s;
+  }
+  .toggle.on .knob{left:23px;}
+  .result-box{margin-top:14px;padding:12px 14px;border-radius:9px;background:var(--ok-bg);font-size:14px;}
+  .result-box.error{background:var(--crit-bg);color:var(--crit);}
+  .log-row{font-size:13px;color:var(--muted);padding:4px 0;border-bottom:1px dashed var(--line);}
+
+  /* ---------- print slip ---------- */
+  #print-slip{display:none;}
+  @media print{
+    body *{visibility:hidden;}
+    #print-slip, #print-slip *{visibility:visible;}
+    #print-slip{
+      display:block;position:absolute;top:0;left:0;width:100%;padding:20px;
     }
-    * { box-sizing: border-box; }
-    body {
-      margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-      background: var(--bg); color: var(--text); -webkit-tap-highlight-color: transparent;
-    }
-    button { font-family: inherit; cursor: pointer; }
-    input { font-family: inherit; }
-    .screen { display: none; min-height: 100vh; flex-direction: column; }
-    .screen.active { display: flex; }
+    .slip-header{display:flex;justify-content:space-between;border-bottom:3px solid #000;padding-bottom:10px;margin-bottom:14px;}
+    .slip-header h1{font-size:22px;margin:0;}
+    .slip-meta{font-size:13px;margin-top:4px;}
+    .slip-items{width:100%;border-collapse:collapse;margin-top:10px;}
+    .slip-items th,.slip-items td{border:1px solid #000;padding:6px 8px;font-size:13px;text-align:left;}
+    .slip-items .prod-row td{background:#eee;}
+    .slip-footer{margin-top:18px;font-size:12px;display:flex;justify-content:space-between;}
+  }
 
-    /* --- Top bar --- */
-    .topbar {
-      display: flex; align-items: center; justify-content: space-between;
-      padding: 14px 18px; background: var(--green-dark); color: #fff; flex-wrap: wrap; gap: 10px;
-    }
-    .topbar .title { font-size: 18px; font-weight: 700; }
-    .topbar .sub { font-size: 13px; opacity: 0.85; }
-    .topbar .actions { display: flex; gap: 8px; align-items: center; }
-    .topbar button {
-      background: rgba(255,255,255,0.15); color: #fff; border: 1px solid rgba(255,255,255,0.4);
-      border-radius: 8px; padding: 10px 14px; font-size: 14px;
-    }
-    .topbar button:active { background: rgba(255,255,255,0.3); }
+  .conn-banner{
+    position:fixed;bottom:0;left:0;right:0;background:var(--crit);color:#fff;
+    text-align:center;padding:9px;font-size:14px;font-weight:600;z-index:200;
+  }
+  .conn-banner #conn-banner-detail{font-weight:400;opacity:.85;font-size:12.5px;}
 
-    .content { flex: 1; padding: 18px; max-width: 720px; width: 100%; margin: 0 auto; }
-
-    /* --- Buttons --- */
-    .btn {
-      display: inline-flex; align-items: center; justify-content: center;
-      border: none; border-radius: 10px; padding: 14px 20px; font-size: 16px; font-weight: 600;
-    }
-    .btn-primary { background: var(--green); color: #fff; }
-    .btn-primary:active { background: var(--green-dark); }
-    .btn-secondary { background: #fff; color: var(--text); border: 1px solid var(--border); }
-    .btn-danger { background: var(--red); color: #fff; }
-    .btn-block { width: 100%; }
-    .btn:disabled { opacity: 0.5; }
-
-    /* --- Cards / tiles --- */
-    .card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 16px; margin-bottom: 12px; }
-    .tile {
-      background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 18px;
-      margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center;
-    }
-    .tile:active { background: #eef3ef; }
-    .tile .name { font-size: 17px; font-weight: 700; }
-    .tile .meta { font-size: 13px; color: var(--grey); margin-top: 2px; }
-
-    .badge { display: inline-block; padding: 3px 10px; border-radius: 999px; font-size: 12px; font-weight: 700; }
-    .badge-pending { background: #eceff1; color: var(--grey); }
-    .badge-progress { background: #fff3cd; color: #8a6100; }
-    .badge-complete { background: #e2f2e4; color: var(--green-dark); }
-    .badge-dispatched { background: #dcedc8; color: var(--green-dark); }
-
-    input[type=text], input[type=password], input[type=number] {
-      width: 100%; padding: 14px; font-size: 16px; border: 1px solid var(--border); border-radius: 10px; margin-bottom: 12px;
-    }
-    label { font-size: 13px; font-weight: 600; color: var(--grey); display: block; margin-bottom: 6px; }
-    .error { color: var(--red); font-size: 14px; margin: 8px 0; min-height: 18px; }
-    .hint { color: var(--grey); font-size: 13px; }
-
-    /* --- Tabs --- */
-    .tabs { display: flex; gap: 8px; margin-bottom: 16px; }
-    .tab-btn {
-      flex: 1; padding: 12px; text-align: center; border-radius: 10px; border: 1px solid var(--border);
-      background: #fff; font-weight: 700; color: var(--grey);
-    }
-    .tab-btn.active { background: var(--green); color: #fff; border-color: var(--green); }
-    .tabpane { display: none; }
-    .tabpane.active { display: block; }
-
-    /* --- Tray tally --- */
-    .tally { display: flex; align-items: center; justify-content: center; gap: 20px; margin: 30px 0; }
-    .tally button {
-      width: 64px; height: 64px; border-radius: 50%; border: none; font-size: 28px; font-weight: 700;
-      background: var(--green); color: #fff;
-    }
-    .tally .count { font-size: 48px; font-weight: 800; min-width: 90px; text-align: center; }
-
-    /* --- Order item row --- */
-    .item-row { padding: 14px 0; border-bottom: 1px solid var(--border); }
-    .item-row:last-child { border-bottom: none; }
-    .item-row .desc { font-weight: 700; font-size: 16px; }
-    .item-row .qty { color: var(--grey); font-size: 14px; margin-top: 2px; }
-    .item-actions { display: flex; gap: 10px; margin-top: 10px; }
-    .item-actions .btn { flex: 1; padding: 12px; font-size: 14px; }
-    .item-row.resolved-packed { opacity: 0.7; }
-    .item-row.resolved-nostock { opacity: 0.7; }
-    .status-line { font-size: 13px; font-weight: 700; margin-top: 8px; }
-    .status-line.packed { color: var(--green-dark); }
-    .status-line.nostock { color: var(--red); }
-
-    .modal-backdrop {
-      position: fixed; inset: 0; background: rgba(0,0,0,0.4); display: none;
-      align-items: flex-end; justify-content: center; z-index: 50;
-    }
-    .modal-backdrop.active { display: flex; }
-    .modal {
-      background: #fff; width: 100%; max-width: 480px; border-radius: 16px 16px 0 0;
-      padding: 20px; max-height: 80vh; overflow-y: auto;
-    }
-    .reason-option {
-      padding: 14px; border: 1px solid var(--border); border-radius: 10px; margin-bottom: 8px; font-size: 15px;
-    }
-    .reason-option:active { background: #fbeaea; border-color: var(--red); }
-
-    .empty { text-align: center; color: var(--grey); padding: 40px 20px; }
-
-    .link-btn { background: none; border: none; color: var(--grey); font-size: 13px; text-decoration: underline; }
-
-    .admin-nav { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
-    .admin-nav button { padding: 10px 14px; border-radius: 8px; border: 1px solid var(--border); background: #fff; font-size: 14px; }
-    .admin-nav button.active { background: var(--green-dark); color: #fff; border-color: var(--green-dark); }
-    table { width: 100%; border-collapse: collapse; font-size: 14px; }
-    th, td { text-align: left; padding: 8px; border-bottom: 1px solid var(--border); }
-    .row-inline { display: flex; gap: 8px; align-items: center; }
-    .row-inline input { margin-bottom: 0; }
-    .switch-label { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 400; color: var(--text); }
-  </style>
+  /* ---------- site lock screen ---------- */
+  #lock-screen{
+    position:fixed;inset:0;background:var(--green-dark);z-index:300;
+    display:flex;align-items:center;justify-content:center;padding:20px;
+  }
+  .lock-box{
+    background:#fff;border-radius:18px;padding:36px 30px;max-width:360px;width:100%;text-align:center;
+  }
+  .lock-badge{font-size:40px;margin-bottom:6px;}
+  .lock-box h1{font-size:21px;margin:0 0 6px;color:var(--green-dark);}
+  .lock-box p{color:var(--muted);font-size:14px;margin:0 0 20px;}
+  .lock-box input{
+    width:100%;padding:14px;border:2px solid var(--line);border-radius:10px;font-size:20px;
+    text-align:center;letter-spacing:4px;margin-bottom:12px;
+  }
+</style>
 </head>
 <body>
 
-  <!-- ============================= LOGIN ============================= -->
-  <div id="screen-login" class="screen active">
-    <div class="topbar"><div class="title">Daily Fruit - Dispatch</div></div>
-    <div class="content">
-      <div class="card" style="margin-top:40px;">
-        <label>Name</label>
-        <input type="text" id="login-name" autocomplete="off" placeholder="Your name">
-        <label>PIN</label>
-        <input type="password" id="login-pin" inputmode="numeric" placeholder="PIN">
-        <div class="error" id="login-error"></div>
-        <button class="btn btn-primary btn-block" onclick="doLogin()">Sign in</button>
-      </div>
-      <div style="text-align:center;">
-        <button class="link-btn" onclick="openAdminGate()">Admin</button>
-      </div>
+<!-- ============ SITE LOCK SCREEN ============ -->
+<div id="lock-screen" class="hidden">
+  <div class="lock-box">
+    <div class="lock-badge">🍈</div>
+    <h1>Daily Fruit — Packing</h1>
+    <p>Staff only. Enter the floor passcode to continue.</p>
+    <input type="password" id="lock-input" inputmode="numeric" placeholder="Passcode" autocomplete="off">
+    <div class="result-box error hidden" id="lock-error"></div>
+    <button class="btn-confirm" id="lock-unlock-btn" style="width:100%;padding:15px;font-size:17px;">Unlock</button>
+  </div>
+</div>
+
+<!-- ============ TOP BAR ============ -->
+<div id="topbar">
+  <div>
+    <div class="title" id="company-title">Daily Fruit — Packing</div>
+  </div>
+  <div class="right">
+    <div class="view-toggle">
+      <button class="view-toggle-btn" data-view="packing" id="view-toggle-packing">Packing</button>
+      <button class="view-toggle-btn" data-view="production" id="view-toggle-production">Production</button>
+    </div>
+    <button class="icon-btn" id="admin-gear-btn" title="Admin">⚙</button>
+  </div>
+</div>
+
+<!-- ============ QUICK BAR: search + jump-to-section counts ============ -->
+<div id="quick-bar">
+  <input type="search" id="order-search" placeholder="Search order # or customer…">
+  <div class="quick-pills" id="quick-pills-packing"></div>
+  <div class="quick-pills hidden" id="quick-pills-production"></div>
+</div>
+
+<!-- ============ BOARD ============ -->
+<div id="board-view" class="hidden">
+  <div class="section-heading" id="unassigned-heading">Needs a packer <span class="count" id="unassigned-count">0</span></div>
+  <div class="order-grid" id="unassigned-grid"></div>
+  <div class="empty-board hidden" id="unassigned-empty">All caught up — no unassigned orders 🎉</div>
+
+  <div class="section-heading" id="assigned-heading">In progress <span class="count" id="assigned-count">0</span></div>
+  <div class="order-grid" id="assigned-grid"></div>
+
+  <div class="section-heading" id="scheduled-heading">Scheduled <span class="count" id="scheduled-count">0</span></div>
+  <div class="order-grid" id="scheduled-grid"></div>
+  <div class="empty-board hidden" id="scheduled-empty">Nothing loaded ahead of time right now.</div>
+
+  <div class="section-heading" id="printed-heading">
+    <span id="printed-heading-label">Printed today</span> <span class="count" id="printed-count">0</span>
+    <select id="printed-packer-filter" style="margin-left:auto;padding:6px 10px;border:2px solid var(--line);border-radius:8px;font-size:14px;text-transform:none;letter-spacing:normal;font-weight:600;color:var(--ink);background:var(--card);">
+      <option value="">All packers</option>
+    </select>
+    <input type="date" id="printed-date-input" style="padding:6px 8px;border:2px solid var(--line);border-radius:8px;font-size:14px;text-transform:none;letter-spacing:normal;font-weight:600;color:var(--ink);">
+  </div>
+  <div class="order-grid" id="printed-grid"></div>
+  <div class="empty-board hidden" id="printed-empty">No orders were printed on this day.</div>
+</div>
+
+<!-- ============ PRODUCTION BOARD ============ -->
+<div id="production-view" class="hidden">
+  <div class="section-heading">Prep totals <span class="count" id="tally-count">0</span></div>
+  <div class="tally-panel" id="production-tally"></div>
+  <div class="empty-board hidden" id="tally-empty">Nothing to prep right now.</div>
+
+  <div class="section-heading" id="prod-needs-heading">Needs processing <span class="count" id="prod-needs-count">0</span></div>
+  <div class="order-grid" id="prod-needs-grid"></div>
+  <div class="empty-board hidden" id="prod-needs-empty">All caught up — nothing waiting on production 🎉</div>
+
+  <div class="section-heading" id="prod-scheduled-heading">Scheduled <span class="count" id="prod-scheduled-count">0</span></div>
+  <div class="order-grid" id="prod-scheduled-grid"></div>
+  <div class="empty-board hidden" id="prod-scheduled-empty">Nothing loaded ahead of time right now.</div>
+
+  <div class="section-heading" id="prod-completed-heading">
+    <span id="prod-completed-heading-label">Completed today</span> <span class="count" id="prod-completed-count">0</span>
+    <input type="date" id="prod-completed-date-input" style="margin-left:auto;padding:6px 8px;border:2px solid var(--line);border-radius:8px;font-size:14px;text-transform:none;letter-spacing:normal;font-weight:600;color:var(--ink);">
+  </div>
+  <div class="order-grid" id="prod-completed-grid"></div>
+  <div class="empty-board hidden" id="prod-completed-empty">Nothing completed on this day.</div>
+</div>
+
+<!-- ============ ASSIGN MODAL ============ -->
+<div class="modal-overlay hidden" id="assign-modal">
+  <div class="modal-box">
+    <h2 id="assign-modal-ref"></h2>
+    <div class="modal-sub" id="assign-modal-customer"></div>
+    <ul class="item-list" id="assign-modal-items"></ul>
+    <div class="modal-sub" style="margin:16px 0 8px;font-weight:700;color:var(--ink);">Who's packing this?</div>
+    <div class="tile-grid" id="assign-modal-packer-grid" style="grid-template-columns:repeat(auto-fill,minmax(130px,1fr));"></div>
+    <div class="empty-note hidden" id="assign-modal-no-packers" style="text-align:left;padding:10px 0;">
+      No active packers yet. Tap the ⚙ icon to add packers in Admin.
+    </div>
+    <div class="modal-actions">
+      <button class="btn-cancel" id="assign-cancel-btn" style="flex:1;">Cancel</button>
     </div>
   </div>
+</div>
 
-  <!-- ============================= TRUCK SELECT ============================= -->
-  <div id="screen-trucks" class="screen">
-    <div class="topbar">
-      <div>
-        <div class="title">Select a truck</div>
-        <div class="sub" id="trucks-checker-name"></div>
-      </div>
-      <div class="actions"><button onclick="logout()">Log out</button></div>
-    </div>
-    <div class="content" id="trucks-list"></div>
-  </div>
-
-  <!-- ============================= TRUCK WORKSPACE ============================= -->
-  <div id="screen-workspace" class="screen">
-    <div class="topbar">
-      <div>
-        <div class="title" id="ws-truck-name"></div>
-        <div class="sub" id="ws-checker-name"></div>
-      </div>
-      <div class="actions">
-        <button onclick="showTrucks()">Switch truck</button>
-        <button onclick="logout()">Log out</button>
-      </div>
-    </div>
-    <div class="content">
-      <div class="tabs">
-        <button class="tab-btn active" id="tab-btn-trays" onclick="showWsTab('trays')">Fruit Trays</button>
-        <button class="tab-btn" id="tab-btn-orders" onclick="showWsTab('orders')">Orders</button>
-      </div>
-
-      <!-- Fruit Trays pane -->
-      <div class="tabpane active" id="tabpane-trays">
-        <div class="card">
-          <div class="hint">Count of fruit trays loaded on this truck</div>
-          <div class="tally">
-            <button onclick="adjustTray(-1)">-</button>
-            <div class="count" id="tray-count">0</div>
-            <button onclick="adjustTray(1)">+</button>
-          </div>
-          <div class="hint" id="tray-updated" style="text-align:center;"></div>
-        </div>
-      </div>
-
-      <!-- Orders pane -->
-      <div class="tabpane" id="tabpane-orders">
-        <input type="text" id="order-search" placeholder="Search by order number or customer" oninput="debouncedSearch()">
-        <div id="orders-list"></div>
-      </div>
-
-      <div class="card" style="margin-top:20px;">
-        <button class="btn btn-danger btn-block" onclick="attemptDispatch()">Mark truck as Dispatched</button>
-      </div>
+<!-- ============ VIEW (already assigned) MODAL ============ -->
+<div class="modal-overlay hidden" id="view-modal">
+  <div class="modal-box">
+    <h2 id="view-modal-ref"></h2>
+    <div class="modal-sub" id="view-modal-customer"></div>
+    <div class="assigned-strip" id="view-modal-assigned"></div>
+    <ul class="item-list" id="view-modal-items"></ul>
+    <div class="modal-actions">
+      <button class="btn-cancel" id="view-close-btn" style="flex:1;">Close</button>
     </div>
   </div>
+</div>
 
-  <!-- ============================= ORDER DETAIL ============================= -->
-  <div id="screen-order" class="screen">
-    <div class="topbar">
-      <div>
-        <div class="title" id="od-order-number"></div>
-        <div class="sub" id="od-customer"></div>
-      </div>
-      <div class="actions"><button onclick="showWsTab('orders')">Back</button></div>
-    </div>
-    <div class="content">
-      <div id="od-warning" class="error"></div>
-      <div class="card" id="od-items"></div>
+<!-- ============ ADMIN PIN MODAL ============ -->
+<div class="modal-overlay hidden" id="pin-modal">
+  <div class="modal-box">
+    <h2>Admin PIN</h2>
+    <div class="field"><input type="password" id="pin-input" inputmode="numeric" placeholder="Enter PIN"></div>
+    <div class="result-box error hidden" id="pin-error">Incorrect PIN</div>
+    <div class="modal-actions">
+      <button class="btn-cancel" id="pin-cancel-btn">Cancel</button>
+      <button class="btn-confirm" id="pin-confirm-btn">Enter</button>
     </div>
   </div>
+</div>
 
-  <!-- No-stock reason picker -->
-  <div class="modal-backdrop" id="reason-modal">
-    <div class="modal">
-      <h3 style="margin-top:0;">Reason for no stock</h3>
-      <div id="reason-options"></div>
-      <button class="btn btn-secondary btn-block" onclick="closeReasonModal()">Cancel</button>
-    </div>
+<!-- ============ ADMIN OVERLAY ============ -->
+<div id="admin-overlay" class="hidden">
+  <div class="admin-header">
+    <div style="font-weight:700;font-size:17px;">Admin</div>
+    <button class="pill-btn" id="admin-close-btn">Close</button>
+  </div>
+  <div class="admin-tabs">
+    <button class="admin-tab active" data-tab="import">Import orders</button>
+    <button class="admin-tab" data-tab="products">Products</button>
+    <button class="admin-tab" data-tab="packers">Packers</button>
+    <button class="admin-tab" data-tab="settings">Settings</button>
   </div>
 
-  <!-- Dispatch confirmation -->
-  <div class="modal-backdrop" id="dispatch-modal">
-    <div class="modal">
-      <h3 style="margin-top:0;">Dispatch this truck?</h3>
-      <div id="dispatch-warnings"></div>
-      <button class="btn btn-danger btn-block" style="margin-bottom:10px;" onclick="confirmDispatch()">Yes, dispatch anyway</button>
-      <button class="btn btn-secondary btn-block" onclick="closeDispatchModal()">Cancel</button>
+  <div class="admin-panel" id="tab-import">
+    <h3>Import orders from Sage</h3>
+    <p style="color:var(--muted);font-size:14px;">Export your order/invoice list from Sage as a CSV, then upload it or paste the contents below. Rows are grouped into orders by the order/invoice number. Items already imported (same order/invoice number) are skipped automatically. Sage's order export doesn't include a category per line, so each item's Packing/Production split comes from the <strong>Products</strong> tab instead — keep that list up to date.</p>
+    <div class="field">
+      <label>Upload CSV file</label>
+      <input type="file" id="csv-file-input" accept=".csv,text/csv">
     </div>
+    <div class="field">
+      <label>...or paste CSV contents</label>
+      <textarea id="csv-text-input" rows="8" placeholder="Order,Customer,Code,Description,Qty,Unit&#10;SO-1001,ABC Foods,BUT001,Butternut - kg,20,kg"></textarea>
+    </div>
+    <button class="btn-primary" id="import-btn">Import</button>
+    <div class="result-box hidden" id="import-result"></div>
+    <h3 style="margin-top:26px;">Recent imports</h3>
+    <div id="import-log-list" style="max-height:200px;overflow-y:auto;"></div>
   </div>
 
-  <!-- ============================= ADMIN GATE ============================= -->
-  <div id="screen-admin-gate" class="screen">
-    <div class="topbar"><div class="title">Admin</div><div class="actions"><button onclick="showLogin()">Back</button></div></div>
-    <div class="content">
-      <div class="card" style="margin-top:40px;">
-        <label>Admin PIN</label>
-        <input type="password" id="admin-pin-input" inputmode="numeric">
-        <div class="error" id="admin-gate-error"></div>
-        <button class="btn btn-primary btn-block" onclick="doAdminLogin()">Enter</button>
-      </div>
+  <div class="admin-panel hidden" id="tab-products">
+    <h3>Unclassified products</h3>
+    <p style="color:var(--muted);font-size:14px;">Order lines whose product code wasn't found in the list below — they defaulted to Packing on the board. Classify them here (or via a fresh product-list import) and any matching orders already on the board are corrected automatically.</p>
+    <div id="needs-review-list"></div>
+    <div class="empty-note hidden" id="needs-review-empty" style="text-align:left;">Nothing outstanding — every product on the board is classified.</div>
+
+    <h3 style="margin-top:26px;">Import the Sage product list</h3>
+    <p style="color:var(--muted);font-size:14px;">Export Sage's item/product list (code, description, category) as a CSV. New products get added there periodically, so re-export and re-import this every so often (e.g. daily) to pick up anything new — importing only ever <strong>adds</strong> products that aren't in the list below yet; it never changes the category of a product that's already there, so anything you've classified here won't get overwritten by a stale or re-categorised Sage export.</p>
+    <div class="field">
+      <label>Upload CSV file</label>
+      <input type="file" id="products-csv-file-input" accept=".csv,text/csv">
     </div>
+    <div class="field">
+      <label>...or paste CSV contents</label>
+      <textarea id="products-csv-text-input" rows="6" placeholder="Code,Description,Category&#10;BUT001,Butternut,Fresh&#10;BUT002,Butternut - diced,Prepped"></textarea>
+    </div>
+    <button class="btn-primary" id="import-products-btn">Import</button>
+    <div class="result-box hidden" id="import-products-result"></div>
+
+    <h3 style="margin-top:26px;">All products (<span id="products-count">0</span>)</h3>
+    <p style="color:var(--muted);font-size:14px;">Change any product's category here at any time — not just newly unclassified ones.</p>
+    <div class="field">
+      <input type="text" id="products-filter-input" placeholder="Filter by code or description…">
+    </div>
+    <div id="products-list" style="max-height:400px;overflow-y:auto;"></div>
   </div>
 
-  <!-- ============================= ADMIN ============================= -->
-  <div id="screen-admin" class="screen">
-    <div class="topbar">
-      <div class="title">Admin</div>
-      <div class="actions"><button onclick="showLogin()">Exit Admin</button></div>
+  <div class="admin-panel hidden" id="tab-packers">
+    <h3>Packers</h3>
+    <p style="color:var(--muted);font-size:14px;">These names appear as tap tiles on the packing screen. Switch a packer off instead of deleting them if they might come back.</p>
+    <div id="packers-admin-list"></div>
+    <div class="field" style="margin-top:16px;">
+      <label>Add a packer</label>
+      <input type="text" id="new-packer-name" placeholder="Full name">
     </div>
-    <div class="content">
-      <div class="admin-nav">
-        <button class="active" onclick="showAdminPane('checkers', this)">Checkers</button>
-        <button onclick="showAdminPane('trucks', this)">Trucks</button>
-        <button onclick="showAdminPane('reasons', this)">No-Stock Reasons</button>
-        <button onclick="showAdminPane('datasource', this)">Data Source</button>
-        <button onclick="showAdminPane('overview', this)">Today's Trucks</button>
-        <button onclick="showAdminPane('settings', this)">Settings</button>
-      </div>
+    <button class="btn-primary" id="add-packer-btn">Add packer</button>
+  </div>
 
-      <div class="admin-pane" id="admin-checkers">
-        <div class="card">
-          <h3 style="margin-top:0;">Add checker</h3>
-          <div class="row-inline">
-            <input type="text" id="new-checker-name" placeholder="Name">
-            <input type="text" id="new-checker-pin" placeholder="PIN" style="max-width:100px;">
-            <button class="btn btn-primary" onclick="addCheckerUi()">Add</button>
-          </div>
-        </div>
-        <div class="card"><table id="checkers-table"></table></div>
-      </div>
+  <div class="admin-panel hidden" id="tab-settings">
+    <h3>Settings</h3>
+    <div class="field"><label>Company name</label><input type="text" id="set-company"></div>
+    <div class="field"><label>Flag orders yellow after (minutes unassigned)</label><input type="number" id="set-warn"></div>
+    <div class="field"><label>Flag orders red after (minutes unassigned)</label><input type="number" id="set-crit"></div>
+    <div class="field"><label>Sage categories that mean "Production" (comma-separated)</label><input type="text" id="set-prod-cats"></div>
+    <div class="field"><label>Board refresh interval (seconds)</label><input type="number" id="set-refresh"></div>
+    <div class="field"><label>Admin PIN</label><input type="text" id="set-pin"></div>
+    <div class="field">
+      <label>Floor passcode (gates the whole app before anyone sees an order)</label>
+      <input type="text" id="set-site-passcode">
+      <p style="color:var(--muted);font-size:12.5px;margin:6px 0 0;">Changing this signs every device out — everyone (including this one) will need the new passcode next time they load the page.</p>
+    </div>
+    <button class="btn-primary" id="save-settings-btn">Save settings</button>
+    <div class="result-box hidden" id="settings-result"></div>
+  </div>
+</div>
 
-      <div class="admin-pane" id="admin-trucks" style="display:none;">
-        <div class="card">
-          <h3 style="margin-top:0;">Add truck</h3>
-          <input type="text" id="new-truck-name" placeholder="Name / registration">
-          <input type="text" id="new-truck-driver" placeholder="Driver (optional)">
-          <input type="text" id="new-truck-route" placeholder="Route / area (optional)">
-          <button class="btn btn-primary btn-block" onclick="addTruckUi()">Add</button>
-        </div>
-        <div class="card"><table id="trucks-table"></table></div>
-      </div>
-
-      <div class="admin-pane" id="admin-reasons" style="display:none;">
-        <div class="card">
-          <h3 style="margin-top:0;">Add reason</h3>
-          <div class="row-inline">
-            <input type="text" id="new-reason-text" placeholder="Reason">
-            <button class="btn btn-primary" onclick="addReasonUi()">Add</button>
-          </div>
-        </div>
-        <div class="card"><table id="reasons-table"></table></div>
-      </div>
-
-      <div class="admin-pane" id="admin-datasource" style="display:none;">
-        <div class="card">
-          <h3 style="margin-top:0;">Packing & Production connection</h3>
-          <p class="hint">Paste the Google Sheets URL or ID of the Packing & Production spreadsheet, then pick the tab that holds order line items.</p>
-          <label>Spreadsheet URL or ID</label>
-          <input type="text" id="ds-spreadsheet" placeholder="https://docs.google.com/spreadsheets/d/...">
-          <button class="btn btn-secondary" onclick="probeDataSource()">Connect</button>
-          <div id="ds-tab-picker" style="margin-top:16px;"></div>
-          <div id="ds-column-mapper" style="margin-top:16px;"></div>
-          <div class="error" id="ds-error"></div>
-        </div>
-      </div>
-
-      <div class="admin-pane" id="admin-overview" style="display:none;">
-        <div class="card"><table id="overview-table"></table></div>
-      </div>
-
-      <div class="admin-pane" id="admin-settings" style="display:none;">
-        <div class="card">
-          <h3 style="margin-top:0;">Change Admin PIN</h3>
-          <input type="text" id="new-admin-pin" placeholder="New admin PIN">
-          <button class="btn btn-primary" onclick="changeAdminPin()">Save</button>
-        </div>
-      </div>
+<!-- ============ PRINT SLIP ============ -->
+<div id="print-slip">
+  <div class="slip-header">
+    <div>
+      <h1 id="slip-company">Daily Fruit</h1>
+      <div class="slip-meta" id="slip-type-label">Packing Slip</div>
+    </div>
+    <div class="slip-meta" style="text-align:right;">
+      <div><strong id="slip-ref"></strong></div>
+      <div id="slip-created"></div>
     </div>
   </div>
+  <div class="slip-meta"><strong>Customer:</strong> <span id="slip-customer"></span></div>
+  <div class="slip-meta" id="slip-assigned-row"><strong>Assigned to:</strong> <span id="slip-packer"></span> at <span id="slip-assigned-time"></span></div>
+  <table class="slip-items">
+    <thead><tr><th>Description</th><th>Category</th><th>Qty</th><th>Unit</th></tr></thead>
+    <tbody id="slip-items-body"></tbody>
+  </table>
+  <div class="slip-meta hidden" id="slip-unclassified-note">* unclassified product — defaulted to Packing, needs checking in Admin</div>
+  <div class="slip-footer">
+    <span id="slip-signature-label">Packer signature: ____________________</span>
+    <span id="slip-printed-time"></span>
+  </div>
+</div>
+
+<div class="conn-banner hidden" id="conn-banner">Can't reach the server — check the connection. Retrying… <span id="conn-banner-detail"></span></div>
 
 <script>
-  // ------------------------------------------------------------------
-  // API - this page is static (hosted on GitHub Pages) and talks to the
-  // Apps Script Web App as a JSON API over fetch(). It does NOT use
-  // google.script.run (that only works when Apps Script itself serves the
-  // page). Paste your deployed Web App URL below after deploying.
-  //
-  // Uses GET (params in the query string) rather than POST: Apps Script's
-  // /exec URL responds with a redirect to the actual content, and browsers
-  // silently downgrade a POST to a GET (dropping the body) when following
-  // a redirect. GET has no body to lose, so it survives the redirect intact.
-  // ------------------------------------------------------------------
-  var CONFIG = {
-    API_URL: 'https://script.google.com/macros/s/AKfycbwWm2aPQyzhsz6UIduYjVP4bhwHjPsM3KHREC9DWIiqutWOaVefpI_cY4EFKjwlGYmf/exec'
-  };
+/* =====================================================================
+   CONFIG — paste your Apps Script Web App URL here after deployment.
+   ===================================================================== */
+const APP_CONFIG = {
+  API_URL: 'https://script.google.com/macros/s/AKfycbw-XsBcOz0DtO7c-OTle7heBrwqBthX40xh9YBT7Ag0PHb1PpBqfDlR32mw2jin2gVE_g/exec'
+};
 
-  function callApi(action, params) {
-    var url = CONFIG.API_URL + '?action=' + encodeURIComponent(action) +
-      '&params=' + encodeURIComponent(JSON.stringify(params || []));
-    return fetch(url)
-      .then(function (r) { return r.json(); })
-      .then(function (res) {
-        if (!res.success) throw new Error(res.error || 'Request failed');
-        return res.result;
+/* ===================== STATE ===================== */
+let boardData = null;
+let pollTimer = null;
+let pendingAssignOrderId = null;
+let adminPinVerified = false;
+let sitePasscode = localStorage.getItem('df_site_passcode') || '';
+let printedDate = todayDateStr(); // date shown in the "Printed" section - defaults to today
+let printedHistoryOrders = null; // set when printedDate !== today, from getOrdersForDate
+let printedPackerFilter = ''; // '' = all packers; otherwise only show this packer's printed orders
+let boardView = localStorage.getItem('df_board_view') === 'production' ? 'production' : 'packing';
+let prodCompletedDate = todayDateStr(); // date shown in Production's "Completed" section
+let prodCompletedHistoryOrders = null; // set when prodCompletedDate !== today
+
+/* ===================== API HELPERS ===================== */
+function apiGet(action, params) {
+  const url = new URL(APP_CONFIG.API_URL);
+  url.searchParams.set('action', action);
+  url.searchParams.set('passcode', sitePasscode);
+  Object.keys(params || {}).forEach(k => url.searchParams.set(k, params[k]));
+  return fetch(url.toString()).then(r => r.json()).then(handleApiResponse);
+}
+function apiPost(action, payload) {
+  return fetch(APP_CONFIG.API_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+    body: JSON.stringify(Object.assign({ action: action, passcode: sitePasscode }, payload || {}))
+  }).then(r => r.json()).then(handleApiResponse);
+}
+function handleApiResponse(res) {
+  hideConnBanner();
+  if (!res.ok) {
+    if (res.error === 'Incorrect passcode.') {
+      lockSite('That passcode isn\'t valid anymore — please re-enter it.');
+    }
+    throw new Error(res.error || 'Unknown server error');
+  }
+  return res.data;
+}
+function showConnBanner(detail) {
+  document.getElementById('conn-banner-detail').textContent = detail ? ('(' + detail + ', last tried ' + fmtTime(new Date().toISOString()) + ')') : '';
+  document.getElementById('conn-banner').classList.remove('hidden');
+}
+function hideConnBanner() { document.getElementById('conn-banner').classList.add('hidden'); }
+
+/* ===================== SITE LOCK ===================== */
+function lockSite(message) {
+  sitePasscode = '';
+  localStorage.removeItem('df_site_passcode');
+  if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+  document.getElementById('board-view').classList.add('hidden');
+  document.getElementById('admin-overlay').classList.add('hidden');
+  document.getElementById('lock-error').textContent = message || '';
+  document.getElementById('lock-error').classList.toggle('hidden', !message);
+  document.getElementById('lock-input').value = '';
+  document.getElementById('lock-screen').classList.remove('hidden');
+  setTimeout(() => document.getElementById('lock-input').focus(), 50);
+}
+function submitSitePasscode() {
+  const entered = document.getElementById('lock-input').value;
+  const btn = document.getElementById('lock-unlock-btn');
+  btn.disabled = true;
+  fetch(APP_CONFIG.API_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+    body: JSON.stringify({ action: 'verifySitePasscode', passcode: entered })
+  }).then(r => r.json()).then(res => {
+    btn.disabled = false;
+    if (!res.ok) { document.getElementById('lock-error').textContent = res.error; document.getElementById('lock-error').classList.remove('hidden'); return; }
+    if (res.data.valid) {
+      sitePasscode = entered;
+      localStorage.setItem('df_site_passcode', entered);
+      document.getElementById('lock-screen').classList.add('hidden');
+      init();
+    } else {
+      document.getElementById('lock-error').textContent = 'Incorrect passcode.';
+      document.getElementById('lock-error').classList.remove('hidden');
+    }
+  }).catch(() => {
+    btn.disabled = false;
+    document.getElementById('lock-error').textContent = 'Could not reach the server — check the connection.';
+    document.getElementById('lock-error').classList.remove('hidden');
+  });
+}
+
+/* ===================== INIT ===================== */
+let appStarted = false;
+function init() {
+  if (!sitePasscode) { lockSite(); return; }
+  if (!appStarted) { wireStaticEvents(); appStarted = true; }
+  loadBoard(true);
+  if (pollTimer) clearInterval(pollTimer);
+  pollTimer = setInterval(() => loadBoard(false), 5000);
+}
+
+function wireLockScreenEvents() {
+  document.getElementById('lock-unlock-btn').onclick = submitSitePasscode;
+  document.getElementById('lock-input').addEventListener('keyup', e => { if (e.key === 'Enter') submitSitePasscode(); });
+}
+
+function applyBoardView() {
+  document.getElementById('board-view').classList.toggle('hidden', boardView !== 'packing');
+  document.getElementById('production-view').classList.toggle('hidden', boardView !== 'production');
+  document.getElementById('view-toggle-packing').classList.toggle('active', boardView === 'packing');
+  document.getElementById('view-toggle-production').classList.toggle('active', boardView === 'production');
+  document.getElementById('quick-pills-packing').classList.toggle('hidden', boardView !== 'packing');
+  document.getElementById('quick-pills-production').classList.toggle('hidden', boardView !== 'production');
+  const companyName = (boardData && boardData.settings.companyName) || 'Daily Fruit';
+  document.getElementById('company-title').textContent = companyName + (boardView === 'production' ? ' — Production' : ' — Packing');
+  measureStickyOffset();
+}
+
+// Guards against overlapping polls: the board refreshes on a short timer (as
+// little as every 3 seconds), and if the server ever takes longer than that
+// to respond, a plain setInterval would fire the NEXT poll before the first
+// one has come back - stacking up multiple requests in flight at once, which
+// makes a slow response slower still and can itself produce the "Can't reach
+// the server" banner in a burst that then clears itself a few seconds later.
+// Skipping a tick when one's already in flight (rather than piling on) keeps
+// that from snowballing; a first load or a manual action-triggered refresh
+// still always goes through.
+let boardFetchInFlight = false;
+function loadBoard(isFirstLoad) {
+  if (boardFetchInFlight && !isFirstLoad) return;
+  boardFetchInFlight = true;
+  apiGet('getBoard').then(data => {
+    boardFetchInFlight = false;
+    boardData = data;
+    document.getElementById('slip-company').textContent = data.settings.companyName || 'Daily Fruit';
+    if (data.settings.boardRefreshSeconds && pollTimer) {
+      clearInterval(pollTimer);
+      pollTimer = setInterval(() => loadBoard(false), Math.max(3, data.settings.boardRefreshSeconds) * 1000);
+    }
+    applyBoardView();
+    renderBoard();
+    renderProductionBoard();
+  }).catch(err => {
+    boardFetchInFlight = false;
+    console.error(err);
+    showConnBanner(err && err.message ? err.message : 'unknown error');
+  });
+}
+
+/* ===================== BOARD RENDER ===================== */
+function todayDateStr() {
+  const d = new Date();
+  const pad = n => String(n).padStart(2, '0');
+  return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
+}
+function minutesSince(iso) {
+  if (!iso) return 0;
+  return (Date.now() - new Date(iso).getTime()) / 60000;
+}
+function fmtTime(iso) {
+  if (!iso) return '';
+  const d = new Date(iso);
+  return d.toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false });
+}
+function fmtDateLong(dateStr) {
+  // dateStr is 'YYYY-MM-DD'; parse as local (not UTC) so it matches the date picker
+  const [y, m, d] = dateStr.split('-').map(Number);
+  return new Date(y, m - 1, d).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' });
+}
+function fmtDateTimeFull(d) {
+  return d.toLocaleString([], { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
+}
+
+/* ---- Packing-schedule helpers ----
+ * Every order has a delivery date (when it must reach the customer). The rule:
+ * an order loaded the same day it needs to go out gets packed that day; anything
+ * loaded ahead of time gets packed the day before delivery, not the moment it
+ * arrives. So "pack date" (the day an order should actually be worked on) is
+ * either the delivery date itself (same-day order) or delivery date minus one day.
+ * Orders whose pack date hasn't arrived yet sit in "Scheduled" instead of
+ * cluttering "Needs a packer".
+ */
+function dateOnlyStr(isoOrDate) {
+  const d = (isoOrDate instanceof Date) ? isoOrDate : new Date(isoOrDate);
+  const pad = n => String(n).padStart(2, '0');
+  return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
+}
+function parseDateOnlyLocal(dateStr) {
+  const [y, m, d] = dateStr.split('-').map(Number);
+  return new Date(y, m - 1, d);
+}
+function addDaysStr(dateStr, n) {
+  const d = parseDateOnlyLocal(dateStr);
+  d.setDate(d.getDate() + n);
+  return dateOnlyStr(d);
+}
+function computePackDate(o) {
+  const createdDateStr = dateOnlyStr(o.createdAt);
+  // Unknown delivery date (legacy order, or a PDF/CSV that didn't carry one) ->
+  // safest default is "pack today", same as this app's original behaviour.
+  const deliveryDateStr = o.deliveryDate || createdDateStr;
+  return deliveryDateStr === createdDateStr ? deliveryDateStr : addDaysStr(deliveryDateStr, -1);
+}
+// How long an order has actually been sitting in TODAY'S actionable queue - not
+// simply "time since it arrived", since a same-day order becomes actionable the
+// moment it lands, but an order loaded days ago only becomes actionable at the
+// start of its pack date (that's when it should visually "start the clock").
+function queueAgeMinutes(o, packDate) {
+  const created = new Date(o.createdAt);
+  const packDayStart = parseDateOnlyLocal(packDate);
+  const queueEnteredAt = created > packDayStart ? created : packDayStart;
+  return (Date.now() - queueEnteredAt.getTime()) / 60000;
+}
+function fmtAge(mins) {
+  if (mins < 1) return 'just in';
+  if (mins < 60) return Math.floor(mins) + ' min';
+  const h = Math.floor(mins / 60), m = Math.floor(mins % 60);
+  return h + 'h ' + m + 'm';
+}
+
+// primaryDept picks which department's lines are shown "full strength" and which
+// get muted - the Packing board mutes Production lines (packers care about
+// Packing items first); the Production board does the opposite, so its own
+// lines stand out on a screen that's showing the whole order for context.
+function itemListHtml(items, primaryDept) {
+  const primary = primaryDept || 'Packing';
+  return items.map(it => {
+    const deptClass = it.department === 'Production' ? 'production' : 'packing';
+    const descClass = it.department === primary ? '' : 'is-production';
+    const tagLabel = it.needsReview ? (it.department + '?') : it.department;
+    const tagClass = it.needsReview ? 'unclassified' : deptClass;
+    const tagTitle = it.needsReview ? 'title="Unrecognised product code — defaulted, needs classifying in Admin > Products"' : '';
+    return `<li>
+      <span class="item-desc ${descClass}">${escapeHtml(it.description)}<span class="dept-tag ${tagClass}" ${tagTitle}>${tagLabel}</span></span>
+      <span class="item-qty">${escapeHtml(String(it.qty))} ${escapeHtml(it.unit || '')}</span>
+    </li>`;
+  }).join('');
+}
+
+// A one-line stand-in for the full item list, used on board cards (tap the
+// card to see everything via itemListHtml in the view modal / print slip).
+// Keeps cards short so more of them fit on screen at once at high order
+// volumes - just a count in the department this board cares about, how many
+// belong to the other department, and how many still need classifying.
+function itemSummaryHtml(items, primaryDept) {
+  const primary = primaryDept || 'Packing';
+  const other = primary === 'Packing' ? 'Production' : 'Packing';
+  const primaryCount = items.filter(it => it.department === primary).length;
+  const otherCount = items.length - primaryCount;
+  const reviewCount = items.filter(it => it.needsReview).length;
+  let text = primaryCount + (primaryCount === 1 ? ' item' : ' items');
+  if (otherCount > 0) text += ` + ${otherCount} ${other.toLowerCase()}`;
+  const reviewBadge = reviewCount ? `<span class="dept-tag unclassified">${reviewCount} need review</span>` : '';
+  return `<div class="item-summary"><span>${escapeHtml(text)}</span>${reviewBadge}</div>`;
+}
+
+// Lowercased "ref + customer" blob stashed on each card as data-search, so
+// the search box (see applySearchFilter) can filter without re-parsing
+// rendered DOM text.
+function searchBlob(o) {
+  return escapeHtml((o.sageRef + ' ' + (o.customerName || '')).toLowerCase());
+}
+
+let orderSearchQuery = '';
+function applySearchFilter() {
+  const q = orderSearchQuery.trim().toLowerCase();
+  document.querySelectorAll('.order-card[data-search]').forEach(card => {
+    const match = !q || card.getAttribute('data-search').includes(q);
+    card.classList.toggle('search-hidden', !match);
+  });
+}
+
+function jumpToSection(id) {
+  const el = document.getElementById(id);
+  if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function renderQuickBar() {
+  const packing = [
+    ['Needs a packer', 'unassigned-heading', document.getElementById('unassigned-count').textContent],
+    ['In progress', 'assigned-heading', document.getElementById('assigned-count').textContent],
+    ['Scheduled', 'scheduled-heading', document.getElementById('scheduled-count').textContent],
+    ['Printed', 'printed-heading', document.getElementById('printed-count').textContent]
+  ];
+  const production = [
+    ['Needs processing', 'prod-needs-heading', document.getElementById('prod-needs-count').textContent],
+    ['Scheduled', 'prod-scheduled-heading', document.getElementById('prod-scheduled-count').textContent],
+    ['Completed', 'prod-completed-heading', document.getElementById('prod-completed-count').textContent]
+  ];
+  const pillsHtml = rows => rows.map(([label, id, count]) =>
+    `<button class="quick-pill" data-jump="${id}">${escapeHtml(label)} <b>${escapeHtml(count)}</b></button>`).join('');
+  document.getElementById('quick-pills-packing').innerHTML = pillsHtml(packing);
+  document.getElementById('quick-pills-production').innerHTML = pillsHtml(production);
+  document.querySelectorAll('.quick-pill').forEach(btn => {
+    btn.onclick = () => jumpToSection(btn.getAttribute('data-jump'));
+  });
+  measureStickyOffset();
+}
+
+function measureStickyOffset() {
+  const topbar = document.getElementById('topbar');
+  const quickBar = document.getElementById('quick-bar');
+  const h = (topbar ? topbar.offsetHeight : 0) + (quickBar ? quickBar.offsetHeight : 0);
+  document.documentElement.style.setProperty('--sticky-h', h + 'px');
+  quickBar.style.top = (topbar ? topbar.offsetHeight : 0) + 'px';
+}
+
+function renderBoard() {
+  if (!boardData) return;
+  const warnMin = boardData.settings.flagWarningMinutes;
+  const critMin = boardData.settings.flagCriticalMinutes;
+
+  const needsPacker = [];
+  const scheduled = [];
+  const assigned = [];
+  let printed = [];
+  const isToday = printedDate === todayDateStr();
+  const today = todayDateStr();
+
+  boardData.orders.forEach(o => {
+    if (!o.assignedTo) {
+      const packDate = computePackDate(o);
+      if (packDate <= today) needsPacker.push(Object.assign({ _packDate: packDate }, o));
+      else scheduled.push(Object.assign({ _packDate: packDate }, o));
+    }
+    else if (!o.printedAt) assigned.push(o);
+    else if (isToday && new Date(o.printedAt).toDateString() === new Date().toDateString()) printed.push(o);
+  });
+
+  if (!isToday) {
+    printed = printedHistoryOrders || [];
+  }
+
+  needsPacker.sort((a, b) => a._packDate !== b._packDate
+    ? (a._packDate < b._packDate ? -1 : 1)
+    : queueAgeMinutes(b, b._packDate) - queueAgeMinutes(a, a._packDate));
+  scheduled.sort((a, b) => a._packDate !== b._packDate ? (a._packDate < b._packDate ? -1 : 1) : new Date(a.createdAt) - new Date(b.createdAt));
+  assigned.sort((a, b) => new Date(a.assignedAt) - new Date(b.assignedAt));
+  printed.sort((a, b) => new Date(b.printedAt) - new Date(a.printedAt));
+
+  // The packer dropdown's options are whoever actually printed something on
+  // the day currently shown (not just today's active packer list), so a
+  // packer who's since gone inactive - or a past day with different staff -
+  // still filters correctly. Rebuilt every render, but the current selection
+  // is restored afterward so it survives the 3-5s poll without resetting.
+  const packerNames = Array.from(new Set(printed.map(o => o.assignedTo).filter(Boolean))).sort();
+  const packerFilterEl = document.getElementById('printed-packer-filter');
+  const packerOptionsHtml = '<option value="">All packers</option>' +
+    packerNames.map(name => `<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`).join('');
+  if (packerFilterEl.innerHTML !== packerOptionsHtml) packerFilterEl.innerHTML = packerOptionsHtml;
+  if (printedPackerFilter && !packerNames.includes(printedPackerFilter)) printedPackerFilter = '';
+  packerFilterEl.value = printedPackerFilter;
+
+  const printedFiltered = printedPackerFilter ? printed.filter(o => o.assignedTo === printedPackerFilter) : printed;
+
+  document.getElementById('unassigned-count').textContent = needsPacker.length;
+  document.getElementById('assigned-count').textContent = assigned.length;
+  document.getElementById('scheduled-count').textContent = scheduled.length;
+  document.getElementById('scheduled-empty').classList.toggle('hidden', scheduled.length > 0);
+  document.getElementById('printed-count').textContent = printedFiltered.length;
+  document.getElementById('printed-empty').classList.toggle('hidden', printedFiltered.length > 0);
+  document.getElementById('printed-empty').textContent = printedPackerFilter
+    ? `No orders printed by ${printedPackerFilter} on this day.`
+    : 'No orders were printed on this day.';
+  document.getElementById('printed-heading-label').textContent = isToday ? 'Printed today' : 'Printed on ' + fmtDateLong(printedDate);
+  document.getElementById('unassigned-empty').classList.toggle('hidden', needsPacker.length > 0);
+
+  const uGrid = document.getElementById('unassigned-grid');
+  uGrid.innerHTML = needsPacker.map(o => {
+    const age = queueAgeMinutes(o, o._packDate);
+    const flagClass = age >= critMin ? 'flag-crit' : age >= warnMin ? 'flag-warn' : 'flag-ok';
+    const overdue = o._packDate < today;
+    const deliverLine = overdue
+      ? `<div class="order-overdue">⚠ Should've been packed ${fmtDateLong(o._packDate)}</div>`
+      : (o.deliveryDate ? `<div class="order-deliver">Deliver ${fmtDateLong(o.deliveryDate)}</div>` : '');
+    return `<div class="order-card ${flagClass}" data-order-id="${o.orderId}" data-action="assign" data-search="${searchBlob(o)}">
+      <div class="order-card-head">
+        <div>
+          <div class="order-ref">${escapeHtml(o.sageRef)}</div>
+          <div class="order-customer">${escapeHtml(o.customerName || '')}</div>
+          <div class="order-arrived">Arrived ${fmtTime(o.createdAt)}</div>
+          ${deliverLine}
+        </div>
+        <div class="age-badge">${fmtAge(age)}</div>
+      </div>
+      ${itemSummaryHtml(o.items)}
+      <button class="assign-btn">Assign</button>
+    </div>`;
+  }).join('');
+
+  const sGrid = document.getElementById('scheduled-grid');
+  sGrid.innerHTML = scheduled.map(o => `
+    <div class="order-card scheduled" data-order-id="${o.orderId}" data-action="view" data-search="${searchBlob(o)}">
+      <div class="order-card-head">
+        <div>
+          <div class="order-ref">${escapeHtml(o.sageRef)}</div>
+          <div class="order-customer">${escapeHtml(o.customerName || '')}</div>
+          <div class="order-arrived">Arrived ${fmtTime(o.createdAt)}</div>
+          <div class="order-deliver">Deliver ${fmtDateLong(o.deliveryDate || o._packDate)}</div>
+        </div>
+        <div class="schedule-badge">Pack ${fmtDateLong(o._packDate)}</div>
+      </div>
+      ${itemSummaryHtml(o.items)}
+    </div>`).join('');
+
+  const aGrid = document.getElementById('assigned-grid');
+  aGrid.innerHTML = assigned.map(o => `
+    <div class="order-card assigned" data-order-id="${o.orderId}" data-action="view" data-search="${searchBlob(o)}">
+      <div class="order-card-head">
+        <div>
+          <div class="order-ref">${escapeHtml(o.sageRef)}</div>
+          <div class="order-customer">${escapeHtml(o.customerName || '')}</div>
+        </div>
+      </div>
+      ${itemSummaryHtml(o.items)}
+      <div class="assigned-strip"><span>👤 ${escapeHtml(o.assignedTo)}</span><span>${fmtTime(o.assignedAt)}</span></div>
+    </div>`).join('');
+
+  const pGrid = document.getElementById('printed-grid');
+  pGrid.innerHTML = printedFiltered.map(o => `
+    <div class="order-card assigned" data-order-id="${o.orderId}" data-action="view" data-search="${searchBlob(o)}" style="opacity:.7;">
+      <div class="order-card-head">
+        <div>
+          <div class="order-ref">${escapeHtml(o.sageRef)}</div>
+          <div class="order-customer">${escapeHtml(o.customerName || '')}</div>
+        </div>
+      </div>
+      <div class="assigned-strip"><span>✅ ${escapeHtml(o.assignedTo)}</span><span>printed ${fmtTime(o.printedAt)}</span></div>
+      <div class="card-actions"><button class="btn-secondary" data-reprint="${o.orderId}">🖨 Reprint</button></div>
+    </div>`).join('');
+
+  attachCardHandlers();
+  renderQuickBar();
+  applySearchFilter();
+}
+
+function attachCardHandlers() {
+  document.querySelectorAll('#board-view .order-card').forEach(card => {
+    card.onclick = (e) => {
+      const orderId = card.getAttribute('data-order-id');
+      const action = card.getAttribute('data-action');
+      const order = boardData.orders.find(o => o.orderId === orderId)
+        || (printedHistoryOrders || []).find(o => o.orderId === orderId);
+      if (!order) return;
+      if (action === 'assign') openAssignModal(order);
+      else openViewModal(order);
+    };
+  });
+  document.querySelectorAll('#board-view [data-reprint]').forEach(btn => {
+    btn.onclick = (e) => {
+      e.stopPropagation();
+      const orderId = btn.getAttribute('data-reprint');
+      const order = boardData.orders.find(o => o.orderId === orderId)
+        || (printedHistoryOrders || []).find(o => o.orderId === orderId);
+      if (order) printSlipForOrder(order);
+    };
+  });
+}
+
+/* ===================== PRODUCTION BOARD ===================== */
+// The part of a description before " - " groups variants of the same base product
+// together, e.g. "Butternut - Diced KG" and "Butternut - Julienned KG" both belong
+// to the "Butternut" family. A description with no " - " is its own family.
+function productFamily(description) {
+  const s = String(description || '').trim();
+  const idx = s.indexOf(' - ');
+  return idx === -1 ? s : s.slice(0, idx).trim();
+}
+
+function formatQty(n) {
+  return String(Math.round((n + Number.EPSILON) * 100) / 100);
+}
+
+// Sums Production-department item quantities across the given (not-yet-completed)
+// orders: first by exact variant (description + unit), then rolled up by product
+// family - each family only combines variants that share the same unit, so two
+// different units (say kg and each) are never added together.
+function computeProductionTally(orders) {
+  const variantMap = {};
+  orders.forEach(o => {
+    (o.items || []).forEach(it => {
+      if (it.department !== 'Production') return;
+      const unit = (it.unit || '').trim();
+      const key = String(it.description || '').trim().toLowerCase() + '|' + unit.toLowerCase();
+      if (!variantMap[key]) variantMap[key] = { description: it.description, unit: unit, qty: 0 };
+      const q = Number(it.qty);
+      if (!isNaN(q)) variantMap[key].qty += q;
+    });
+  });
+
+  const familyMap = {};
+  Object.values(variantMap).forEach(v => {
+    const family = productFamily(v.description);
+    const key = family.toLowerCase() + '|' + v.unit.toLowerCase();
+    if (!familyMap[key]) familyMap[key] = { family: family, unit: v.unit, total: 0, variants: [] };
+    familyMap[key].total += v.qty;
+    familyMap[key].variants.push(v);
+  });
+
+  return Object.values(familyMap).sort((a, b) => a.family.localeCompare(b.family));
+}
+
+function renderProductionTally(orders) {
+  const groups = computeProductionTally(orders);
+  document.getElementById('tally-count').textContent = groups.length;
+  document.getElementById('tally-empty').classList.toggle('hidden', groups.length > 0);
+  const el = document.getElementById('production-tally');
+  el.innerHTML = groups.map(g => {
+    const single = g.variants.length === 1;
+    // A single-variant family just shows its one full description - no point
+    // repeating the same total twice under a redundant family header.
+    const headerLabel = single ? g.variants[0].description : g.family;
+    const variantRows = single ? '' : g.variants.slice()
+      .sort((a, b) => a.description.localeCompare(b.description))
+      .map(v => `<div class="tally-variant"><span>${escapeHtml(v.description)}</span><span>${formatQty(v.qty)} ${escapeHtml(v.unit)}</span></div>`)
+      .join('');
+    return `<div class="tally-card">
+      <div class="tally-family"><span>${escapeHtml(headerLabel)}</span><span class="tally-family-total">${formatQty(g.total)} ${escapeHtml(g.unit)}</span></div>
+      ${variantRows}
+    </div>`;
+  }).join('');
+}
+
+function renderProductionBoard() {
+  if (!boardData) return;
+  const warnMin = boardData.settings.flagWarningMinutes;
+  const critMin = boardData.settings.flagCriticalMinutes;
+  const today = todayDateStr();
+  const isToday = prodCompletedDate === today;
+
+  // Only orders that actually have something for Production to do belong here.
+  const prodOrders = boardData.orders.filter(o => (o.items || []).some(it => it.department === 'Production'));
+
+  const needsProcessing = [];
+  const scheduled = [];
+  let completed = [];
+
+  prodOrders.forEach(o => {
+    if (o.productionCompletedAt) {
+      if (isToday && new Date(o.productionCompletedAt).toDateString() === new Date().toDateString()) completed.push(o);
+      return;
+    }
+    const packDate = computePackDate(o);
+    if (packDate <= today) needsProcessing.push(Object.assign({ _packDate: packDate }, o));
+    else scheduled.push(Object.assign({ _packDate: packDate }, o));
+  });
+
+  if (!isToday) completed = prodCompletedHistoryOrders || [];
+
+  needsProcessing.sort((a, b) => a._packDate !== b._packDate
+    ? (a._packDate < b._packDate ? -1 : 1)
+    : queueAgeMinutes(b, b._packDate) - queueAgeMinutes(a, a._packDate));
+  scheduled.sort((a, b) => a._packDate !== b._packDate ? (a._packDate < b._packDate ? -1 : 1) : new Date(a.createdAt) - new Date(b.createdAt));
+  completed.sort((a, b) => new Date(b.productionCompletedAt) - new Date(a.productionCompletedAt));
+
+  renderProductionTally(needsProcessing);
+
+  document.getElementById('prod-needs-count').textContent = needsProcessing.length;
+  document.getElementById('prod-needs-empty').classList.toggle('hidden', needsProcessing.length > 0);
+  document.getElementById('prod-scheduled-count').textContent = scheduled.length;
+  document.getElementById('prod-scheduled-empty').classList.toggle('hidden', scheduled.length > 0);
+  document.getElementById('prod-completed-count').textContent = completed.length;
+  document.getElementById('prod-completed-empty').classList.toggle('hidden', completed.length > 0);
+  document.getElementById('prod-completed-heading-label').textContent = isToday ? 'Completed today' : 'Completed on ' + fmtDateLong(prodCompletedDate);
+
+  const needsGrid = document.getElementById('prod-needs-grid');
+  needsGrid.innerHTML = needsProcessing.map(o => {
+    const age = queueAgeMinutes(o, o._packDate);
+    const flagClass = age >= critMin ? 'flag-crit' : age >= warnMin ? 'flag-warn' : 'flag-ok';
+    const overdue = o._packDate < today;
+    const deliverLine = overdue
+      ? `<div class="order-overdue">⚠ Should've been processed ${fmtDateLong(o._packDate)}</div>`
+      : (o.deliveryDate ? `<div class="order-deliver">Deliver ${fmtDateLong(o.deliveryDate)}</div>` : '');
+    const printedNote = o.productionPrintedAt ? `<div class="prod-done-note">🖨 Printed ${fmtTime(o.productionPrintedAt)}</div>` : '';
+    return `<div class="order-card ${flagClass}" data-order-id="${o.orderId}" data-search="${searchBlob(o)}">
+      <div class="order-card-head">
+        <div>
+          <div class="order-ref">${escapeHtml(o.sageRef)}</div>
+          <div class="order-customer">${escapeHtml(o.customerName || '')}</div>
+          <div class="order-arrived">Arrived ${fmtTime(o.createdAt)}</div>
+          ${deliverLine}
+          ${printedNote}
+        </div>
+        <div class="age-badge">${fmtAge(age)}</div>
+      </div>
+      ${itemSummaryHtml(o.items, 'Production')}
+      <div class="prod-actions">
+        <button class="btn-secondary" data-prod-print="${o.orderId}">Print</button>
+        <button class="btn-primary" data-prod-complete="${o.orderId}">Complete</button>
+      </div>
+    </div>`;
+  }).join('');
+
+  const schedGrid = document.getElementById('prod-scheduled-grid');
+  schedGrid.innerHTML = scheduled.map(o => `
+    <div class="order-card scheduled" data-order-id="${o.orderId}" data-search="${searchBlob(o)}">
+      <div class="order-card-head">
+        <div>
+          <div class="order-ref">${escapeHtml(o.sageRef)}</div>
+          <div class="order-customer">${escapeHtml(o.customerName || '')}</div>
+          <div class="order-arrived">Arrived ${fmtTime(o.createdAt)}</div>
+          <div class="order-deliver">Deliver ${fmtDateLong(o.deliveryDate || o._packDate)}</div>
+        </div>
+        <div class="schedule-badge">Process ${fmtDateLong(o._packDate)}</div>
+      </div>
+      ${itemSummaryHtml(o.items, 'Production')}
+    </div>`).join('');
+
+  const compGrid = document.getElementById('prod-completed-grid');
+  compGrid.innerHTML = completed.map(o => `
+    <div class="order-card assigned" data-order-id="${o.orderId}" data-search="${searchBlob(o)}" style="opacity:.7;">
+      <div class="order-card-head">
+        <div>
+          <div class="order-ref">${escapeHtml(o.sageRef)}</div>
+          <div class="order-customer">${escapeHtml(o.customerName || '')}</div>
+        </div>
+      </div>
+      ${itemSummaryHtml(o.items, 'Production')}
+      <div class="assigned-strip"><span>✅ Completed</span><span>${fmtTime(o.productionCompletedAt)}</span></div>
+      <div class="card-actions">
+        <button class="btn-secondary" data-prod-incomplete="${o.orderId}">↩ Not complete</button>
+        <button class="btn-secondary" data-prod-reprint="${o.orderId}">🖨 Reprint</button>
+      </div>
+    </div>`).join('');
+
+  attachProductionCardHandlers();
+  renderQuickBar();
+  applySearchFilter();
+}
+
+function findProductionOrder(orderId) {
+  return (boardData.orders || []).find(o => o.orderId === orderId)
+    || (prodCompletedHistoryOrders || []).find(o => o.orderId === orderId);
+}
+
+function attachProductionCardHandlers() {
+  document.querySelectorAll('[data-prod-print]').forEach(btn => {
+    btn.onclick = (e) => {
+      e.stopPropagation();
+      const orderId = btn.getAttribute('data-prod-print');
+      const order = findProductionOrder(orderId);
+      if (order) printProductionSlipForOrder(order);
+    };
+  });
+  document.querySelectorAll('[data-prod-complete]').forEach(btn => {
+    btn.onclick = (e) => {
+      e.stopPropagation();
+      const orderId = btn.getAttribute('data-prod-complete');
+      const order = findProductionOrder(orderId);
+      if (!order) return;
+      if (!confirm(`Mark order ${order.sageRef} as complete? This removes it from the prep tally.`)) return;
+      btn.disabled = true;
+      apiPost('markProductionComplete', { orderId: orderId }).then(() => loadBoard(false)).catch(err => { alert(err.message); btn.disabled = false; });
+    };
+  });
+  document.querySelectorAll('[data-prod-incomplete]').forEach(btn => {
+    btn.onclick = (e) => {
+      e.stopPropagation();
+      const orderId = btn.getAttribute('data-prod-incomplete');
+      const order = findProductionOrder(orderId);
+      if (!order) return;
+      if (!confirm(`Mark order ${order.sageRef} as NOT complete? It'll move back to "Needs processing" and count in the prep tally again.`)) return;
+      btn.disabled = true;
+      apiPost('markProductionIncomplete', { orderId: orderId }).then(() => loadBoard(false)).catch(err => { alert(err.message); btn.disabled = false; });
+    };
+  });
+  document.querySelectorAll('[data-prod-reprint]').forEach(btn => {
+    btn.onclick = (e) => {
+      e.stopPropagation();
+      const orderId = btn.getAttribute('data-prod-reprint');
+      const order = findProductionOrder(orderId);
+      if (order) printProductionSlipForOrder(order);
+    };
+  });
+  // Tapping the card itself (anywhere that isn't one of the buttons above,
+  // which each stop the click from bubbling here) opens the same order-detail
+  // view Packing uses, so a full look at the order is always one tap away.
+  document.querySelectorAll('#production-view .order-card').forEach(card => {
+    card.onclick = () => {
+      const orderId = card.getAttribute('data-order-id');
+      const order = findProductionOrder(orderId);
+      if (order) openViewModal(order, 'Production');
+    };
+  });
+}
+
+function printProductionSlipForOrder(order) {
+  const prodItems = order.items.filter(it => it.department === 'Production');
+  document.getElementById('slip-type-label').textContent = 'Production Job Slip';
+  document.getElementById('slip-ref').textContent = order.sageRef;
+  document.getElementById('slip-created').textContent = 'Order in: ' + fmtTime(order.createdAt);
+  document.getElementById('slip-customer').textContent = order.customerName || '';
+  document.getElementById('slip-assigned-row').classList.add('hidden');
+  document.getElementById('slip-signature-label').textContent = 'Prepared by: ____________________';
+  document.getElementById('slip-printed-time').textContent = 'Printed: ' + fmtDateTimeFull(new Date());
+  document.getElementById('slip-items-body').innerHTML = prodItems.map(it => `
+    <tr>
+      <td>${escapeHtml(it.description)}</td>
+      <td>${escapeHtml(it.category || it.department)}${it.needsReview ? ' *' : ''}</td>
+      <td>${escapeHtml(String(it.qty))}</td>
+      <td>${escapeHtml(it.unit || '')}</td>
+    </tr>`).join('');
+  document.getElementById('slip-unclassified-note').classList.toggle('hidden', !prodItems.some(it => it.needsReview));
+
+  const onAfterPrint = () => {
+    window.removeEventListener('afterprint', onAfterPrint);
+    // Restore the shared slip template's defaults for the next Packing slip print.
+    document.getElementById('slip-type-label').textContent = 'Packing Slip';
+    document.getElementById('slip-assigned-row').classList.remove('hidden');
+    document.getElementById('slip-signature-label').textContent = 'Packer signature: ____________________';
+    apiPost('markProductionPrinted', { orderId: order.orderId }).then(() => loadBoard(false)).catch(() => {});
+  };
+  window.addEventListener('afterprint', onAfterPrint);
+  setTimeout(() => window.print(), 150);
+}
+
+function escapeHtml(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+/* ===================== ASSIGN MODAL ===================== */
+function openAssignModal(order) {
+  pendingAssignOrderId = order.orderId;
+  document.getElementById('assign-modal-ref').textContent = order.sageRef;
+  document.getElementById('assign-modal-customer').textContent = order.customerName || '';
+  document.getElementById('assign-modal-items').innerHTML = itemListHtml(order.items);
+
+  const grid = document.getElementById('assign-modal-packer-grid');
+  const note = document.getElementById('assign-modal-no-packers');
+  const packers = (boardData && boardData.packers) || [];
+  note.classList.toggle('hidden', packers.length > 0);
+  grid.innerHTML = '';
+  packers.forEach(name => {
+    const btn = document.createElement('button');
+    btn.className = 'packer-tile';
+    btn.textContent = name;
+    btn.onclick = () => assignOrderTo(order.orderId, name, btn);
+    grid.appendChild(btn);
+  });
+
+  document.getElementById('assign-modal').classList.remove('hidden');
+}
+function closeAssignModal() {
+  pendingAssignOrderId = null;
+  document.getElementById('assign-modal').classList.add('hidden');
+}
+function assignOrderTo(orderId, packerName, tileBtn) {
+  if (pendingAssignOrderId !== orderId) return; // modal already closed/changed
+  document.querySelectorAll('#assign-modal-packer-grid .packer-tile').forEach(b => b.disabled = true);
+  apiPost('assignOrder', { orderId: orderId, packerName: packerName }).then(order => {
+    closeAssignModal();
+    printSlipForOrder(order);
+    loadBoard(false);
+  }).catch(err => {
+    alert(err.message);
+    loadBoard(false);
+    closeAssignModal();
+  });
+}
+
+/* ===================== VIEW MODAL ===================== */
+function openViewModal(order, primaryDept) {
+  const primary = primaryDept || 'Packing';
+  document.getElementById('view-modal-ref').textContent = order.sageRef;
+  document.getElementById('view-modal-customer').textContent = order.customerName || '';
+  let assignedHtml;
+  if (primary === 'Production') {
+    const packDate = computePackDate(order);
+    const deliverText = order.deliveryDate ? ('Deliver ' + fmtDateLong(order.deliveryDate)) : '';
+    if (order.productionCompletedAt) {
+      assignedHtml = `<span>✅ Completed ${fmtTime(order.productionCompletedAt)}</span><span>${order.productionPrintedAt ? '🖨 Printed ' + fmtTime(order.productionPrintedAt) : ''}</span>`;
+    } else {
+      const statusText = order.productionPrintedAt ? ('🖨 Printed ' + fmtTime(order.productionPrintedAt)) : 'Not yet printed';
+      assignedHtml = `<span>Scheduled to process ${fmtDateLong(packDate)}${deliverText ? ' — ' + deliverText : ''}</span><span>${statusText}</span>`;
+    }
+  } else if (order.assignedTo) {
+    const status = order.printedAt ? ('✅ Printed ' + fmtTime(order.printedAt)) : ('In progress');
+    assignedHtml = `<span>👤 ${escapeHtml(order.assignedTo)} — assigned ${fmtTime(order.assignedAt)}</span><span>${status}</span>`;
+  } else {
+    const packDate = computePackDate(order);
+    const deliverText = order.deliveryDate ? ('Deliver ' + fmtDateLong(order.deliveryDate)) : '';
+    assignedHtml = `<span>Not yet assigned — scheduled to pack ${fmtDateLong(packDate)}</span><span>${deliverText}</span>`;
+  }
+  document.getElementById('view-modal-assigned').innerHTML = assignedHtml;
+  document.getElementById('view-modal-items').innerHTML = itemListHtml(order.items, primary);
+  document.getElementById('view-modal').classList.remove('hidden');
+}
+function closeViewModal() { document.getElementById('view-modal').classList.add('hidden'); }
+
+/* ===================== PRINT SLIP ===================== */
+function printSlipForOrder(order) {
+  document.getElementById('slip-ref').textContent = order.sageRef;
+  document.getElementById('slip-created').textContent = 'Order in: ' + fmtTime(order.createdAt);
+  document.getElementById('slip-customer').textContent = order.customerName || '';
+  document.getElementById('slip-packer').textContent = order.assignedTo;
+  document.getElementById('slip-assigned-time').textContent = fmtTime(order.assignedAt);
+  document.getElementById('slip-printed-time').textContent = 'Printed: ' + fmtDateTimeFull(new Date());
+  document.getElementById('slip-items-body').innerHTML = order.items.map(it => `
+    <tr class="${it.department === 'Production' ? 'prod-row' : ''}">
+      <td>${escapeHtml(it.description)}</td>
+      <td>${escapeHtml(it.department)}${it.needsReview ? ' *' : ''}</td>
+      <td>${escapeHtml(String(it.qty))}</td>
+      <td>${escapeHtml(it.unit || '')}</td>
+    </tr>`).join('');
+  document.getElementById('slip-unclassified-note').classList.toggle('hidden', !order.items.some(it => it.needsReview));
+
+  const onAfterPrint = () => {
+    window.removeEventListener('afterprint', onAfterPrint);
+    apiPost('markPrinted', { orderId: order.orderId }).then(() => loadBoard(false)).catch(() => {});
+  };
+  window.addEventListener('afterprint', onAfterPrint);
+  setTimeout(() => window.print(), 150);
+}
+
+/* ===================== ADMIN ===================== */
+function openPinModal() {
+  document.getElementById('pin-input').value = '';
+  document.getElementById('pin-error').classList.add('hidden');
+  document.getElementById('pin-modal').classList.remove('hidden');
+  setTimeout(() => document.getElementById('pin-input').focus(), 50);
+}
+function closePinModal() { document.getElementById('pin-modal').classList.add('hidden'); }
+
+function submitPin() {
+  const pin = document.getElementById('pin-input').value;
+  apiPost('verifyAdminPin', { pin: pin }).then(res => {
+    if (res.valid) {
+      adminPinVerified = true;
+      closePinModal();
+      openAdmin();
+    } else {
+      document.getElementById('pin-error').classList.remove('hidden');
+    }
+  }).catch(err => alert(err.message));
+}
+
+function openAdmin() {
+  document.getElementById('admin-overlay').classList.remove('hidden');
+  loadAdminData();
+}
+function closeAdmin() { document.getElementById('admin-overlay').classList.add('hidden'); }
+
+function loadAdminData() {
+  apiGet('getAdminData').then(data => {
+    renderPackersAdmin(data.packers);
+    renderImportLog(data.importLog);
+    renderNeedsReviewList(data.needsReview);
+    renderProductsList(data.products);
+    document.getElementById('set-company').value = data.settings.CompanyName || '';
+    document.getElementById('set-warn').value = data.settings.FlagWarningMinutes || 10;
+    document.getElementById('set-crit').value = data.settings.FlagCriticalMinutes || 20;
+    document.getElementById('set-prod-cats').value = data.settings.ProductionCategoryNames || 'Prepped';
+    document.getElementById('set-refresh').value = data.settings.BoardRefreshSeconds || 5;
+    document.getElementById('set-pin').value = data.settings.AdminPIN || '';
+    document.getElementById('set-site-passcode').value = data.settings.SitePasscode || '';
+  }).catch(err => alert(err.message));
+}
+
+function renderPackersAdmin(packers) {
+  const list = document.getElementById('packers-admin-list');
+  list.innerHTML = packers.map(p => `
+    <div class="packer-row">
+      <span>${escapeHtml(p.name)}</span>
+      <div style="display:flex;align-items:center;gap:10px;">
+        <button class="toggle ${p.active ? 'on' : ''}" data-name="${escapeHtml(p.name)}" data-active="${p.active}"><span class="knob"></span></button>
+        <button class="icon-btn" style="background:#f3d6d6;color:#a11;width:32px;height:32px;font-size:14px;" data-delete-name="${escapeHtml(p.name)}" title="Delete packer">✕</button>
+      </div>
+    </div>`).join('');
+  list.querySelectorAll('.toggle').forEach(btn => {
+    btn.onclick = () => {
+      const name = btn.getAttribute('data-name');
+      const nowActive = btn.getAttribute('data-active') !== 'true';
+      btn.disabled = true;
+      apiPost('setPackerActive', { name: name, active: nowActive }).then(packers => renderPackersAdmin(packers)).catch(err => { alert(err.message); btn.disabled = false; });
+    };
+  });
+  list.querySelectorAll('[data-delete-name]').forEach(btn => {
+    btn.onclick = () => {
+      const name = btn.getAttribute('data-delete-name');
+      if (!confirm(`Delete packer "${name}"? This can't be undone — if they might come back, use the toggle to switch them off instead.`)) return;
+      btn.disabled = true;
+      apiPost('deletePacker', { name: name }).then(packers => renderPackersAdmin(packers)).catch(err => { alert(err.message); btn.disabled = false; });
+    };
+  });
+}
+
+function renderImportLog(log) {
+  const el = document.getElementById('import-log-list');
+  if (!log.length) { el.innerHTML = '<div class="log-row">No imports yet.</div>'; return; }
+  el.innerHTML = log.map(r => `<div class="log-row">${fmtTime(r.importedAt)} — ${r.rowCount} item(s) imported</div>`).join('');
+}
+
+function doImport() {
+  const text = document.getElementById('csv-text-input').value;
+  const resultBox = document.getElementById('import-result');
+  resultBox.className = 'result-box';
+  resultBox.textContent = 'Importing…';
+  resultBox.classList.remove('hidden');
+  apiPost('importCsv', { csvText: text }).then(res => {
+    resultBox.className = 'result-box';
+    let msg = `Imported ${res.ordersImported} order(s), ${res.itemsImported} item(s). Skipped ${res.ordersSkipped} already-imported order(s).`;
+    if (res.itemsNeedingReview) msg += ` ${res.itemsNeedingReview} item(s) had an unrecognised product code and defaulted to Packing — see the Products tab.`;
+    resultBox.textContent = msg;
+    loadAdminData();
+    loadBoard(false);
+  }).catch(err => {
+    resultBox.className = 'result-box error';
+    resultBox.textContent = err.message;
+  });
+}
+
+/* ===================== PRODUCTS ===================== */
+function renderNeedsReviewList(needsReview) {
+  const el = document.getElementById('needs-review-list');
+  const empty = document.getElementById('needs-review-empty');
+  empty.classList.toggle('hidden', needsReview.length > 0);
+  el.innerHTML = needsReview.map(p => `
+    <div class="packer-row" style="align-items:flex-start;flex-wrap:wrap;gap:8px;">
+      <div style="min-width:180px;">
+        <div style="font-weight:700;">${p.productCode ? escapeHtml(p.productCode) : escapeHtml(p.description || '(no description)')}</div>
+        <div style="color:var(--muted);font-size:13px;">${p.productCode ? escapeHtml(p.description || '') + ' — ' : ''}on ${p.orderCount} order line(s)${p.productCode ? '' : ' — no Sage code on this one, matched by description'}</div>
+      </div>
+      <div style="display:flex;gap:8px;flex:1;min-width:220px;">
+        <select data-review-category="${escapeHtml(p.reviewKey)}" style="flex:1;padding:9px 10px;border:2px solid var(--line);border-radius:8px;">
+          <option value="">Select category…</option>
+          <option value="Packing">Packing</option>
+          <option value="Prepped">Prepped</option>
+        </select>
+        <button class="btn-secondary" data-review-save="${escapeHtml(p.reviewKey)}" data-review-code="${escapeHtml(p.productCode || '')}" data-review-desc="${escapeHtml(p.description || '')}">Save</button>
+      </div>
+    </div>`).join('');
+  el.querySelectorAll('[data-review-save]').forEach(btn => {
+    btn.onclick = () => {
+      const key = btn.getAttribute('data-review-save');
+      const code = btn.getAttribute('data-review-code');
+      const desc = btn.getAttribute('data-review-desc');
+      const input = el.querySelector(`[data-review-category="${CSS.escape(key)}"]`);
+      const category = input.value.trim();
+      if (!category) { input.focus(); return; }
+      btn.disabled = true;
+      apiPost('classifyProduct', { productCode: code, description: desc, category: category }).then(res => {
+        renderNeedsReviewList(res.needsReview);
+        renderProductsList(res.products);
+        loadBoard(false);
+      }).catch(err => { alert(err.message); btn.disabled = false; });
+    };
+  });
+}
+
+let allProducts = [];
+
+function renderProductsList(products) {
+  allProducts = products;
+  document.getElementById('products-count').textContent = products.length;
+  renderProductsListFiltered();
+}
+
+function renderProductsListFiltered() {
+  const filterEl = document.getElementById('products-filter-input');
+  const filter = (filterEl.value || '').trim().toLowerCase();
+  const products = filter
+    ? allProducts.filter(p => (p.productCode || '').toLowerCase().includes(filter) || (p.description || '').toLowerCase().includes(filter))
+    : allProducts;
+
+  const el = document.getElementById('products-list');
+  if (!allProducts.length) { el.innerHTML = '<div class="log-row">No products imported yet.</div>'; return; }
+  if (!products.length) { el.innerHTML = '<div class="log-row">No products match "' + escapeHtml(filterEl.value) + '".</div>'; return; }
+
+  // Products are matched by code when they have one, otherwise by description (same
+  // identity rule the backend uses) - the row's data attributes carry whichever
+  // applies so Save always targets the right product.
+  el.innerHTML = products.map((p, i) => {
+    const isPrepped = String(p.category || '').trim().toLowerCase() === 'prepped';
+    const rowKey = 'p' + i;
+    return `
+    <div class="packer-row" style="align-items:flex-start;flex-wrap:wrap;gap:8px;">
+      <div style="min-width:180px;flex:2;">
+        <span>${p.productCode ? `<strong>${escapeHtml(p.productCode)}</strong> ` : ''}${escapeHtml(p.description || '')}</span>
+      </div>
+      <div style="display:flex;gap:8px;flex:1;min-width:220px;">
+        <select data-product-category="${rowKey}" style="flex:1;padding:9px 10px;border:2px solid var(--line);border-radius:8px;">
+          <option value="Packing" ${isPrepped ? '' : 'selected'}>Packing</option>
+          <option value="Prepped" ${isPrepped ? 'selected' : ''}>Prepped</option>
+        </select>
+        <button class="btn-secondary" data-product-save="${rowKey}" data-product-code="${escapeHtml(p.productCode || '')}" data-product-desc="${escapeHtml(p.description || '')}">Save</button>
+        <button class="icon-btn" style="background:#f3d6d6;color:#a11;width:38px;height:38px;font-size:14px;flex:0 0 auto;" data-product-delete="${rowKey}" data-product-code="${escapeHtml(p.productCode || '')}" data-product-desc="${escapeHtml(p.description || '')}" title="Delete product">✕</button>
+      </div>
+    </div>`;
+  }).join('');
+
+  el.querySelectorAll('[data-product-save]').forEach(btn => {
+    btn.onclick = () => {
+      const key = btn.getAttribute('data-product-save');
+      const code = btn.getAttribute('data-product-code');
+      const desc = btn.getAttribute('data-product-desc');
+      const select = el.querySelector(`[data-product-category="${CSS.escape(key)}"]`);
+      const category = select.value;
+      btn.disabled = true;
+      const original = btn.textContent;
+      btn.textContent = 'Saving…';
+      apiPost('classifyProduct', { productCode: code, description: desc, category: category }).then(res => {
+        renderNeedsReviewList(res.needsReview);
+        renderProductsList(res.products);
+        loadBoard(false);
+      }).catch(err => {
+        alert(err.message);
+        btn.disabled = false;
+        btn.textContent = original;
       });
-  }
+    };
+  });
 
-  // ------------------------------------------------------------------
-  // STATE
-  // ------------------------------------------------------------------
-  var state = {
-    checker: null,       // { id, name }
-    session: null,        // current truck session object
-    orderChecks: [],
-    currentOrder: null,   // { orderCheck, items }
-    pendingNoStockItemId: null,
-    dataSourceProbe: null
+  el.querySelectorAll('[data-product-delete]').forEach(btn => {
+    btn.onclick = () => {
+      const code = btn.getAttribute('data-product-code');
+      const desc = btn.getAttribute('data-product-desc');
+      const label = code || desc;
+      if (!confirm(`Delete "${label}" from the product list? This only removes the classification - past orders aren't affected, but the next order carrying this product will need reclassifying.`)) return;
+      btn.disabled = true;
+      apiPost('deleteProduct', { productCode: code, description: desc }).then(res => {
+        renderNeedsReviewList(res.needsReview);
+        renderProductsList(res.products);
+      }).catch(err => {
+        alert(err.message);
+        btn.disabled = false;
+      });
+    };
+  });
+}
+
+function doImportProducts() {
+  const text = document.getElementById('products-csv-text-input').value;
+  const resultBox = document.getElementById('import-products-result');
+  resultBox.className = 'result-box';
+  resultBox.textContent = 'Importing…';
+  resultBox.classList.remove('hidden');
+  apiPost('importProductsCsv', { csvText: text }).then(res => {
+    resultBox.className = 'result-box';
+    resultBox.textContent = `Added ${res.productsAdded} new product(s). ${res.productsUnchanged} already on the list were left as-is (their category wasn't touched). ${res.itemsBackfilled} order line(s) that were waiting on classification just got corrected.`;
+    renderNeedsReviewList(res.needsReview);
+    renderProductsList(res.products);
+    loadBoard(false);
+  }).catch(err => {
+    resultBox.className = 'result-box error';
+    resultBox.textContent = err.message;
+  });
+}
+
+function saveSettings() {
+  const newPasscode = document.getElementById('set-site-passcode').value;
+  const settings = {
+    CompanyName: document.getElementById('set-company').value,
+    FlagWarningMinutes: document.getElementById('set-warn').value,
+    FlagCriticalMinutes: document.getElementById('set-crit').value,
+    ProductionCategoryNames: document.getElementById('set-prod-cats').value,
+    BoardRefreshSeconds: document.getElementById('set-refresh').value,
+    AdminPIN: document.getElementById('set-pin').value,
+    SitePasscode: newPasscode
   };
+  const resultBox = document.getElementById('settings-result');
+  apiPost('updateSettings', { settings: settings }).then(() => {
+    // Keep this device unlocked under the new passcode so the admin isn't
+    // immediately locked out of the device they just changed it from.
+    sitePasscode = newPasscode;
+    localStorage.setItem('df_site_passcode', newPasscode);
+    resultBox.className = 'result-box';
+    resultBox.textContent = 'Saved.';
+    resultBox.classList.remove('hidden');
+    loadBoard(false);
+  }).catch(err => {
+    resultBox.className = 'result-box error';
+    resultBox.textContent = err.message;
+    resultBox.classList.remove('hidden');
+  });
+}
 
-  // ------------------------------------------------------------------
-  // NAVIGATION
-  // ------------------------------------------------------------------
-  function showScreen(id) {
-    document.querySelectorAll('.screen').forEach(function (s) { s.classList.remove('active'); });
-    document.getElementById(id).classList.add('active');
-  }
+/* ===================== EVENT WIRING ===================== */
+function wireStaticEvents() {
+  document.getElementById('admin-gear-btn').onclick = () => {
+    if (adminPinVerified) openAdmin(); else openPinModal();
+  };
+  document.getElementById('admin-close-btn').onclick = closeAdmin;
+  document.getElementById('pin-cancel-btn').onclick = closePinModal;
+  document.getElementById('pin-confirm-btn').onclick = submitPin;
+  document.getElementById('pin-input').addEventListener('keyup', e => { if (e.key === 'Enter') submitPin(); });
 
-  function showLogin() {
-    state.checker = null;
-    document.getElementById('login-name').value = '';
-    document.getElementById('login-pin').value = '';
-    document.getElementById('login-error').textContent = '';
-    showScreen('screen-login');
-  }
+  document.getElementById('assign-cancel-btn').onclick = closeAssignModal;
+  document.getElementById('view-close-btn').onclick = closeViewModal;
 
-  function logout() { showLogin(); }
+  document.getElementById('order-search').addEventListener('input', (e) => {
+    orderSearchQuery = e.target.value;
+    applySearchFilter();
+  });
+  window.addEventListener('resize', measureStickyOffset);
 
-  // ------------------------------------------------------------------
-  // LOGIN
-  // ------------------------------------------------------------------
-  function doLogin() {
-    var name = document.getElementById('login-name').value.trim();
-    var pin = document.getElementById('login-pin').value.trim();
-    if (!name || !pin) {
-      document.getElementById('login-error').textContent = 'Enter your name and PIN.';
-      return;
-    }
-    callApi('authenticateChecker', [name, pin]).then(function (res) {
-      if (!res.ok) { document.getElementById('login-error').textContent = res.error; return; }
-      state.checker = res.checker;
-      showTrucks();
-    }).catch(showFatalError);
-  }
+  document.querySelectorAll('.admin-tab').forEach(tab => {
+    tab.onclick = () => {
+      document.querySelectorAll('.admin-tab').forEach(t => t.classList.remove('active'));
+      tab.classList.add('active');
+      ['import', 'products', 'packers', 'settings'].forEach(name => {
+        document.getElementById('tab-' + name).classList.toggle('hidden', name !== tab.getAttribute('data-tab'));
+      });
+    };
+  });
 
-  // ------------------------------------------------------------------
-  // TRUCK SELECT
-  // ------------------------------------------------------------------
-  function showTrucks() {
-    document.getElementById('trucks-checker-name').textContent = state.checker.name;
-    showScreen('screen-trucks');
-    callApi('listTrucks', [true]).then(renderTrucks).catch(showFatalError);
-  }
+  document.getElementById('csv-file-input').addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => { document.getElementById('csv-text-input').value = reader.result; };
+    reader.readAsText(file);
+  });
+  document.getElementById('import-btn').onclick = doImport;
 
-  function renderTrucks(trucks) {
-    var el = document.getElementById('trucks-list');
-    if (trucks.length === 0) {
-      el.innerHTML = '<div class="empty">No trucks set up yet. Ask an admin to add one.</div>';
-      return;
-    }
-    el.innerHTML = trucks.map(function (t) {
-      var meta = [t.Driver, t.Route].filter(Boolean).join(' - ');
-      return '<div class="tile" onclick="selectTruck(\'' + t.ID + '\')">' +
-        '<div><div class="name">' + escapeHtml(t.Name) + '</div><div class="meta">' + escapeHtml(meta) + '</div></div>' +
-        '<div>&rsaquo;</div></div>';
-    }).join('');
-  }
+  document.getElementById('products-csv-file-input').addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => { document.getElementById('products-csv-text-input').value = reader.result; };
+    reader.readAsText(file);
+  });
+  document.getElementById('import-products-btn').onclick = doImportProducts;
+  document.getElementById('products-filter-input').addEventListener('input', renderProductsListFiltered);
 
-  function selectTruck(truckId) {
-    callApi('startTruckSession', [truckId, state.checker.id, state.checker.name]).then(function (result) {
-      state.session = result.session;
-      state.orderChecks = result.orderChecks;
-      enterWorkspace();
-    }).catch(showFatalError);
-  }
-
-  // ------------------------------------------------------------------
-  // WORKSPACE
-  // ------------------------------------------------------------------
-  function enterWorkspace() {
-    document.getElementById('ws-truck-name').textContent = state.session.TruckName;
-    document.getElementById('ws-checker-name').textContent = state.checker.name;
-    document.getElementById('tray-count').textContent = state.session.TrayCount || 0;
-    renderTrayUpdated();
-    showScreen('screen-workspace');
-    showWsTab('trays');
-    refreshOrders();
-  }
-
-  function renderTrayUpdated() {
-    var el = document.getElementById('tray-updated');
-    el.textContent = state.session.TrayCountUpdatedAt ? 'Last updated ' + formatTime(state.session.TrayCountUpdatedAt) : '';
-  }
-
-  function showWsTab(tab) {
-    document.getElementById('tab-btn-trays').classList.toggle('active', tab === 'trays');
-    document.getElementById('tab-btn-orders').classList.toggle('active', tab === 'orders');
-    document.getElementById('tabpane-trays').classList.toggle('active', tab === 'trays');
-    document.getElementById('tabpane-orders').classList.toggle('active', tab === 'orders');
-    showScreen('screen-workspace');
-    if (tab === 'orders') refreshOrders();
-  }
-
-  function adjustTray(delta) {
-    var current = parseInt(document.getElementById('tray-count').textContent, 10) || 0;
-    var next = Math.max(0, current + delta);
-    document.getElementById('tray-count').textContent = next;
-    state.session.TrayCount = next;
-    callApi('updateTrayCount', [state.session.ID, next, state.checker.name]).then(function () {
-      state.session.TrayCountUpdatedAt = new Date().toISOString();
-      renderTrayUpdated();
-    }).catch(showFatalError);
-  }
-
-  // ------------------------------------------------------------------
-  // ORDERS SEARCH
-  // ------------------------------------------------------------------
-  var searchTimer = null;
-  function debouncedSearch() {
-    clearTimeout(searchTimer);
-    searchTimer = setTimeout(refreshOrders, 300);
-  }
-
-  function refreshOrders() {
-    var q = document.getElementById('order-search').value;
-    var listEl = document.getElementById('orders-list');
-    listEl.innerHTML = '<div class="empty">Loading...</div>';
-    callApi('searchOrders', [q]).then(renderOrders).catch(showFatalError);
-  }
-
-  function renderOrders(orders) {
-    var el = document.getElementById('orders-list');
-    if (orders.length === 0) {
-      el.innerHTML = '<div class="empty">No orders found for today.</div>';
-      return;
-    }
-    el.innerHTML = orders.map(function (o) {
-      var badgeClass = o.status === 'Complete' ? 'badge-complete' : (o.status === 'In Progress' ? 'badge-progress' : 'badge-pending');
-      var warn = o.checkedOnOtherTruck ? '<div class="meta" style="color:var(--red);">Already opened on truck: ' + escapeHtml(o.checkedOnOtherTruck) + '</div>' : '';
-      return '<div class="tile" onclick="openOrder(\'' + o.orderId + '\')">' +
-        '<div><div class="name">' + escapeHtml(o.orderNumber) + ' - ' + escapeHtml(o.customer) + '</div>' +
-        '<div class="meta">' + o.itemCount + ' item(s)</div>' + warn + '</div>' +
-        '<div><span class="badge ' + badgeClass + '">' + o.status + '</span></div></div>';
-    }).join('');
-  }
-
-  function openOrder(orderId) {
-    callApi('getOrderForChecking', [state.session.ID, orderId]).then(function (result) {
-      state.currentOrder = result;
-      renderOrderDetail();
-      showScreen('screen-order');
-    }).catch(showFatalError);
-  }
-
-  function renderOrderDetail() {
-    var oc = state.currentOrder.orderCheck;
-    document.getElementById('od-order-number').textContent = oc.OrderNumber;
-    document.getElementById('od-customer').textContent = oc.Customer;
-    document.getElementById('od-warning').textContent = state.currentOrder.warning || '';
-
-    var el = document.getElementById('od-items');
-    el.innerHTML = state.currentOrder.items.map(function (item) {
-      var statusLine = '';
-      if (item.Status === 'Packed') statusLine = '<div class="status-line packed">Packed by ' + escapeHtml(item.CheckedBy) + '</div>';
-      if (item.Status === 'No Stock') statusLine = '<div class="status-line nostock">No stock: ' + escapeHtml(item.NoStockReason) + '</div>';
-
-      var actions = item.Status === 'Pending'
-        ? '<div class="item-actions">' +
-          '<button class="btn btn-primary" onclick="markItem(\'' + item.ID + '\', \'Packed\')">Packed</button>' +
-          '<button class="btn btn-danger" onclick="openReasonModal(\'' + item.ID + '\')">No Stock</button></div>'
-        : '<div class="item-actions"><button class="btn btn-secondary" onclick="markItem(\'' + item.ID + '\', \'Pending\')">Undo</button></div>';
-
-      return '<div class="item-row">' +
-        '<div class="desc">' + escapeHtml(item.ProductDescription) + '</div>' +
-        '<div class="qty">Qty: ' + escapeHtml(String(item.Qty)) + ' ' + escapeHtml(item.Unit || '') + '</div>' +
-        statusLine + actions + '</div>';
-    }).join('');
-  }
-
-  function markItem(itemId, status, reasonId) {
-    callApi('setItemStatus', [itemId, status, reasonId || '', state.checker.name]).then(function () {
-      // Refresh the item locally
-      var item = state.currentOrder.items.filter(function (i) { return i.ID === itemId; })[0];
-      item.Status = status;
-      if (status !== 'No Stock') { item.NoStockReason = ''; item.CheckedBy = state.checker.name; }
-      else { item.CheckedBy = state.checker.name; }
-      renderOrderDetail();
-    }).catch(showFatalError);
-  }
-
-  function openReasonModal(itemId) {
-    state.pendingNoStockItemId = itemId;
-    callApi('listReasons', [true]).then(function (reasons) {
-      document.getElementById('reason-options').innerHTML = reasons.map(function (r) {
-        return '<div class="reason-option" onclick="chooseReason(\'' + r.ID + '\')">' + escapeHtml(r.Reason) + '</div>';
-      }).join('');
-      document.getElementById('reason-modal').classList.add('active');
-    }).catch(showFatalError);
-  }
-
-  function chooseReason(reasonId) {
-    var itemId = state.pendingNoStockItemId;
-    closeReasonModal();
-    markItem(itemId, 'No Stock', reasonId);
-  }
-
-  function closeReasonModal() {
-    document.getElementById('reason-modal').classList.remove('active');
-    state.pendingNoStockItemId = null;
-  }
-
-  // ------------------------------------------------------------------
-  // DISPATCH
-  // ------------------------------------------------------------------
-  function attemptDispatch() {
-    callApi('markTruckDispatched', [state.session.ID, state.checker.name, false]).then(function (res) {
-      if (res.ok) { onDispatched(); return; }
-      document.getElementById('dispatch-warnings').innerHTML = res.warnings.map(function (w) {
-        return '<div class="hint" style="margin-bottom:6px;">- ' + escapeHtml(w) + '</div>';
-      }).join('');
-      document.getElementById('dispatch-modal').classList.add('active');
-    }).catch(showFatalError);
-  }
-
-  function confirmDispatch() {
-    closeDispatchModal();
-    callApi('markTruckDispatched', [state.session.ID, state.checker.name, true]).then(onDispatched).catch(showFatalError);
-  }
-
-  function closeDispatchModal() { document.getElementById('dispatch-modal').classList.remove('active'); }
-
-  function onDispatched() {
-    alert('Truck marked as dispatched.');
-    showTrucks();
-  }
-
-  // ------------------------------------------------------------------
-  // ADMIN
-  // ------------------------------------------------------------------
-  function openAdminGate() {
-    document.getElementById('admin-pin-input').value = '';
-    document.getElementById('admin-gate-error').textContent = '';
-    showScreen('screen-admin-gate');
-  }
-
-  function doAdminLogin() {
-    var pin = document.getElementById('admin-pin-input').value.trim();
-    callApi('authenticateAdmin', [pin]).then(function (res) {
-      if (!res.ok) { document.getElementById('admin-gate-error').textContent = res.error; return; }
-      showScreen('screen-admin');
-      showAdminPane('checkers', document.querySelector('.admin-nav button'));
-    }).catch(showFatalError);
-  }
-
-  function showAdminPane(name, btn) {
-    document.querySelectorAll('.admin-pane').forEach(function (p) { p.style.display = 'none'; });
-    document.getElementById('admin-' + name).style.display = 'block';
-    document.querySelectorAll('.admin-nav button').forEach(function (b) { b.classList.remove('active'); });
-    if (btn) btn.classList.add('active');
-
-    if (name === 'checkers') loadCheckers();
-    if (name === 'trucks') loadTrucks();
-    if (name === 'reasons') loadReasons();
-    if (name === 'datasource') loadDataSource();
-    if (name === 'overview') loadOverview();
-  }
-
-  function loadCheckers() {
-    callApi('listCheckers', []).then(function (checkers) {
-      document.getElementById('checkers-table').innerHTML =
-        '<tr><th>Name</th><th>PIN</th><th>Active</th></tr>' +
-        checkers.map(function (c) {
-          return '<tr><td>' + escapeHtml(c.Name) + '</td><td>' + escapeHtml(String(c.PIN)) + '</td>' +
-            '<td><label class="switch-label"><input type="checkbox" ' + (c.Active ? 'checked' : '') +
-            ' onchange="toggleChecker(\'' + c.ID + '\', this.checked)"> Active</label></td></tr>';
-        }).join('');
-    }).catch(showFatalError);
-  }
-
-  function addCheckerUi() {
-    var name = document.getElementById('new-checker-name').value.trim();
-    var pin = document.getElementById('new-checker-pin').value.trim();
-    if (!name || !pin) return;
-    callApi('addChecker', [name, pin]).then(function () {
-      document.getElementById('new-checker-name').value = '';
-      document.getElementById('new-checker-pin').value = '';
-      loadCheckers();
-    }).catch(showFatalError);
-  }
-
-  function toggleChecker(id, active) {
-    callApi('updateChecker', [id, { Active: active }]).catch(showFatalError);
-  }
-
-  function loadTrucks() {
-    callApi('listTrucks', [false]).then(function (trucks) {
-      document.getElementById('trucks-table').innerHTML =
-        '<tr><th>Name</th><th>Driver</th><th>Route</th><th>Active</th></tr>' +
-        trucks.map(function (t) {
-          return '<tr><td>' + escapeHtml(t.Name) + '</td><td>' + escapeHtml(t.Driver) + '</td><td>' + escapeHtml(t.Route) + '</td>' +
-            '<td><label class="switch-label"><input type="checkbox" ' + (t.Active ? 'checked' : '') +
-            ' onchange="toggleTruck(\'' + t.ID + '\', this.checked)"> Active</label></td></tr>';
-        }).join('');
-    }).catch(showFatalError);
-  }
-
-  function addTruckUi() {
-    var name = document.getElementById('new-truck-name').value.trim();
-    var driver = document.getElementById('new-truck-driver').value.trim();
-    var route = document.getElementById('new-truck-route').value.trim();
+  document.getElementById('add-packer-btn').onclick = () => {
+    const input = document.getElementById('new-packer-name');
+    const name = input.value.trim();
     if (!name) return;
-    callApi('addTruck', [name, driver, route]).then(function () {
-      document.getElementById('new-truck-name').value = '';
-      document.getElementById('new-truck-driver').value = '';
-      document.getElementById('new-truck-route').value = '';
-      loadTrucks();
-    }).catch(showFatalError);
-  }
+    const btn = document.getElementById('add-packer-btn');
+    btn.disabled = true;
+    btn.textContent = 'Adding…';
+    apiPost('addPacker', { name: name }).then(packers => {
+      input.value = '';
+      renderPackersAdmin(packers);
+    }).catch(err => alert(err.message)).finally(() => {
+      btn.disabled = false;
+      btn.textContent = 'Add packer';
+    });
+  };
+  document.getElementById('save-settings-btn').onclick = saveSettings;
 
-  function toggleTruck(id, active) {
-    callApi('updateTruck', [id, { Active: active }]).catch(showFatalError);
-  }
-
-  function loadReasons() {
-    callApi('listReasons', [false]).then(function (reasons) {
-      document.getElementById('reasons-table').innerHTML =
-        '<tr><th>Reason</th><th>Active</th></tr>' +
-        reasons.map(function (r) {
-          return '<tr><td>' + escapeHtml(r.Reason) + '</td>' +
-            '<td><label class="switch-label"><input type="checkbox" ' + (r.Active ? 'checked' : '') +
-            ' onchange="toggleReason(\'' + r.ID + '\', this.checked)"> Active</label></td></tr>';
-        }).join('');
-    }).catch(showFatalError);
-  }
-
-  function addReasonUi() {
-    var text = document.getElementById('new-reason-text').value.trim();
-    if (!text) return;
-    callApi('addReason', [text]).then(function () {
-      document.getElementById('new-reason-text').value = '';
-      loadReasons();
-    }).catch(showFatalError);
-  }
-
-  function toggleReason(id, active) {
-    callApi('updateReason', [id, { Active: active }]).catch(showFatalError);
-  }
-
-  function loadDataSource() {
-    callApi('getAdminSettings', []).then(function (cfg) {
-      document.getElementById('ds-spreadsheet').value = cfg.packingSpreadsheetId || '';
-      if (cfg.packingSpreadsheetId && cfg.packingSheetName) {
-        probeDataSource(cfg.packingSheetName, cfg.packingColumnMap);
-      }
-    }).catch(showFatalError);
-  }
-
-  function probeDataSource(preselectSheet, preselectMap) {
-    var input = document.getElementById('ds-spreadsheet').value.trim();
-    document.getElementById('ds-error').textContent = '';
-    if (!input) return;
-    callApi('probeSpreadsheet', [input]).then(function (res) {
-      if (!res.ok) { document.getElementById('ds-error').textContent = res.error; return; }
-      state.dataSourceProbe = res;
-      var picker = document.getElementById('ds-tab-picker');
-      picker.innerHTML = '<label>Tab with order line items</label>' +
-        '<select id="ds-sheet-select" onchange="probeHeaders()">' +
-        res.sheetNames.map(function (n) {
-          return '<option value="' + escapeHtml(n) + '" ' + (n === preselectSheet ? 'selected' : '') + '>' + escapeHtml(n) + '</option>';
-        }).join('') + '</select>';
-      picker.querySelector('select').style.cssText = 'width:100%;padding:12px;border:1px solid var(--border);border-radius:10px;';
-      probeHeaders(preselectMap);
-    }).catch(function (err) { document.getElementById('ds-error').textContent = err.message; });
-  }
-
-  function probeHeaders(preselectMap) {
-    var sheetName = document.getElementById('ds-sheet-select').value;
-    var input = document.getElementById('ds-spreadsheet').value.trim();
-    callApi('probeSheetHeaders', [input, sheetName]).then(function (res) {
-      if (!res.ok) { document.getElementById('ds-error').textContent = res.error; return; }
-      renderColumnMapper(res.headers, preselectMap || res.autoDetected, sheetName, input);
-    }).catch(function (err) { document.getElementById('ds-error').textContent = err.message; });
-  }
-
-  var FIELD_LABELS = {
-    orderId: 'Order number / ID (required)',
-    customer: 'Customer',
-    deliveryDate: 'Delivery date',
-    product: 'Product / item description (required)',
-    qty: 'Quantity',
-    unit: 'Unit',
-    department: 'Department / category'
+  const printedDateInput = document.getElementById('printed-date-input');
+  printedDateInput.value = printedDate;
+  printedDateInput.max = todayDateStr();
+  printedDateInput.onchange = () => {
+    if (!printedDateInput.value) { printedDateInput.value = printedDate; return; }
+    loadPrintedHistory(printedDateInput.value);
   };
 
-  function renderColumnMapper(headers, currentMap, sheetName, spreadsheetInput) {
-    var mapper = document.getElementById('ds-column-mapper');
-    var optionsHtml = '<option value="">-- not used --</option>' +
-      headers.map(function (h) { return '<option value="' + escapeHtml(h) + '">' + escapeHtml(h) + '</option>'; }).join('');
+  document.getElementById('printed-packer-filter').onchange = (e) => {
+    printedPackerFilter = e.target.value;
+    renderBoard();
+  };
 
-    mapper.innerHTML = '<h4>Map columns</h4>' +
-      Object.keys(FIELD_LABELS).map(function (field) {
-        var selected = (currentMap && currentMap[field]) || '';
-        var opts = optionsHtml.replace('value="' + selected + '"', 'value="' + selected + '" selected');
-        return '<label>' + FIELD_LABELS[field] + '</label>' +
-          '<select id="ds-map-' + field + '" style="width:100%;padding:12px;border:1px solid var(--border);border-radius:10px;margin-bottom:10px;">' + opts + '</select>';
-      }).join('') +
-      '<button class="btn btn-primary btn-block" onclick="saveDataSourceUi(\'' + escapeHtml(spreadsheetInput) + '\', \'' + escapeHtml(sheetName) + '\')">Save connection</button>';
-  }
+  const prodCompletedDateInput = document.getElementById('prod-completed-date-input');
+  prodCompletedDateInput.value = prodCompletedDate;
+  prodCompletedDateInput.max = todayDateStr();
+  prodCompletedDateInput.onchange = () => {
+    if (!prodCompletedDateInput.value) { prodCompletedDateInput.value = prodCompletedDate; return; }
+    loadProdCompletedHistory(prodCompletedDateInput.value);
+  };
 
-  function saveDataSourceUi(spreadsheetInput, sheetName) {
-    var map = {};
-    Object.keys(FIELD_LABELS).forEach(function (field) {
-      map[field] = document.getElementById('ds-map-' + field).value || null;
-    });
-    callApi('saveDataSourceConfig', [spreadsheetInput, sheetName, map]).then(function () {
-      document.getElementById('ds-error').textContent = '';
-      alert('Data source saved.');
-    }).catch(showFatalError);
-  }
+  document.getElementById('view-toggle-packing').onclick = () => setBoardView('packing');
+  document.getElementById('view-toggle-production').onclick = () => setBoardView('production');
+}
 
-  function loadOverview() {
-    callApi('getTodaysTruckOverview', []).then(function (sessions) {
-      document.getElementById('overview-table').innerHTML =
-        '<tr><th>Truck</th><th>Checker</th><th>Trays</th><th>Status</th></tr>' +
-        (sessions.length === 0 ? '<tr><td colspan="4">No trucks started today.</td></tr>' : sessions.map(function (s) {
-          return '<tr><td>' + escapeHtml(s.TruckName) + '</td><td>' + escapeHtml(s.CheckerName) + '</td><td>' + escapeHtml(String(s.TrayCount)) + '</td><td>' + escapeHtml(s.Status) + '</td></tr>';
-        }).join(''));
-    }).catch(showFatalError);
-  }
+function setBoardView(view) {
+  boardView = view;
+  localStorage.setItem('df_board_view', view);
+  applyBoardView();
+}
 
-  function changeAdminPin() {
-    var pin = document.getElementById('new-admin-pin').value.trim();
-    if (!pin) return;
-    callApi('setAdminPin', [pin]).then(function () {
-      document.getElementById('new-admin-pin').value = '';
-      alert('Admin PIN updated.');
-    }).catch(showFatalError);
+/* Switches the "Printed" section to show a past day's completed orders (or back to today's live list) */
+function loadPrintedHistory(dateStr) {
+  printedDate = dateStr;
+  if (dateStr === todayDateStr()) {
+    printedHistoryOrders = null;
+    renderBoard();
+    return;
   }
+  printedHistoryOrders = [];
+  renderBoard();
+  apiGet('getOrdersForDate', { date: dateStr }).then(res => {
+    if (printedDate !== dateStr) return; // user picked a different date while this was loading
+    printedHistoryOrders = res.orders;
+    renderBoard();
+  }).catch(err => alert(err.message));
+}
 
-  // ------------------------------------------------------------------
-  // UTIL
-  // ------------------------------------------------------------------
-  function escapeHtml(str) {
-    return String(str == null ? '' : str).replace(/[&<>"']/g, function (c) {
-      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
-    });
+/* Switches Production's "Completed" section to show a past day (or back to today's live list) */
+function loadProdCompletedHistory(dateStr) {
+  prodCompletedDate = dateStr;
+  if (dateStr === todayDateStr()) {
+    prodCompletedHistoryOrders = null;
+    renderProductionBoard();
+    return;
   }
+  prodCompletedHistoryOrders = [];
+  renderProductionBoard();
+  apiGet('getOrdersForDate', { date: dateStr, type: 'productionCompleted' }).then(res => {
+    if (prodCompletedDate !== dateStr) return; // user picked a different date while this was loading
+    prodCompletedHistoryOrders = res.orders;
+    renderProductionBoard();
+  }).catch(err => alert(err.message));
+}
 
-  function formatTime(iso) {
-    try { return new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }); } catch (e) { return ''; }
-  }
+/* Refresh age badges every second without waiting for a full board reload */
+setInterval(() => { if (boardData) { renderBoard(); renderProductionBoard(); } }, 15000);
 
-  function showFatalError(err) {
-    alert('Something went wrong: ' + (err && err.message ? err.message : err));
-  }
+window.addEventListener('load', () => { wireLockScreenEvents(); init(); });
 </script>
 </body>
 </html>
