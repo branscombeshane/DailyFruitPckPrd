@@ -357,7 +357,7 @@
     <div class="empty-note hidden" id="needs-review-empty" style="text-align:left;">Nothing outstanding — every product on the board is classified.</div>
 
     <h3 style="margin-top:26px;">Import the Sage product list</h3>
-    <p style="color:var(--muted);font-size:14px;">Export Sage's item/product list (code, description, category) as a CSV. New products get added there periodically, so re-export and re-import this every so often (e.g. daily) to pick them up — importing again just updates existing products, it won't duplicate them.</p>
+    <p style="color:var(--muted);font-size:14px;">Export Sage's item/product list (code, description, category) as a CSV. New products get added there periodically, so re-export and re-import this every so often (e.g. daily) to pick up anything new — importing only ever <strong>adds</strong> products that aren't in the list below yet; it never changes the category of a product that's already there, so anything you've classified here won't get overwritten by a stale or re-categorised Sage export.</p>
     <div class="field">
       <label>Upload CSV file</label>
       <input type="file" id="products-csv-file-input" accept=".csv,text/csv">
@@ -370,7 +370,11 @@
     <div class="result-box hidden" id="import-products-result"></div>
 
     <h3 style="margin-top:26px;">All products (<span id="products-count">0</span>)</h3>
-    <div id="products-list" style="max-height:260px;overflow-y:auto;"></div>
+    <p style="color:var(--muted);font-size:14px;">Change any product's category here at any time — not just newly unclassified ones.</p>
+    <div class="field">
+      <input type="text" id="products-filter-input" placeholder="Filter by code or description…">
+    </div>
+    <div id="products-list" style="max-height:400px;overflow-y:auto;"></div>
   </div>
 
   <div class="admin-panel hidden" id="tab-packers">
@@ -973,15 +977,67 @@ function renderNeedsReviewList(needsReview) {
   });
 }
 
+let allProducts = [];
+
 function renderProductsList(products) {
+  allProducts = products;
   document.getElementById('products-count').textContent = products.length;
+  renderProductsListFiltered();
+}
+
+function renderProductsListFiltered() {
+  const filterEl = document.getElementById('products-filter-input');
+  const filter = (filterEl.value || '').trim().toLowerCase();
+  const products = filter
+    ? allProducts.filter(p => (p.productCode || '').toLowerCase().includes(filter) || (p.description || '').toLowerCase().includes(filter))
+    : allProducts;
+
   const el = document.getElementById('products-list');
-  if (!products.length) { el.innerHTML = '<div class="log-row">No products imported yet.</div>'; return; }
-  el.innerHTML = products.map(p => `
-    <div class="log-row" style="display:flex;justify-content:space-between;gap:10px;">
-      <span>${p.productCode ? `<strong>${escapeHtml(p.productCode)}</strong> ` : ''}${escapeHtml(p.description || '')}</span>
-      <span>${escapeHtml(p.category || '')}</span>
-    </div>`).join('');
+  if (!allProducts.length) { el.innerHTML = '<div class="log-row">No products imported yet.</div>'; return; }
+  if (!products.length) { el.innerHTML = '<div class="log-row">No products match "' + escapeHtml(filterEl.value) + '".</div>'; return; }
+
+  // Products are matched by code when they have one, otherwise by description (same
+  // identity rule the backend uses) - the row's data attributes carry whichever
+  // applies so Save always targets the right product.
+  el.innerHTML = products.map((p, i) => {
+    const isPrepped = String(p.category || '').trim().toLowerCase() === 'prepped';
+    const rowKey = 'p' + i;
+    return `
+    <div class="packer-row" style="align-items:flex-start;flex-wrap:wrap;gap:8px;">
+      <div style="min-width:180px;flex:2;">
+        <span>${p.productCode ? `<strong>${escapeHtml(p.productCode)}</strong> ` : ''}${escapeHtml(p.description || '')}</span>
+      </div>
+      <div style="display:flex;gap:8px;flex:1;min-width:220px;">
+        <select data-product-category="${rowKey}" style="flex:1;padding:9px 10px;border:2px solid var(--line);border-radius:8px;">
+          <option value="Packing" ${isPrepped ? '' : 'selected'}>Packing</option>
+          <option value="Prepped" ${isPrepped ? 'selected' : ''}>Prepped</option>
+        </select>
+        <button class="btn-secondary" data-product-save="${rowKey}" data-product-code="${escapeHtml(p.productCode || '')}" data-product-desc="${escapeHtml(p.description || '')}">Save</button>
+      </div>
+    </div>`;
+  }).join('');
+
+  el.querySelectorAll('[data-product-save]').forEach(btn => {
+    btn.onclick = () => {
+      const key = btn.getAttribute('data-product-save');
+      const code = btn.getAttribute('data-product-code');
+      const desc = btn.getAttribute('data-product-desc');
+      const select = el.querySelector(`[data-product-category="${CSS.escape(key)}"]`);
+      const category = select.value;
+      btn.disabled = true;
+      const original = btn.textContent;
+      btn.textContent = 'Saving…';
+      apiPost('classifyProduct', { productCode: code, description: desc, category: category }).then(res => {
+        renderNeedsReviewList(res.needsReview);
+        renderProductsList(res.products);
+        loadBoard(false);
+      }).catch(err => {
+        alert(err.message);
+        btn.disabled = false;
+        btn.textContent = original;
+      });
+    };
+  });
 }
 
 function doImportProducts() {
@@ -992,7 +1048,7 @@ function doImportProducts() {
   resultBox.classList.remove('hidden');
   apiPost('importProductsCsv', { csvText: text }).then(res => {
     resultBox.className = 'result-box';
-    resultBox.textContent = `Added/updated ${res.productsUpserted} product(s). ${res.itemsBackfilled} order line(s) that were waiting on classification just got corrected.`;
+    resultBox.textContent = `Added ${res.productsAdded} new product(s). ${res.productsUnchanged} already on the list were left as-is (their category wasn't touched). ${res.itemsBackfilled} order line(s) that were waiting on classification just got corrected.`;
     renderNeedsReviewList(res.needsReview);
     renderProductsList(res.products);
     loadBoard(false);
@@ -1070,6 +1126,7 @@ function wireStaticEvents() {
     reader.readAsText(file);
   });
   document.getElementById('import-products-btn').onclick = doImportProducts;
+  document.getElementById('products-filter-input').addEventListener('input', renderProductsListFiltered);
 
   document.getElementById('add-packer-btn').onclick = () => {
     const input = document.getElementById('new-packer-name');
