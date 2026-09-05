@@ -256,8 +256,12 @@
   <div class="section-heading">In progress <span class="count" id="assigned-count">0</span></div>
   <div class="order-grid" id="assigned-grid"></div>
 
-  <div class="section-heading">Printed today <span class="count" id="printed-count">0</span></div>
+  <div class="section-heading" id="printed-heading">
+    <span id="printed-heading-label">Printed today</span> <span class="count" id="printed-count">0</span>
+    <input type="date" id="printed-date-input" style="margin-left:auto;padding:6px 8px;border:2px solid var(--line);border-radius:8px;font-size:14px;text-transform:none;letter-spacing:normal;font-weight:600;color:var(--ink);">
+  </div>
   <div class="order-grid" id="printed-grid"></div>
+  <div class="empty-board hidden" id="printed-empty">No orders were printed on this day.</div>
 </div>
 
 <!-- ============ ASSIGN MODAL ============ -->
@@ -426,6 +430,8 @@ let pollTimer = null;
 let pendingAssignOrderId = null;
 let adminPinVerified = false;
 let sitePasscode = localStorage.getItem('df_site_passcode') || '';
+let printedDate = todayDateStr(); // date shown in the "Printed" section - defaults to today
+let printedHistoryOrders = null; // set when printedDate !== today, from getOrdersForDate
 
 /* ===================== API HELPERS ===================== */
 function apiGet(action, params) {
@@ -528,6 +534,11 @@ function loadBoard(isFirstLoad) {
 }
 
 /* ===================== BOARD RENDER ===================== */
+function todayDateStr() {
+  const d = new Date();
+  const pad = n => String(n).padStart(2, '0');
+  return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
+}
 function minutesSince(iso) {
   if (!iso) return 0;
   return (Date.now() - new Date(iso).getTime()) / 60000;
@@ -536,6 +547,11 @@ function fmtTime(iso) {
   if (!iso) return '';
   const d = new Date(iso);
   return d.toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+}
+function fmtDateLong(dateStr) {
+  // dateStr is 'YYYY-MM-DD'; parse as local (not UTC) so it matches the date picker
+  const [y, m, d] = dateStr.split('-').map(Number);
+  return new Date(y, m - 1, d).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' });
 }
 function fmtAge(mins) {
   if (mins < 1) return 'just in';
@@ -565,14 +581,18 @@ function renderBoard() {
 
   const unassigned = [];
   const assigned = [];
-  const printed = [];
-  const todayStr = new Date().toDateString();
+  let printed = [];
+  const isToday = printedDate === todayDateStr();
 
   boardData.orders.forEach(o => {
     if (!o.assignedTo) unassigned.push(o);
     else if (!o.printedAt) assigned.push(o);
-    else if (new Date(o.printedAt).toDateString() === todayStr) printed.push(o);
+    else if (isToday && new Date(o.printedAt).toDateString() === new Date().toDateString()) printed.push(o);
   });
+
+  if (!isToday) {
+    printed = printedHistoryOrders || [];
+  }
 
   unassigned.sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
   assigned.sort((a, b) => new Date(a.assignedAt) - new Date(b.assignedAt));
@@ -581,6 +601,8 @@ function renderBoard() {
   document.getElementById('unassigned-count').textContent = unassigned.length;
   document.getElementById('assigned-count').textContent = assigned.length;
   document.getElementById('printed-count').textContent = printed.length;
+  document.getElementById('printed-empty').classList.toggle('hidden', printed.length > 0);
+  document.getElementById('printed-heading-label').textContent = isToday ? 'Printed today' : 'Printed on ' + fmtDateLong(printedDate);
   document.getElementById('unassigned-empty').classList.toggle('hidden', unassigned.length > 0);
 
   const uGrid = document.getElementById('unassigned-grid');
@@ -634,7 +656,8 @@ function attachCardHandlers() {
     card.onclick = (e) => {
       const orderId = card.getAttribute('data-order-id');
       const action = card.getAttribute('data-action');
-      const order = boardData.orders.find(o => o.orderId === orderId);
+      const order = boardData.orders.find(o => o.orderId === orderId)
+        || (printedHistoryOrders || []).find(o => o.orderId === orderId);
       if (!order) return;
       if (action === 'assign') openAssignModal(order);
       else openViewModal(order);
@@ -971,6 +994,31 @@ function wireStaticEvents() {
     });
   };
   document.getElementById('save-settings-btn').onclick = saveSettings;
+
+  const printedDateInput = document.getElementById('printed-date-input');
+  printedDateInput.value = printedDate;
+  printedDateInput.max = todayDateStr();
+  printedDateInput.onchange = () => {
+    if (!printedDateInput.value) { printedDateInput.value = printedDate; return; }
+    loadPrintedHistory(printedDateInput.value);
+  };
+}
+
+/* Switches the "Printed" section to show a past day's completed orders (or back to today's live list) */
+function loadPrintedHistory(dateStr) {
+  printedDate = dateStr;
+  if (dateStr === todayDateStr()) {
+    printedHistoryOrders = null;
+    renderBoard();
+    return;
+  }
+  printedHistoryOrders = [];
+  renderBoard();
+  apiGet('getOrdersForDate', { date: dateStr }).then(res => {
+    if (printedDate !== dateStr) return; // user picked a different date while this was loading
+    printedHistoryOrders = res.orders;
+    renderBoard();
+  }).catch(err => alert(err.message));
 }
 
 /* Refresh age badges every second without waiting for a full board reload */
