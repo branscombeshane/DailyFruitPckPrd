@@ -54,13 +54,7 @@
     display:flex;align-items:center;justify-content:center;
   }
 
-  /* ---------- packer select ---------- */
-  #packer-select{
-    min-height:100vh;display:flex;flex-direction:column;align-items:center;
-    justify-content:center;padding:30px;gap:24px;
-  }
-  #packer-select h1{font-size:26px;margin:0;color:var(--green-dark);}
-  #packer-select p{color:var(--muted);margin:-14px 0 6px;font-size:15px;}
+  /* ---------- packer tiles (used inside the assign modal) ---------- */
   .tile-grid{
     display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));
     gap:16px;width:100%;max-width:900px;
@@ -245,21 +239,9 @@
 <div id="topbar">
   <div>
     <div class="title" id="company-title">Daily Fruit — Packing</div>
-    <div class="sub" id="current-packer-label"></div>
   </div>
   <div class="right">
-    <button class="pill-btn hidden" id="switch-packer-btn">Switch packer</button>
     <button class="icon-btn" id="admin-gear-btn" title="Admin">⚙</button>
-  </div>
-</div>
-
-<!-- ============ PACKER SELECT ============ -->
-<div id="packer-select" class="hidden">
-  <h1>Who's packing?</h1>
-  <p>Tap your name to see live orders</p>
-  <div class="tile-grid" id="packer-tile-grid"></div>
-  <div class="empty-note hidden" id="no-packers-note">
-    No active packers yet. Tap the ⚙ icon in the top corner to add packers in Admin.
   </div>
 </div>
 
@@ -282,9 +264,13 @@
     <h2 id="assign-modal-ref"></h2>
     <div class="modal-sub" id="assign-modal-customer"></div>
     <ul class="item-list" id="assign-modal-items"></ul>
+    <div class="modal-sub" style="margin:16px 0 8px;font-weight:700;color:var(--ink);">Who's packing this?</div>
+    <div class="tile-grid" id="assign-modal-packer-grid" style="grid-template-columns:repeat(auto-fill,minmax(130px,1fr));"></div>
+    <div class="empty-note hidden" id="assign-modal-no-packers" style="text-align:left;padding:10px 0;">
+      No active packers yet. Tap the ⚙ icon to add packers in Admin.
+    </div>
     <div class="modal-actions">
-      <button class="btn-cancel" id="assign-cancel-btn">Cancel</button>
-      <button class="btn-confirm" id="assign-confirm-btn">Assign to me</button>
+      <button class="btn-cancel" id="assign-cancel-btn" style="flex:1;">Cancel</button>
     </div>
   </div>
 </div>
@@ -409,7 +395,6 @@ const APP_CONFIG = {
 
 /* ===================== STATE ===================== */
 let boardData = null;
-let currentPacker = sessionStorage.getItem('df_current_packer') || '';
 let pollTimer = null;
 let pendingAssignOrderId = null;
 let adminPinVerified = false;
@@ -448,7 +433,6 @@ function lockSite(message) {
   sitePasscode = '';
   localStorage.removeItem('df_site_passcode');
   if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
-  document.getElementById('packer-select').classList.add('hidden');
   document.getElementById('board-view').classList.add('hidden');
   document.getElementById('admin-overlay').classList.add('hidden');
   document.getElementById('lock-error').textContent = message || '';
@@ -508,49 +492,11 @@ function loadBoard(isFirstLoad) {
       clearInterval(pollTimer);
       pollTimer = setInterval(() => loadBoard(false), Math.max(3, data.settings.boardRefreshSeconds) * 1000);
     }
-    renderPackerTiles();
-    if (currentPacker) {
-      showBoardView();
-      renderBoard();
-    } else {
-      showPackerSelect();
-    }
+    document.getElementById('board-view').classList.remove('hidden');
+    renderBoard();
   }).catch(err => {
     console.error(err);
     showConnBanner();
-  });
-}
-
-/* ===================== PACKER SELECT ===================== */
-function showPackerSelect() {
-  document.getElementById('packer-select').classList.remove('hidden');
-  document.getElementById('board-view').classList.add('hidden');
-  document.getElementById('switch-packer-btn').classList.add('hidden');
-  document.getElementById('current-packer-label').textContent = '';
-}
-function showBoardView() {
-  document.getElementById('packer-select').classList.add('hidden');
-  document.getElementById('board-view').classList.remove('hidden');
-  document.getElementById('switch-packer-btn').classList.remove('hidden');
-  document.getElementById('current-packer-label').textContent = currentPacker;
-}
-function renderPackerTiles() {
-  const grid = document.getElementById('packer-tile-grid');
-  const note = document.getElementById('no-packers-note');
-  grid.innerHTML = '';
-  const packers = (boardData && boardData.packers) || [];
-  note.classList.toggle('hidden', packers.length > 0);
-  packers.forEach(name => {
-    const btn = document.createElement('button');
-    btn.className = 'packer-tile';
-    btn.textContent = name;
-    btn.onclick = () => {
-      currentPacker = name;
-      sessionStorage.setItem('df_current_packer', name);
-      showBoardView();
-      renderBoard();
-    };
-    grid.appendChild(btn);
   });
 }
 
@@ -675,17 +621,30 @@ function openAssignModal(order) {
   document.getElementById('assign-modal-ref').textContent = order.sageRef;
   document.getElementById('assign-modal-customer').textContent = order.customerName || '';
   document.getElementById('assign-modal-items').innerHTML = itemListHtml(order.items);
-  document.getElementById('assign-confirm-btn').textContent = 'Assign to ' + currentPacker;
+
+  const grid = document.getElementById('assign-modal-packer-grid');
+  const note = document.getElementById('assign-modal-no-packers');
+  const packers = (boardData && boardData.packers) || [];
+  note.classList.toggle('hidden', packers.length > 0);
+  grid.innerHTML = '';
+  packers.forEach(name => {
+    const btn = document.createElement('button');
+    btn.className = 'packer-tile';
+    btn.textContent = name;
+    btn.onclick = () => assignOrderTo(order.orderId, name, btn);
+    grid.appendChild(btn);
+  });
+
   document.getElementById('assign-modal').classList.remove('hidden');
 }
 function closeAssignModal() {
   pendingAssignOrderId = null;
   document.getElementById('assign-modal').classList.add('hidden');
 }
-function confirmAssign() {
-  if (!pendingAssignOrderId) return;
-  const orderId = pendingAssignOrderId;
-  apiPost('assignOrder', { orderId: orderId, packerName: currentPacker }).then(order => {
+function assignOrderTo(orderId, packerName, tileBtn) {
+  if (pendingAssignOrderId !== orderId) return; // modal already closed/changed
+  document.querySelectorAll('#assign-modal-packer-grid .packer-tile').forEach(b => b.disabled = true);
+  apiPost('assignOrder', { orderId: orderId, packerName: packerName }).then(order => {
     closeAssignModal();
     printSlipForOrder(order);
     loadBoard(false);
@@ -854,11 +813,6 @@ function saveSettings() {
 
 /* ===================== EVENT WIRING ===================== */
 function wireStaticEvents() {
-  document.getElementById('switch-packer-btn').onclick = () => {
-    currentPacker = '';
-    sessionStorage.removeItem('df_current_packer');
-    showPackerSelect();
-  };
   document.getElementById('admin-gear-btn').onclick = () => {
     if (adminPinVerified) openAdmin(); else openPinModal();
   };
@@ -868,7 +822,6 @@ function wireStaticEvents() {
   document.getElementById('pin-input').addEventListener('keyup', e => { if (e.key === 'Enter') submitPin(); });
 
   document.getElementById('assign-cancel-btn').onclick = closeAssignModal;
-  document.getElementById('assign-confirm-btn').onclick = confirmAssign;
   document.getElementById('view-close-btn').onclick = closeViewModal;
 
   document.querySelectorAll('.admin-tab').forEach(tab => {
@@ -908,7 +861,7 @@ function wireStaticEvents() {
 }
 
 /* Refresh age badges every second without waiting for a full board reload */
-setInterval(() => { if (boardData && currentPacker) renderBoard(); }, 15000);
+setInterval(() => { if (boardData) renderBoard(); }, 15000);
 
 window.addEventListener('load', () => { wireLockScreenEvents(); init(); });
 </script>
