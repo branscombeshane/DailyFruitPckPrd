@@ -55,6 +55,9 @@
     width:38px;height:38px;border-radius:50%;font-size:18px;
     display:flex;align-items:center;justify-content:center;
   }
+  .view-toggle{display:flex;background:rgba(255,255,255,.15);border-radius:20px;padding:3px;gap:2px;}
+  .view-toggle-btn{background:transparent;border:none;color:#fff;padding:8px 16px;border-radius:16px;font-size:14px;font-weight:700;opacity:.85;}
+  .view-toggle-btn.active{background:#fff;color:var(--green-dark);opacity:1;}
 
   /* ---------- packer tiles (used inside the assign modal) ---------- */
   .tile-grid{
@@ -79,6 +82,17 @@
     background:var(--line);color:var(--ink);border-radius:12px;padding:1px 9px;font-size:13px;
   }
   .order-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(310px,1fr));gap:14px;}
+
+  .tally-panel{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:14px;}
+  .tally-card{background:var(--card);border-radius:14px;border:2px solid var(--line);padding:14px 16px;}
+  .tally-family{font-size:16px;font-weight:800;display:flex;justify-content:space-between;align-items:baseline;gap:8px;}
+  .tally-family-total{font-size:15px;font-weight:800;color:var(--green-dark);white-space:nowrap;}
+  .tally-variant{display:flex;justify-content:space-between;gap:8px;font-size:13.5px;color:var(--muted);padding:4px 0;border-top:1px dashed var(--line);margin-top:6px;}
+  .tally-variant:first-of-type{margin-top:8px;}
+  .prod-actions{display:flex;gap:8px;margin-top:12px;}
+  .prod-actions .btn-secondary{flex:1;margin-top:0;}
+  .prod-actions .btn-primary{flex:1;margin-top:0;}
+  .prod-done-note{font-size:12px;color:var(--green-dark);font-weight:600;margin-top:2px;}
   .order-card{
     background:var(--card);border-radius:14px;border:2px solid var(--line);
     padding:16px;box-shadow:0 1px 3px rgba(0,0,0,.06);position:relative;overflow:hidden;
@@ -252,6 +266,10 @@
     <div class="title" id="company-title">Daily Fruit — Packing</div>
   </div>
   <div class="right">
+    <div class="view-toggle">
+      <button class="view-toggle-btn" data-view="packing" id="view-toggle-packing">Packing</button>
+      <button class="view-toggle-btn" data-view="production" id="view-toggle-production">Production</button>
+    </div>
     <button class="icon-btn" id="admin-gear-btn" title="Admin">⚙</button>
   </div>
 </div>
@@ -275,6 +293,28 @@
   </div>
   <div class="order-grid" id="printed-grid"></div>
   <div class="empty-board hidden" id="printed-empty">No orders were printed on this day.</div>
+</div>
+
+<!-- ============ PRODUCTION BOARD ============ -->
+<div id="production-view" class="hidden">
+  <div class="section-heading">Prep totals <span class="count" id="tally-count">0</span></div>
+  <div class="tally-panel" id="production-tally"></div>
+  <div class="empty-board hidden" id="tally-empty">Nothing to prep right now.</div>
+
+  <div class="section-heading">Needs processing <span class="count" id="prod-needs-count">0</span></div>
+  <div class="order-grid" id="prod-needs-grid"></div>
+  <div class="empty-board hidden" id="prod-needs-empty">All caught up — nothing waiting on production 🎉</div>
+
+  <div class="section-heading">Scheduled <span class="count" id="prod-scheduled-count">0</span></div>
+  <div class="order-grid" id="prod-scheduled-grid"></div>
+  <div class="empty-board hidden" id="prod-scheduled-empty">Nothing loaded ahead of time right now.</div>
+
+  <div class="section-heading" id="prod-completed-heading">
+    <span id="prod-completed-heading-label">Completed today</span> <span class="count" id="prod-completed-count">0</span>
+    <input type="date" id="prod-completed-date-input" style="margin-left:auto;padding:6px 8px;border:2px solid var(--line);border-radius:8px;font-size:14px;text-transform:none;letter-spacing:normal;font-weight:600;color:var(--ink);">
+  </div>
+  <div class="order-grid" id="prod-completed-grid"></div>
+  <div class="empty-board hidden" id="prod-completed-empty">Nothing completed on this day.</div>
 </div>
 
 <!-- ============ ASSIGN MODAL ============ -->
@@ -411,7 +451,7 @@
   <div class="slip-header">
     <div>
       <h1 id="slip-company">Daily Fruit</h1>
-      <div class="slip-meta">Packing Slip</div>
+      <div class="slip-meta" id="slip-type-label">Packing Slip</div>
     </div>
     <div class="slip-meta" style="text-align:right;">
       <div><strong id="slip-ref"></strong></div>
@@ -419,14 +459,14 @@
     </div>
   </div>
   <div class="slip-meta"><strong>Customer:</strong> <span id="slip-customer"></span></div>
-  <div class="slip-meta"><strong>Assigned to:</strong> <span id="slip-packer"></span> at <span id="slip-assigned-time"></span></div>
+  <div class="slip-meta" id="slip-assigned-row"><strong>Assigned to:</strong> <span id="slip-packer"></span> at <span id="slip-assigned-time"></span></div>
   <table class="slip-items">
     <thead><tr><th>Description</th><th>Category</th><th>Qty</th><th>Unit</th></tr></thead>
     <tbody id="slip-items-body"></tbody>
   </table>
   <div class="slip-meta hidden" id="slip-unclassified-note">* unclassified product — defaulted to Packing, needs checking in Admin</div>
   <div class="slip-footer">
-    <span>Packer signature: ____________________</span>
+    <span id="slip-signature-label">Packer signature: ____________________</span>
     <span id="slip-printed-time"></span>
   </div>
 </div>
@@ -449,6 +489,9 @@ let adminPinVerified = false;
 let sitePasscode = localStorage.getItem('df_site_passcode') || '';
 let printedDate = todayDateStr(); // date shown in the "Printed" section - defaults to today
 let printedHistoryOrders = null; // set when printedDate !== today, from getOrdersForDate
+let boardView = localStorage.getItem('df_board_view') === 'production' ? 'production' : 'packing';
+let prodCompletedDate = todayDateStr(); // date shown in Production's "Completed" section
+let prodCompletedHistoryOrders = null; // set when prodCompletedDate !== today
 
 /* ===================== API HELPERS ===================== */
 function apiGet(action, params) {
@@ -533,17 +576,26 @@ function wireLockScreenEvents() {
   document.getElementById('lock-input').addEventListener('keyup', e => { if (e.key === 'Enter') submitSitePasscode(); });
 }
 
+function applyBoardView() {
+  document.getElementById('board-view').classList.toggle('hidden', boardView !== 'packing');
+  document.getElementById('production-view').classList.toggle('hidden', boardView !== 'production');
+  document.getElementById('view-toggle-packing').classList.toggle('active', boardView === 'packing');
+  document.getElementById('view-toggle-production').classList.toggle('active', boardView === 'production');
+  const companyName = (boardData && boardData.settings.companyName) || 'Daily Fruit';
+  document.getElementById('company-title').textContent = companyName + (boardView === 'production' ? ' — Production' : ' — Packing');
+}
+
 function loadBoard(isFirstLoad) {
   apiGet('getBoard').then(data => {
     boardData = data;
-    document.getElementById('company-title').textContent = (data.settings.companyName || 'Daily Fruit') + ' — Packing';
     document.getElementById('slip-company').textContent = data.settings.companyName || 'Daily Fruit';
     if (data.settings.boardRefreshSeconds && pollTimer) {
       clearInterval(pollTimer);
       pollTimer = setInterval(() => loadBoard(false), Math.max(3, data.settings.boardRefreshSeconds) * 1000);
     }
-    document.getElementById('board-view').classList.remove('hidden');
+    applyBoardView();
     renderBoard();
+    renderProductionBoard();
   }).catch(err => {
     console.error(err);
     showConnBanner();
@@ -618,10 +670,15 @@ function fmtAge(mins) {
   return h + 'h ' + m + 'm';
 }
 
-function itemListHtml(items) {
+// primaryDept picks which department's lines are shown "full strength" and which
+// get muted - the Packing board mutes Production lines (packers care about
+// Packing items first); the Production board does the opposite, so its own
+// lines stand out on a screen that's showing the whole order for context.
+function itemListHtml(items, primaryDept) {
+  const primary = primaryDept || 'Packing';
   return items.map(it => {
     const deptClass = it.department === 'Production' ? 'production' : 'packing';
-    const descClass = it.department === 'Production' ? 'is-production' : '';
+    const descClass = it.department === primary ? '' : 'is-production';
     const tagLabel = it.needsReview ? (it.department + '?') : it.department;
     const tagClass = it.needsReview ? 'unclassified' : deptClass;
     const tagTitle = it.needsReview ? 'title="Unrecognised product code — defaulted, needs classifying in Admin > Products"' : '';
@@ -741,7 +798,7 @@ function renderBoard() {
 }
 
 function attachCardHandlers() {
-  document.querySelectorAll('.order-card').forEach(card => {
+  document.querySelectorAll('#board-view .order-card').forEach(card => {
     card.onclick = (e) => {
       const orderId = card.getAttribute('data-order-id');
       const action = card.getAttribute('data-action');
@@ -752,6 +809,223 @@ function attachCardHandlers() {
       else openViewModal(order);
     };
   });
+}
+
+/* ===================== PRODUCTION BOARD ===================== */
+// The part of a description before " - " groups variants of the same base product
+// together, e.g. "Butternut - Diced KG" and "Butternut - Julienned KG" both belong
+// to the "Butternut" family. A description with no " - " is its own family.
+function productFamily(description) {
+  const s = String(description || '').trim();
+  const idx = s.indexOf(' - ');
+  return idx === -1 ? s : s.slice(0, idx).trim();
+}
+
+function formatQty(n) {
+  return String(Math.round((n + Number.EPSILON) * 100) / 100);
+}
+
+// Sums Production-department item quantities across the given (not-yet-completed)
+// orders: first by exact variant (description + unit), then rolled up by product
+// family - each family only combines variants that share the same unit, so two
+// different units (say kg and each) are never added together.
+function computeProductionTally(orders) {
+  const variantMap = {};
+  orders.forEach(o => {
+    (o.items || []).forEach(it => {
+      if (it.department !== 'Production') return;
+      const unit = (it.unit || '').trim();
+      const key = String(it.description || '').trim().toLowerCase() + '|' + unit.toLowerCase();
+      if (!variantMap[key]) variantMap[key] = { description: it.description, unit: unit, qty: 0 };
+      const q = Number(it.qty);
+      if (!isNaN(q)) variantMap[key].qty += q;
+    });
+  });
+
+  const familyMap = {};
+  Object.values(variantMap).forEach(v => {
+    const family = productFamily(v.description);
+    const key = family.toLowerCase() + '|' + v.unit.toLowerCase();
+    if (!familyMap[key]) familyMap[key] = { family: family, unit: v.unit, total: 0, variants: [] };
+    familyMap[key].total += v.qty;
+    familyMap[key].variants.push(v);
+  });
+
+  return Object.values(familyMap).sort((a, b) => a.family.localeCompare(b.family));
+}
+
+function renderProductionTally(orders) {
+  const groups = computeProductionTally(orders);
+  document.getElementById('tally-count').textContent = groups.length;
+  document.getElementById('tally-empty').classList.toggle('hidden', groups.length > 0);
+  const el = document.getElementById('production-tally');
+  el.innerHTML = groups.map(g => {
+    const single = g.variants.length === 1;
+    // A single-variant family just shows its one full description - no point
+    // repeating the same total twice under a redundant family header.
+    const headerLabel = single ? g.variants[0].description : g.family;
+    const variantRows = single ? '' : g.variants.slice()
+      .sort((a, b) => a.description.localeCompare(b.description))
+      .map(v => `<div class="tally-variant"><span>${escapeHtml(v.description)}</span><span>${formatQty(v.qty)} ${escapeHtml(v.unit)}</span></div>`)
+      .join('');
+    return `<div class="tally-card">
+      <div class="tally-family"><span>${escapeHtml(headerLabel)}</span><span class="tally-family-total">${formatQty(g.total)} ${escapeHtml(g.unit)}</span></div>
+      ${variantRows}
+    </div>`;
+  }).join('');
+}
+
+function renderProductionBoard() {
+  if (!boardData) return;
+  const warnMin = boardData.settings.flagWarningMinutes;
+  const critMin = boardData.settings.flagCriticalMinutes;
+  const today = todayDateStr();
+  const isToday = prodCompletedDate === today;
+
+  // Only orders that actually have something for Production to do belong here.
+  const prodOrders = boardData.orders.filter(o => (o.items || []).some(it => it.department === 'Production'));
+
+  const needsProcessing = [];
+  const scheduled = [];
+  let completed = [];
+
+  prodOrders.forEach(o => {
+    if (o.productionCompletedAt) {
+      if (isToday && new Date(o.productionCompletedAt).toDateString() === new Date().toDateString()) completed.push(o);
+      return;
+    }
+    const packDate = computePackDate(o);
+    if (packDate <= today) needsProcessing.push(Object.assign({ _packDate: packDate }, o));
+    else scheduled.push(Object.assign({ _packDate: packDate }, o));
+  });
+
+  if (!isToday) completed = prodCompletedHistoryOrders || [];
+
+  needsProcessing.sort((a, b) => a._packDate !== b._packDate
+    ? (a._packDate < b._packDate ? -1 : 1)
+    : queueAgeMinutes(b, b._packDate) - queueAgeMinutes(a, a._packDate));
+  scheduled.sort((a, b) => a._packDate !== b._packDate ? (a._packDate < b._packDate ? -1 : 1) : new Date(a.createdAt) - new Date(b.createdAt));
+  completed.sort((a, b) => new Date(b.productionCompletedAt) - new Date(a.productionCompletedAt));
+
+  renderProductionTally(needsProcessing);
+
+  document.getElementById('prod-needs-count').textContent = needsProcessing.length;
+  document.getElementById('prod-needs-empty').classList.toggle('hidden', needsProcessing.length > 0);
+  document.getElementById('prod-scheduled-count').textContent = scheduled.length;
+  document.getElementById('prod-scheduled-empty').classList.toggle('hidden', scheduled.length > 0);
+  document.getElementById('prod-completed-count').textContent = completed.length;
+  document.getElementById('prod-completed-empty').classList.toggle('hidden', completed.length > 0);
+  document.getElementById('prod-completed-heading-label').textContent = isToday ? 'Completed today' : 'Completed on ' + fmtDateLong(prodCompletedDate);
+
+  const needsGrid = document.getElementById('prod-needs-grid');
+  needsGrid.innerHTML = needsProcessing.map(o => {
+    const age = queueAgeMinutes(o, o._packDate);
+    const flagClass = age >= critMin ? 'flag-crit' : age >= warnMin ? 'flag-warn' : 'flag-ok';
+    const overdue = o._packDate < today;
+    const deliverLine = overdue
+      ? `<div class="order-overdue">⚠ Should've been processed ${fmtDateLong(o._packDate)}</div>`
+      : (o.deliveryDate ? `<div class="order-deliver">Deliver ${fmtDateLong(o.deliveryDate)}</div>` : '');
+    const printedNote = o.productionPrintedAt ? `<div class="prod-done-note">🖨 Printed ${fmtTime(o.productionPrintedAt)}</div>` : '';
+    return `<div class="order-card ${flagClass}" data-order-id="${o.orderId}">
+      <div class="order-card-head">
+        <div>
+          <div class="order-ref">${escapeHtml(o.sageRef)}</div>
+          <div class="order-customer">${escapeHtml(o.customerName || '')}</div>
+          <div class="order-arrived">Arrived ${fmtTime(o.createdAt)}</div>
+          ${deliverLine}
+          ${printedNote}
+        </div>
+        <div class="age-badge">${fmtAge(age)}</div>
+      </div>
+      <ul class="item-list">${itemListHtml(o.items, 'Production')}</ul>
+      <div class="prod-actions">
+        <button class="btn-secondary" data-prod-print="${o.orderId}">Print</button>
+        <button class="btn-primary" data-prod-complete="${o.orderId}">Complete</button>
+      </div>
+    </div>`;
+  }).join('');
+
+  const schedGrid = document.getElementById('prod-scheduled-grid');
+  schedGrid.innerHTML = scheduled.map(o => `
+    <div class="order-card scheduled" data-order-id="${o.orderId}">
+      <div class="order-card-head">
+        <div>
+          <div class="order-ref">${escapeHtml(o.sageRef)}</div>
+          <div class="order-customer">${escapeHtml(o.customerName || '')}</div>
+          <div class="order-arrived">Arrived ${fmtTime(o.createdAt)}</div>
+          <div class="order-deliver">Deliver ${fmtDateLong(o.deliveryDate || o._packDate)}</div>
+        </div>
+        <div class="schedule-badge">Process ${fmtDateLong(o._packDate)}</div>
+      </div>
+      <ul class="item-list">${itemListHtml(o.items, 'Production')}</ul>
+    </div>`).join('');
+
+  const compGrid = document.getElementById('prod-completed-grid');
+  compGrid.innerHTML = completed.map(o => `
+    <div class="order-card assigned" data-order-id="${o.orderId}" style="opacity:.7;">
+      <div class="order-card-head">
+        <div>
+          <div class="order-ref">${escapeHtml(o.sageRef)}</div>
+          <div class="order-customer">${escapeHtml(o.customerName || '')}</div>
+        </div>
+      </div>
+      <ul class="item-list">${itemListHtml(o.items, 'Production')}</ul>
+      <div class="assigned-strip"><span>✅ Completed</span><span>${fmtTime(o.productionCompletedAt)}</span></div>
+    </div>`).join('');
+
+  attachProductionCardHandlers();
+}
+
+function attachProductionCardHandlers() {
+  document.querySelectorAll('[data-prod-print]').forEach(btn => {
+    btn.onclick = (e) => {
+      e.stopPropagation();
+      const orderId = btn.getAttribute('data-prod-print');
+      const order = boardData.orders.find(o => o.orderId === orderId);
+      if (order) printProductionSlipForOrder(order);
+    };
+  });
+  document.querySelectorAll('[data-prod-complete]').forEach(btn => {
+    btn.onclick = (e) => {
+      e.stopPropagation();
+      const orderId = btn.getAttribute('data-prod-complete');
+      const order = boardData.orders.find(o => o.orderId === orderId);
+      if (!order) return;
+      if (!confirm(`Mark order ${order.sageRef} as complete? This removes it from the prep tally.`)) return;
+      btn.disabled = true;
+      apiPost('markProductionComplete', { orderId: orderId }).then(() => loadBoard(false)).catch(err => { alert(err.message); btn.disabled = false; });
+    };
+  });
+}
+
+function printProductionSlipForOrder(order) {
+  const prodItems = order.items.filter(it => it.department === 'Production');
+  document.getElementById('slip-type-label').textContent = 'Production Job Slip';
+  document.getElementById('slip-ref').textContent = order.sageRef;
+  document.getElementById('slip-created').textContent = 'Order in: ' + fmtTime(order.createdAt);
+  document.getElementById('slip-customer').textContent = order.customerName || '';
+  document.getElementById('slip-assigned-row').classList.add('hidden');
+  document.getElementById('slip-signature-label').textContent = 'Prepared by: ____________________';
+  document.getElementById('slip-printed-time').textContent = 'Printed: ' + new Date().toLocaleString();
+  document.getElementById('slip-items-body').innerHTML = prodItems.map(it => `
+    <tr>
+      <td>${escapeHtml(it.description)}</td>
+      <td>${escapeHtml(it.category || it.department)}${it.needsReview ? ' *' : ''}</td>
+      <td>${escapeHtml(String(it.qty))}</td>
+      <td>${escapeHtml(it.unit || '')}</td>
+    </tr>`).join('');
+  document.getElementById('slip-unclassified-note').classList.toggle('hidden', !prodItems.some(it => it.needsReview));
+
+  const onAfterPrint = () => {
+    window.removeEventListener('afterprint', onAfterPrint);
+    // Restore the shared slip template's defaults for the next Packing slip print.
+    document.getElementById('slip-type-label').textContent = 'Packing Slip';
+    document.getElementById('slip-assigned-row').classList.remove('hidden');
+    document.getElementById('slip-signature-label').textContent = 'Packer signature: ____________________';
+    apiPost('markProductionPrinted', { orderId: order.orderId }).then(() => loadBoard(false)).catch(() => {});
+  };
+  window.addEventListener('afterprint', onAfterPrint);
+  setTimeout(() => window.print(), 150);
 }
 
 function escapeHtml(s) {
@@ -1152,6 +1426,23 @@ function wireStaticEvents() {
     if (!printedDateInput.value) { printedDateInput.value = printedDate; return; }
     loadPrintedHistory(printedDateInput.value);
   };
+
+  const prodCompletedDateInput = document.getElementById('prod-completed-date-input');
+  prodCompletedDateInput.value = prodCompletedDate;
+  prodCompletedDateInput.max = todayDateStr();
+  prodCompletedDateInput.onchange = () => {
+    if (!prodCompletedDateInput.value) { prodCompletedDateInput.value = prodCompletedDate; return; }
+    loadProdCompletedHistory(prodCompletedDateInput.value);
+  };
+
+  document.getElementById('view-toggle-packing').onclick = () => setBoardView('packing');
+  document.getElementById('view-toggle-production').onclick = () => setBoardView('production');
+}
+
+function setBoardView(view) {
+  boardView = view;
+  localStorage.setItem('df_board_view', view);
+  applyBoardView();
 }
 
 /* Switches the "Printed" section to show a past day's completed orders (or back to today's live list) */
@@ -1171,8 +1462,25 @@ function loadPrintedHistory(dateStr) {
   }).catch(err => alert(err.message));
 }
 
+/* Switches Production's "Completed" section to show a past day (or back to today's live list) */
+function loadProdCompletedHistory(dateStr) {
+  prodCompletedDate = dateStr;
+  if (dateStr === todayDateStr()) {
+    prodCompletedHistoryOrders = null;
+    renderProductionBoard();
+    return;
+  }
+  prodCompletedHistoryOrders = [];
+  renderProductionBoard();
+  apiGet('getOrdersForDate', { date: dateStr, type: 'productionCompleted' }).then(res => {
+    if (prodCompletedDate !== dateStr) return; // user picked a different date while this was loading
+    prodCompletedHistoryOrders = res.orders;
+    renderProductionBoard();
+  }).catch(err => alert(err.message));
+}
+
 /* Refresh age badges every second without waiting for a full board reload */
-setInterval(() => { if (boardData) renderBoard(); }, 15000);
+setInterval(() => { if (boardData) { renderBoard(); renderProductionBoard(); } }, 15000);
 
 window.addEventListener('load', () => { wireLockScreenEvents(); init(); });
 </script>
