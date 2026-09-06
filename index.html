@@ -482,6 +482,10 @@
   <div class="section-heading">Today's snapshot</div>
   <div class="dashboard-grid" id="dash-stats"></div>
 
+  <div class="section-heading">Production totals <span class="count" id="dash-tally-count">0</span></div>
+  <div class="tally-panel" id="dash-production-tally"></div>
+  <div class="empty-board hidden" id="dash-tally-empty">Nothing completed in production yet today.</div>
+
   <div class="section-heading">⚠ Needs attention <span class="count" id="dash-flagged-count">0</span></div>
   <div id="dash-flagged-list"></div>
   <div class="empty-board hidden" id="dash-flagged-empty">Nothing flagged — the floor is on top of things 🎉</div>
@@ -1268,12 +1272,11 @@ function computeProductionTally(orders) {
   return Object.values(familyMap).sort((a, b) => a.family.localeCompare(b.family));
 }
 
-function renderProductionTally(orders) {
-  const groups = computeProductionTally(orders);
-  document.getElementById('tally-count').textContent = groups.length;
-  document.getElementById('tally-empty').classList.toggle('hidden', groups.length > 0);
-  const el = document.getElementById('production-tally');
-  el.innerHTML = groups.map(g => {
+// Shared by the live Production board's "Prep totals" (still-to-do orders)
+// and the Dashboard's "Production totals" (today's completed orders) - same
+// card markup either way, just fed a different set of orders' tally groups.
+function tallyGroupsHtml(groups) {
+  return groups.map(g => {
     const single = g.variants.length === 1;
     // A single-variant family just shows its one full description - no point
     // repeating the same total twice under a redundant family header.
@@ -1287,6 +1290,13 @@ function renderProductionTally(orders) {
       ${variantRows}
     </div>`;
   }).join('');
+}
+
+function renderProductionTally(orders) {
+  const groups = computeProductionTally(orders);
+  document.getElementById('tally-count').textContent = groups.length;
+  document.getElementById('tally-empty').classList.toggle('hidden', groups.length > 0);
+  document.getElementById('production-tally').innerHTML = tallyGroupsHtml(groups);
 }
 
 function renderProductionBoard() {
@@ -1587,6 +1597,7 @@ function renderDashboard() {
   let needsReviewCount = 0;
   const flagged = [];
   const printedTodayByPacker = {};
+  const completedTodayOrders = [];
 
   boardData.orders.forEach(o => {
     const items = o.items || [];
@@ -1612,7 +1623,10 @@ function renderDashboard() {
     // Production side - same buckets renderProductionBoard() uses.
     if (hasProdItems) {
       if (o.productionCompletedAt) {
-        if (new Date(o.productionCompletedAt).toDateString() === nowStr) prodCompletedToday++;
+        if (new Date(o.productionCompletedAt).toDateString() === nowStr) {
+          prodCompletedToday++;
+          completedTodayOrders.push(o);
+        }
       } else {
         const packDate = computePackDate(o);
         if (packDate <= today) {
@@ -1665,6 +1679,13 @@ function renderDashboard() {
   document.getElementById('dash-packers-empty').classList.toggle('hidden', packerNames.length > 0);
   document.getElementById('dash-packers-list').innerHTML = packerNames.map(name => `
     <div class="dash-packer-row"><span>${escapeHtml(name)}</span><span>${printedTodayByPacker[name]} printed</span></div>`).join('');
+
+  // Production totals - same tally card markup as the Production tab's "Prep totals",
+  // but fed today's COMPLETED production orders instead of the still-to-do queue.
+  const completedGroups = computeProductionTally(completedTodayOrders);
+  document.getElementById('dash-tally-count').textContent = completedGroups.length;
+  document.getElementById('dash-tally-empty').classList.toggle('hidden', completedGroups.length > 0);
+  document.getElementById('dash-production-tally').innerHTML = tallyGroupsHtml(completedGroups);
 }
 
 function escapeHtml(s) {
