@@ -240,21 +240,39 @@
   .result-box.error{background:var(--crit-bg);color:var(--crit);}
   .log-row{font-size:13px;color:var(--muted);padding:4px 0;border-bottom:1px dashed var(--line);}
 
-  /* ---------- print slip ---------- */
+  /* ---------- print slip (Epson TM-T20III, 80mm thermal receipt roll) ----------
+     Thermal receipt printers aren't a fixed page size like A4/Letter - they're a
+     continuous roll that's only constrained in WIDTH (80mm), so @page uses
+     "auto" height (no page breaks) and everything below is sized to fit ~72mm
+     of printable width. No background fills (thermal heads render those as slow,
+     ink-heavy dithering) and no table borders (heavy on a thermal head and wastes
+     width on a narrow slip) - items are stacked description-then-details blocks
+     instead, separated by thin dashed rules, closer to a real receipt/kitchen
+     ticket than a printed table. If your roll is 58mm instead of 80mm, change
+     the two "80mm"/"72mm" values below to match. */
   #print-slip{display:none;}
+  @page{ size:80mm auto; margin:0; }
   @media print{
     body *{visibility:hidden;}
     #print-slip, #print-slip *{visibility:visible;}
     #print-slip{
-      display:block;position:absolute;top:0;left:0;width:100%;padding:20px;
+      display:block;position:absolute;top:0;left:0;
+      width:72mm;padding:3mm 4mm;
+      font-family:Arial,Helvetica,sans-serif;color:#000;font-size:12px;line-height:1.35;
     }
-    .slip-header{display:flex;justify-content:space-between;border-bottom:3px solid #000;padding-bottom:10px;margin-bottom:14px;}
-    .slip-header h1{font-size:22px;margin:0;}
-    .slip-meta{font-size:13px;margin-top:4px;}
-    .slip-items{width:100%;border-collapse:collapse;margin-top:10px;}
-    .slip-items th,.slip-items td{border:1px solid #000;padding:6px 8px;font-size:13px;text-align:left;}
-    .slip-items .prod-row td{background:#eee;}
-    .slip-footer{margin-top:18px;font-size:12px;display:flex;justify-content:space-between;}
+    .slip-header{text-align:center;border-bottom:1px dashed #000;padding-bottom:6px;margin-bottom:6px;}
+    .slip-header h1{font-size:16px;margin:0 0 2px;}
+    .slip-type{font-size:11px;text-transform:uppercase;letter-spacing:1px;}
+    .slip-ref-line{font-size:20px;font-weight:700;text-align:center;margin:6px 0;}
+    .slip-meta{font-size:12px;margin-top:3px;word-break:break-word;}
+    .slip-rule{border-top:1px dashed #000;margin:8px 0;}
+    .slip-items{margin-top:4px;}
+    .slip-item{padding:4px 0;border-bottom:1px dashed #999;}
+    .slip-item-desc{font-size:13px;font-weight:700;word-break:break-word;}
+    .slip-item-meta{display:flex;justify-content:space-between;gap:8px;font-size:11px;margin-top:1px;}
+    .slip-item-qty{font-size:15px;font-weight:700;white-space:nowrap;}
+    .slip-footer{margin-top:10px;font-size:10.5px;}
+    .slip-footer div{margin-top:4px;}
   }
 
   .conn-banner{
@@ -497,26 +515,21 @@
 <!-- ============ PRINT SLIP ============ -->
 <div id="print-slip">
   <div class="slip-header">
-    <div>
-      <h1 id="slip-company">Daily Fruit</h1>
-      <div class="slip-meta" id="slip-type-label">Packing Slip</div>
-    </div>
-    <div class="slip-meta" style="text-align:right;">
-      <div><strong id="slip-ref"></strong></div>
-      <div id="slip-created"></div>
-    </div>
+    <h1 id="slip-company">Daily Fruit</h1>
+    <div class="slip-type" id="slip-type-label">Packing Slip</div>
   </div>
+  <div class="slip-ref-line" id="slip-ref"></div>
+  <div class="slip-meta" id="slip-created"></div>
   <div class="slip-meta"><strong>Customer:</strong> <span id="slip-customer"></span></div>
   <div class="slip-meta hidden" id="slip-notes-row"><strong>Notes:</strong> <span id="slip-notes"></span></div>
   <div class="slip-meta" id="slip-assigned-row"><strong>Assigned to:</strong> <span id="slip-packer"></span> at <span id="slip-assigned-time"></span></div>
-  <table class="slip-items">
-    <thead><tr><th>Description</th><th>Category</th><th>Qty</th><th>Unit</th></tr></thead>
-    <tbody id="slip-items-body"></tbody>
-  </table>
+  <div class="slip-rule"></div>
+  <div class="slip-items" id="slip-items-body"></div>
+  <div class="slip-rule"></div>
   <div class="slip-meta hidden" id="slip-unclassified-note">* unclassified product — defaulted to Packing, needs checking in Admin</div>
   <div class="slip-footer">
-    <span id="slip-signature-label">Packer signature: ____________________</span>
-    <span id="slip-printed-time"></span>
+    <div id="slip-signature-label">Packer signature: ____________________</div>
+    <div id="slip-printed-time"></div>
   </div>
 </div>
 
@@ -1244,12 +1257,10 @@ function printProductionSlipForOrder(order) {
   document.getElementById('slip-signature-label').textContent = 'Prepared by: ____________________';
   document.getElementById('slip-printed-time').textContent = 'Printed: ' + fmtDateTimeFull(new Date());
   document.getElementById('slip-items-body').innerHTML = prodItems.map(it => `
-    <tr>
-      <td>${escapeHtml(it.description)}</td>
-      <td>${escapeHtml(it.category || it.department)}${it.needsReview ? ' *' : ''}</td>
-      <td>${escapeHtml(String(it.qty))}</td>
-      <td>${escapeHtml(it.unit || '')}</td>
-    </tr>`).join('');
+    <div class="slip-item">
+      <div class="slip-item-desc">${escapeHtml(it.description)}${it.needsReview ? ' *' : ''}</div>
+      <div class="slip-item-meta"><span>${escapeHtml(it.category || it.department)}</span><span class="slip-item-qty">${escapeHtml(String(it.qty))}${it.unit ? ' ' + escapeHtml(it.unit) : ''}</span></div>
+    </div>`).join('');
   document.getElementById('slip-unclassified-note').classList.toggle('hidden', !prodItems.some(it => it.needsReview));
 
   const onAfterPrint = () => {
@@ -1365,12 +1376,10 @@ function printSlipForOrder(order) {
   document.getElementById('slip-assigned-time').textContent = fmtTime(order.assignedAt);
   document.getElementById('slip-printed-time').textContent = 'Printed: ' + fmtDateTimeFull(new Date());
   document.getElementById('slip-items-body').innerHTML = order.items.map(it => `
-    <tr class="${it.department === 'Production' ? 'prod-row' : ''}">
-      <td>${escapeHtml(it.description)}</td>
-      <td>${escapeHtml(it.department)}${it.needsReview ? ' *' : ''}</td>
-      <td>${escapeHtml(String(it.qty))}</td>
-      <td>${escapeHtml(it.unit || '')}</td>
-    </tr>`).join('');
+    <div class="slip-item">
+      <div class="slip-item-desc">${escapeHtml(it.description)}${it.needsReview ? ' *' : ''}</div>
+      <div class="slip-item-meta"><span>${escapeHtml(it.department)}${it.department === 'Production' ? ' →' : ''}</span><span class="slip-item-qty">${escapeHtml(String(it.qty))}${it.unit ? ' ' + escapeHtml(it.unit) : ''}</span></div>
+    </div>`).join('');
   document.getElementById('slip-unclassified-note').classList.toggle('hidden', !order.items.some(it => it.needsReview));
 
   const onAfterPrint = () => {
