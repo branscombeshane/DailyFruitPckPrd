@@ -292,23 +292,55 @@
   .lock-badge{font-size:40px;margin-bottom:6px;}
   .lock-box h1{font-size:21px;margin:0 0 6px;color:var(--green-dark);}
   .lock-box p{color:var(--muted);font-size:14px;margin:0 0 20px;}
+  .lock-box .field{text-align:left;margin-bottom:14px;}
   .lock-box input{
-    width:100%;padding:14px;border:2px solid var(--line);border-radius:10px;font-size:20px;
-    text-align:center;letter-spacing:4px;margin-bottom:12px;
+    width:100%;padding:14px;border:2px solid var(--line);border-radius:10px;font-size:17px;
   }
+
+  /* ---------- topbar user / dashboard ---------- */
+  #topbar-user-label{cursor:default;white-space:nowrap;}
+  .dashboard-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:14px;}
+  .stat-card{background:var(--card);border-radius:14px;border:2px solid var(--line);padding:16px;}
+  .stat-card .stat-value{font-size:30px;font-weight:800;color:var(--green-dark);}
+  .stat-card.crit .stat-value{color:var(--crit);}
+  .stat-card.warn .stat-value{color:var(--warn);}
+  .stat-card .stat-label{font-size:13px;color:var(--muted);font-weight:600;margin-top:4px;}
+  .stat-card .stat-sub{font-size:12px;color:var(--muted);margin-top:6px;}
+  .dash-flag-row{
+    display:flex;justify-content:space-between;align-items:center;gap:10px;
+    background:var(--card);border:2px solid var(--crit);border-radius:12px;padding:12px 16px;margin-bottom:10px;
+  }
+  .dash-flag-row .flag-dept{
+    font-size:11px;font-weight:700;text-transform:uppercase;padding:2px 8px;border-radius:10px;
+    background:var(--crit-bg);color:var(--crit);
+  }
+  .dash-packer-row{
+    display:flex;justify-content:space-between;padding:10px 14px;background:var(--card);
+    border-radius:10px;border:2px solid var(--line);margin-bottom:8px;font-weight:600;
+  }
+  #dashboard-view{padding:18px;max-width:1400px;margin:0 auto;}
+  .user-row{display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--line);flex-wrap:wrap;}
+  .user-row input,.user-row select{border:2px solid var(--line);border-radius:8px;padding:7px 9px;font-size:14px;}
 </style>
 </head>
 <body>
 
-<!-- ============ SITE LOCK SCREEN ============ -->
+<!-- ============ LOGIN SCREEN ============ -->
 <div id="lock-screen" class="hidden">
   <div class="lock-box">
     <div class="lock-badge">🍈</div>
     <h1>Daily Fruit — Packing</h1>
-    <p>Staff only. Enter the floor passcode to continue.</p>
-    <input type="password" id="lock-input" inputmode="numeric" placeholder="Passcode" autocomplete="off">
-    <div class="result-box error hidden" id="lock-error"></div>
-    <button class="btn-confirm" id="lock-unlock-btn" style="width:100%;padding:15px;font-size:17px;">Unlock</button>
+    <p>Sign in with your name and PIN to continue.</p>
+    <div class="field">
+      <label>Name</label>
+      <input type="text" id="login-name" placeholder="Your full name" autocomplete="off" autocapitalize="words">
+    </div>
+    <div class="field">
+      <label>PIN</label>
+      <input type="password" id="login-pin" inputmode="numeric" placeholder="PIN" autocomplete="off">
+    </div>
+    <div class="result-box error hidden" id="login-error"></div>
+    <button class="btn-confirm" id="login-btn" style="width:100%;padding:15px;font-size:17px;">Sign in</button>
   </div>
 </div>
 
@@ -321,8 +353,11 @@
     <div class="view-toggle">
       <button class="view-toggle-btn" data-view="packing" id="view-toggle-packing">Packing</button>
       <button class="view-toggle-btn" data-view="production" id="view-toggle-production">Production</button>
+      <button class="view-toggle-btn hidden" data-view="dashboard" id="view-toggle-dashboard">Dashboard</button>
     </div>
-    <button class="icon-btn" id="admin-gear-btn" title="Admin">⚙</button>
+    <span class="pill-btn" id="topbar-user-label"></span>
+    <button class="icon-btn" id="logout-btn" title="Log out">⎋</button>
+    <button class="icon-btn hidden" id="admin-gear-btn" title="Admin">⚙</button>
   </div>
 </div>
 
@@ -379,6 +414,20 @@
   <div class="empty-board hidden" id="prod-completed-empty">Nothing completed on this day.</div>
 </div>
 
+<!-- ============ DASHBOARD ============ -->
+<div id="dashboard-view" class="hidden">
+  <div class="section-heading">Today's snapshot</div>
+  <div class="dashboard-grid" id="dash-stats"></div>
+
+  <div class="section-heading">⚠ Needs attention <span class="count" id="dash-flagged-count">0</span></div>
+  <div id="dash-flagged-list"></div>
+  <div class="empty-board hidden" id="dash-flagged-empty">Nothing flagged — the floor is on top of things 🎉</div>
+
+  <div class="section-heading">Packers today</div>
+  <div id="dash-packers-list"></div>
+  <div class="empty-board hidden" id="dash-packers-empty">No orders printed yet today.</div>
+</div>
+
 <!-- ============ ASSIGN MODAL ============ -->
 <div class="modal-overlay hidden" id="assign-modal">
   <div class="modal-box">
@@ -410,19 +459,6 @@
   </div>
 </div>
 
-<!-- ============ ADMIN PIN MODAL ============ -->
-<div class="modal-overlay hidden" id="pin-modal">
-  <div class="modal-box">
-    <h2>Admin PIN</h2>
-    <div class="field"><input type="password" id="pin-input" inputmode="numeric" placeholder="Enter PIN"></div>
-    <div class="result-box error hidden" id="pin-error">Incorrect PIN</div>
-    <div class="modal-actions">
-      <button class="btn-cancel" id="pin-cancel-btn">Cancel</button>
-      <button class="btn-confirm" id="pin-confirm-btn">Enter</button>
-    </div>
-  </div>
-</div>
-
 <!-- ============ ADMIN OVERLAY ============ -->
 <div id="admin-overlay" class="hidden">
   <div class="admin-header">
@@ -433,6 +469,7 @@
     <button class="admin-tab active" data-tab="import">Import orders</button>
     <button class="admin-tab" data-tab="products">Products</button>
     <button class="admin-tab" data-tab="packers">Packers</button>
+    <button class="admin-tab" data-tab="users">Users</button>
     <button class="admin-tab" data-tab="settings">Settings</button>
   </div>
 
@@ -494,6 +531,25 @@
     <button class="btn-primary" id="add-packer-btn">Add packer</button>
   </div>
 
+  <div class="admin-panel hidden" id="tab-users">
+    <h3>Users</h3>
+    <p style="color:var(--muted);font-size:14px;">Everyone who can sign into this app, and what they see once they're in. <strong>Factory Floor</strong> gets Packing + Production only. <strong>Production Manager</strong> also gets the Dashboard. <strong>Admin</strong> gets everything, including this screen. There must always be at least one active Admin — the last one can't be demoted, deactivated, or deleted.</p>
+    <div id="users-admin-list"></div>
+    <h3 style="margin-top:26px;">Add a user</h3>
+    <div class="field"><label>Full name</label><input type="text" id="new-user-name" placeholder="Full name"></div>
+    <div class="field"><label>PIN (at least 4 digits)</label><input type="text" id="new-user-pin" inputmode="numeric" placeholder="1234"></div>
+    <div class="field">
+      <label>Role</label>
+      <select id="new-user-role">
+        <option>Factory Floor</option>
+        <option>Production Manager</option>
+        <option>Admin</option>
+      </select>
+    </div>
+    <button class="btn-primary" id="add-user-btn">Add user</button>
+    <div class="result-box hidden" id="users-result"></div>
+  </div>
+
   <div class="admin-panel hidden" id="tab-settings">
     <h3>Settings</h3>
     <div class="field"><label>Company name</label><input type="text" id="set-company"></div>
@@ -501,11 +557,10 @@
     <div class="field"><label>Flag orders red after (minutes unassigned)</label><input type="number" id="set-crit"></div>
     <div class="field"><label>Sage categories that mean "Production" (comma-separated)</label><input type="text" id="set-prod-cats"></div>
     <div class="field"><label>Board refresh interval (seconds)</label><input type="number" id="set-refresh"></div>
-    <div class="field"><label>Admin PIN</label><input type="text" id="set-pin"></div>
     <div class="field">
-      <label>Floor passcode (gates the whole app before anyone sees an order)</label>
-      <input type="text" id="set-site-passcode">
-      <p style="color:var(--muted);font-size:12.5px;margin:6px 0 0;">Changing this signs every device out — everyone (including this one) will need the new passcode next time they load the page.</p>
+      <label>Email-import passcode</label>
+      <input type="text" id="set-import-passcode">
+      <p style="color:var(--muted);font-size:12.5px;margin:6px 0 0;">Must match the SITE_PASSCODE constant in EmailImport.gs — this is only for that automated inbox watcher, not a personal login. It has no effect on anyone's Users sign-in.</p>
     </div>
     <button class="btn-primary" id="save-settings-btn">Save settings</button>
     <div class="result-box hidden" id="settings-result"></div>
@@ -547,12 +602,16 @@ const APP_CONFIG = {
 let boardData = null;
 let pollTimer = null;
 let pendingAssignOrderId = null;
-let adminPinVerified = false;
-let sitePasscode = localStorage.getItem('df_site_passcode') || '';
+// Auth travels as userName/userPin on every request (see requireUser_ in
+// Code.gs) - kept in localStorage so a device stays signed in across
+// reloads, same as the old single-passcode gate did, just per-person now.
+let userName = localStorage.getItem('df_user_name') || '';
+let userPin = localStorage.getItem('df_user_pin') || '';
+let userRole = localStorage.getItem('df_user_role') || '';
 let printedDate = todayDateStr(); // date shown in the "Printed" section - defaults to today
 let printedHistoryOrders = null; // set when printedDate !== today, from getOrdersForDate
 let printedPackerFilter = ''; // '' = all packers; otherwise only show this packer's printed orders
-let boardView = localStorage.getItem('df_board_view') === 'production' ? 'production' : 'packing';
+let boardView = ['packing', 'production', 'dashboard'].includes(localStorage.getItem('df_board_view')) ? localStorage.getItem('df_board_view') : 'packing';
 let prodCompletedDate = todayDateStr(); // date shown in Production's "Completed" section
 let prodCompletedHistoryOrders = null; // set when prodCompletedDate !== today
 
@@ -576,7 +635,8 @@ function fetchWithTimeout_(url, options) {
 function apiGet(action, params) {
   const url = new URL(APP_CONFIG.API_URL);
   url.searchParams.set('action', action);
-  url.searchParams.set('passcode', sitePasscode);
+  url.searchParams.set('userName', userName);
+  url.searchParams.set('userPin', userPin);
   Object.keys(params || {}).forEach(k => url.searchParams.set(k, params[k]));
   return fetchWithTimeout_(url.toString()).then(r => r.json()).then(handleApiResponse);
 }
@@ -584,14 +644,20 @@ function apiPost(action, payload) {
   return fetchWithTimeout_(APP_CONFIG.API_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-    body: JSON.stringify(Object.assign({ action: action, passcode: sitePasscode }, payload || {}))
+    body: JSON.stringify(Object.assign({ action: action, userName: userName, userPin: userPin }, payload || {}))
   }).then(r => r.json()).then(handleApiResponse);
 }
+// These three exact messages are the only ones authenticateUser_ (Code.gs)
+// throws for a bad login - if a normal (already-logged-in) request comes
+// back with one of them, this device's saved credentials are no longer
+// valid (PIN changed, account deactivated/deleted elsewhere) and the only
+// right move is to sign this device out rather than keep retrying.
+const AUTH_ERROR_MESSAGES = ['Name not recognized.', 'Incorrect PIN.', 'This user has been deactivated - ask an Admin to reactivate it.'];
 function handleApiResponse(res) {
   hideConnBanner();
   if (!res.ok) {
-    if (res.error === 'Incorrect passcode.') {
-      lockSite('That passcode isn\'t valid anymore — please re-enter it.');
+    if (AUTH_ERROR_MESSAGES.includes(res.error)) {
+      logoutUser('You were signed out — please sign in again.');
     }
     throw new Error(res.error || 'Unknown server error');
   }
@@ -603,70 +669,98 @@ function showConnBanner(detail) {
 }
 function hideConnBanner() { document.getElementById('conn-banner').classList.add('hidden'); }
 
-/* ===================== SITE LOCK ===================== */
-function lockSite(message) {
-  sitePasscode = '';
-  localStorage.removeItem('df_site_passcode');
+/* ===================== LOGIN ===================== */
+function logoutUser(message) {
+  userName = ''; userPin = ''; userRole = '';
+  localStorage.removeItem('df_user_name');
+  localStorage.removeItem('df_user_pin');
+  localStorage.removeItem('df_user_role');
   if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
   document.getElementById('board-view').classList.add('hidden');
+  document.getElementById('production-view').classList.add('hidden');
+  document.getElementById('dashboard-view').classList.add('hidden');
   document.getElementById('admin-overlay').classList.add('hidden');
-  document.getElementById('lock-error').textContent = message || '';
-  document.getElementById('lock-error').classList.toggle('hidden', !message);
-  document.getElementById('lock-input').value = '';
+  document.getElementById('login-error').textContent = message || '';
+  document.getElementById('login-error').classList.toggle('hidden', !message);
+  document.getElementById('login-name').value = '';
+  document.getElementById('login-pin').value = '';
   document.getElementById('lock-screen').classList.remove('hidden');
-  setTimeout(() => document.getElementById('lock-input').focus(), 50);
+  setTimeout(() => document.getElementById('login-name').focus(), 50);
 }
-function submitSitePasscode() {
-  const entered = document.getElementById('lock-input').value;
-  const btn = document.getElementById('lock-unlock-btn');
+function submitLogin() {
+  const name = document.getElementById('login-name').value.trim();
+  const pin = document.getElementById('login-pin').value;
+  if (!name || !pin) return;
+  const btn = document.getElementById('login-btn');
   btn.disabled = true;
   fetchWithTimeout_(APP_CONFIG.API_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-    body: JSON.stringify({ action: 'verifySitePasscode', passcode: entered })
+    body: JSON.stringify({ action: 'login', userName: name, userPin: pin })
   }).then(r => r.json()).then(res => {
     btn.disabled = false;
-    if (!res.ok) { document.getElementById('lock-error').textContent = res.error; document.getElementById('lock-error').classList.remove('hidden'); return; }
-    if (res.data.valid) {
-      sitePasscode = entered;
-      localStorage.setItem('df_site_passcode', entered);
-      document.getElementById('lock-screen').classList.add('hidden');
-      init();
-    } else {
-      document.getElementById('lock-error').textContent = 'Incorrect passcode.';
-      document.getElementById('lock-error').classList.remove('hidden');
+    if (!res.ok) {
+      document.getElementById('login-error').textContent = res.error;
+      document.getElementById('login-error').classList.remove('hidden');
+      return;
     }
+    userName = res.data.name;
+    userPin = pin;
+    userRole = res.data.role;
+    localStorage.setItem('df_user_name', userName);
+    localStorage.setItem('df_user_pin', userPin);
+    localStorage.setItem('df_user_role', userRole);
+    document.getElementById('lock-screen').classList.add('hidden');
+    init();
   }).catch(() => {
     btn.disabled = false;
-    document.getElementById('lock-error').textContent = 'Could not reach the server — check the connection.';
-    document.getElementById('lock-error').classList.remove('hidden');
+    document.getElementById('login-error').textContent = 'Could not reach the server — check the connection.';
+    document.getElementById('login-error').classList.remove('hidden');
   });
 }
 
 /* ===================== INIT ===================== */
 let appStarted = false;
 function init() {
-  if (!sitePasscode) { lockSite(); return; }
+  if (!userName || !userPin) { logoutUser(); return; }
   if (!appStarted) { wireStaticEvents(); appStarted = true; }
+  applyRoleUI();
   loadBoard(true);
   if (pollTimer) clearInterval(pollTimer);
   pollTimer = setInterval(() => loadBoard(false), 5000);
 }
 
-function wireLockScreenEvents() {
-  document.getElementById('lock-unlock-btn').onclick = submitSitePasscode;
-  document.getElementById('lock-input').addEventListener('keyup', e => { if (e.key === 'Enter') submitSitePasscode(); });
+function wireLoginScreenEvents() {
+  document.getElementById('login-btn').onclick = submitLogin;
+  document.getElementById('login-name').addEventListener('keyup', e => { if (e.key === 'Enter') document.getElementById('login-pin').focus(); });
+  document.getElementById('login-pin').addEventListener('keyup', e => { if (e.key === 'Enter') submitLogin(); });
+}
+
+// Role decides what nav is even visible - Factory Floor: Packing/Production
+// only; Production Manager: + Dashboard; Admin: + the gear icon into Admin.
+// Doesn't change without a fresh login, so this only needs to run once.
+function applyRoleUI() {
+  const canSeeDashboard = userRole === 'Production Manager' || userRole === 'Admin';
+  document.getElementById('view-toggle-dashboard').classList.toggle('hidden', !canSeeDashboard);
+  document.getElementById('admin-gear-btn').classList.toggle('hidden', userRole !== 'Admin');
+  document.getElementById('topbar-user-label').textContent = userName + ' (' + userRole + ')';
+  if (boardView === 'dashboard' && !canSeeDashboard) setBoardView('packing');
 }
 
 function applyBoardView() {
   document.getElementById('board-view').classList.toggle('hidden', boardView !== 'packing');
   document.getElementById('production-view').classList.toggle('hidden', boardView !== 'production');
+  document.getElementById('dashboard-view').classList.toggle('hidden', boardView !== 'dashboard');
   document.getElementById('view-toggle-packing').classList.toggle('active', boardView === 'packing');
   document.getElementById('view-toggle-production').classList.toggle('active', boardView === 'production');
+  document.getElementById('view-toggle-dashboard').classList.toggle('active', boardView === 'dashboard');
+  document.getElementById('quick-bar').classList.toggle('hidden', boardView === 'dashboard');
   document.getElementById('quick-pills-packing').classList.toggle('hidden', boardView !== 'packing');
   document.getElementById('quick-pills-production').classList.toggle('hidden', boardView !== 'production');
   const companyName = (boardData && boardData.settings.companyName) || 'Daily Fruit';
-  document.getElementById('company-title').textContent = companyName + (boardView === 'production' ? ' — Production' : ' — Packing');
+  const viewLabel = boardView === 'production' ? ' — Production' : boardView === 'dashboard' ? ' — Dashboard' : ' — Packing';
+  document.getElementById('company-title').textContent = companyName + viewLabel;
+  if (boardView === 'dashboard') renderDashboard();
   measureStickyOffset();
 }
 
@@ -1294,6 +1388,102 @@ function printProductionSlipForOrder(order) {
   setTimeout(() => window.print(), 150);
 }
 
+/* ===================== DASHBOARD ===================== */
+// Computed entirely client-side from the same boardData the Packing/Production
+// boards already have (no separate backend endpoint) - reuses the exact same
+// pack-date/queue-age rules those boards use, so "today's snapshot" always
+// agrees with what's actually on the two live boards.
+function renderDashboard() {
+  if (!boardData) return;
+  const critMin = boardData.settings.flagCriticalMinutes;
+  const today = todayDateStr();
+  const nowStr = new Date().toDateString();
+
+  let packNeeds = 0, packAssigned = 0, packPrintedToday = 0, packOverdue = 0;
+  let prodNeeds = 0, prodCompletedToday = 0, prodOverdue = 0;
+  let needsReviewCount = 0;
+  const flagged = [];
+  const printedTodayByPacker = {};
+
+  boardData.orders.forEach(o => {
+    const items = o.items || [];
+    needsReviewCount += items.filter(it => it.needsReview).length;
+    const hasProdItems = items.some(it => it.department === 'Production');
+
+    // Packing side - same three buckets renderBoard() uses.
+    if (!o.assignedTo) {
+      const packDate = computePackDate(o);
+      if (packDate <= today) {
+        packNeeds++;
+        if (packDate < today) packOverdue++;
+        const age = queueAgeMinutes(o, packDate);
+        if (age >= critMin) flagged.push({ dept: 'Packing', sageRef: o.sageRef, customerName: o.customerName, age: age, overdue: packDate < today });
+      }
+    } else if (!o.printedAt) {
+      packAssigned++;
+    } else if (new Date(o.printedAt).toDateString() === nowStr) {
+      packPrintedToday++;
+      printedTodayByPacker[o.assignedTo] = (printedTodayByPacker[o.assignedTo] || 0) + 1;
+    }
+
+    // Production side - same buckets renderProductionBoard() uses.
+    if (hasProdItems) {
+      if (o.productionCompletedAt) {
+        if (new Date(o.productionCompletedAt).toDateString() === nowStr) prodCompletedToday++;
+      } else {
+        const packDate = computePackDate(o);
+        if (packDate <= today) {
+          prodNeeds++;
+          if (packDate < today) prodOverdue++;
+          const age = queueAgeMinutes(o, packDate);
+          if (age >= critMin) flagged.push({ dept: 'Production', sageRef: o.sageRef, customerName: o.customerName, age: age, overdue: packDate < today });
+        }
+      }
+    }
+  });
+
+  flagged.sort((a, b) => b.age - a.age);
+
+  const packTotal = packNeeds + packAssigned + packPrintedToday;
+  const packPct = packTotal ? Math.round((packPrintedToday / packTotal) * 100) : 100;
+  const prodTotal = prodNeeds + prodCompletedToday;
+  const prodPct = prodTotal ? Math.round((prodCompletedToday / prodTotal) * 100) : 100;
+
+  const stats = [
+    { label: 'Needs a packer', value: packNeeds, cls: packNeeds > 0 ? (packOverdue > 0 ? 'crit' : 'warn') : '', sub: packOverdue ? packOverdue + ' overdue' : '' },
+    { label: 'Packing in progress', value: packAssigned, cls: '', sub: '' },
+    { label: 'Printed today', value: packPrintedToday, cls: '', sub: packTotal ? packPct + '% of today\'s packing done' : '' },
+    { label: 'Needs processing', value: prodNeeds, cls: prodNeeds > 0 ? (prodOverdue > 0 ? 'crit' : 'warn') : '', sub: prodOverdue ? prodOverdue + ' overdue' : '' },
+    { label: 'Completed today', value: prodCompletedToday, cls: '', sub: prodTotal ? prodPct + '% of today\'s production done' : '' },
+    { label: 'Needs review', value: needsReviewCount, cls: needsReviewCount > 0 ? 'warn' : '', sub: needsReviewCount ? 'Unclassified products — see Admin > Products' : '' }
+  ];
+
+  document.getElementById('dash-stats').innerHTML = stats.map(s => `
+    <div class="stat-card ${s.cls}">
+      <div class="stat-value">${s.value}</div>
+      <div class="stat-label">${escapeHtml(s.label)}</div>
+      ${s.sub ? `<div class="stat-sub">${escapeHtml(s.sub)}</div>` : ''}
+    </div>`).join('');
+
+  document.getElementById('dash-flagged-count').textContent = flagged.length;
+  document.getElementById('dash-flagged-empty').classList.toggle('hidden', flagged.length > 0);
+  document.getElementById('dash-flagged-list').innerHTML = flagged.map(f => `
+    <div class="dash-flag-row">
+      <div>
+        <span class="flag-dept">${escapeHtml(f.dept)}</span>
+        <strong style="margin-left:8px;">${escapeHtml(f.sageRef)}</strong>
+        <span style="color:var(--muted);margin-left:8px;">${escapeHtml(f.customerName || '')}</span>
+        ${f.overdue ? '<span class="order-overdue" style="margin-left:8px;">⚠ overdue</span>' : ''}
+      </div>
+      <div class="age-badge" style="background:var(--crit);color:#fff;">${fmtAge(f.age)}</div>
+    </div>`).join('');
+
+  const packerNames = Object.keys(printedTodayByPacker).sort((a, b) => printedTodayByPacker[b] - printedTodayByPacker[a]);
+  document.getElementById('dash-packers-empty').classList.toggle('hidden', packerNames.length > 0);
+  document.getElementById('dash-packers-list').innerHTML = packerNames.map(name => `
+    <div class="dash-packer-row"><span>${escapeHtml(name)}</span><span>${printedTodayByPacker[name]} printed</span></div>`).join('');
+}
+
 function escapeHtml(s) {
   return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
@@ -1410,27 +1600,9 @@ function printSlipForOrder(order) {
 }
 
 /* ===================== ADMIN ===================== */
-function openPinModal() {
-  document.getElementById('pin-input').value = '';
-  document.getElementById('pin-error').classList.add('hidden');
-  document.getElementById('pin-modal').classList.remove('hidden');
-  setTimeout(() => document.getElementById('pin-input').focus(), 50);
-}
-function closePinModal() { document.getElementById('pin-modal').classList.add('hidden'); }
-
-function submitPin() {
-  const pin = document.getElementById('pin-input').value;
-  apiPost('verifyAdminPin', { pin: pin }).then(res => {
-    if (res.valid) {
-      adminPinVerified = true;
-      closePinModal();
-      openAdmin();
-    } else {
-      document.getElementById('pin-error').classList.remove('hidden');
-    }
-  }).catch(err => alert(err.message));
-}
-
+// No PIN re-check here any more - being logged in as Admin already proved
+// identity/role at sign-in, so the gear icon (which is itself hidden for any
+// other role - see applyRoleUI) goes straight in.
 function openAdmin() {
   document.getElementById('admin-overlay').classList.remove('hidden');
   loadAdminData();
@@ -1443,13 +1615,13 @@ function loadAdminData() {
     renderImportLog(data.importLog);
     renderNeedsReviewList(data.needsReview);
     renderProductsList(data.products);
+    renderUsersAdmin(data.users);
     document.getElementById('set-company').value = data.settings.CompanyName || '';
     document.getElementById('set-warn').value = data.settings.FlagWarningMinutes || 10;
     document.getElementById('set-crit').value = data.settings.FlagCriticalMinutes || 20;
     document.getElementById('set-prod-cats').value = data.settings.ProductionCategoryNames || 'Prepped';
     document.getElementById('set-refresh').value = data.settings.BoardRefreshSeconds || 5;
-    document.getElementById('set-pin').value = data.settings.AdminPIN || '';
-    document.getElementById('set-site-passcode').value = data.settings.SitePasscode || '';
+    document.getElementById('set-import-passcode').value = data.settings.ImportPasscode || '';
   }).catch(err => alert(err.message));
 }
 
@@ -1477,6 +1649,68 @@ function renderPackersAdmin(packers) {
       if (!confirm(`Delete packer "${name}"? This can't be undone — if they might come back, use the toggle to switch them off instead.`)) return;
       btn.disabled = true;
       apiPost('deletePacker', { name: name }).then(packers => renderPackersAdmin(packers)).catch(err => { alert(err.message); btn.disabled = false; });
+    };
+  });
+}
+
+// A packer tap-tile (Packers tab) is who's physically packing an order - no
+// login, used many times a shift. A User (this tab) is who can sign into the
+// app at all and what they see once in - a completely separate concept, kept
+// on its own sheet/tab even though both happen to be "name lists".
+function renderUsersAdmin(users) {
+  const list = document.getElementById('users-admin-list');
+  list.innerHTML = users.map(u => `
+    <div class="user-row" data-user-row="${escapeHtml(u.name)}">
+      <input type="text" class="user-name-input" value="${escapeHtml(u.name)}" style="flex:1;min-width:140px;font-weight:700;">
+      <input type="text" class="user-pin-input" inputmode="numeric" value="${escapeHtml(u.pin)}" style="width:90px;">
+      <select class="user-role-select" style="min-width:170px;">
+        ${['Factory Floor', 'Production Manager', 'Admin'].map(r => `<option ${r === u.role ? 'selected' : ''}>${r}</option>`).join('')}
+      </select>
+      <button class="toggle ${u.active ? 'on' : ''}" data-active="${u.active}" title="Active"><span class="knob"></span></button>
+      <button class="icon-btn" style="background:#f3d6d6;color:#a11;width:32px;height:32px;font-size:14px;" data-delete-user title="Delete user">✕</button>
+    </div>`).join('');
+
+  list.querySelectorAll('[data-user-row]').forEach(row => {
+    const originalName = row.getAttribute('data-user-row');
+    const nameInput = row.querySelector('.user-name-input');
+    const pinInput = row.querySelector('.user-pin-input');
+    const roleSelect = row.querySelector('.user-role-select');
+    const toggleBtn = row.querySelector('.toggle');
+    const deleteBtn = row.querySelector('[data-delete-user]');
+
+    const doSave = () => {
+      const active = toggleBtn.getAttribute('data-active') === 'true';
+      const newName = nameInput.value.trim();
+      const newPin = pinInput.value.trim();
+      const newRole = roleSelect.value;
+      apiPost('saveUser', { originalName: originalName, name: newName, pin: newPin, role: newRole, active: active })
+        .then(users => {
+          // Editing your OWN account (renaming yourself, changing your own PIN
+          // or role) would otherwise sign this device out on its very next
+          // request, since it's still sending the old name/PIN - keep this
+          // session's own stored credentials in sync instead.
+          if (originalName.toLowerCase() === userName.toLowerCase()) {
+            userName = newName; userPin = newPin; userRole = newRole;
+            localStorage.setItem('df_user_name', userName);
+            localStorage.setItem('df_user_pin', userPin);
+            localStorage.setItem('df_user_role', userRole);
+            applyRoleUI();
+          }
+          renderUsersAdmin(users);
+        }).catch(err => alert(err.message));
+    };
+
+    nameInput.addEventListener('change', doSave);
+    pinInput.addEventListener('change', doSave);
+    roleSelect.addEventListener('change', doSave);
+    toggleBtn.onclick = () => {
+      toggleBtn.setAttribute('data-active', toggleBtn.getAttribute('data-active') !== 'true');
+      toggleBtn.classList.toggle('on');
+      doSave();
+    };
+    deleteBtn.onclick = () => {
+      if (!confirm(`Delete user "${originalName}"? This can't be undone.`)) return;
+      apiPost('deleteUser', { name: originalName }).then(users => renderUsersAdmin(users)).catch(err => alert(err.message));
     };
   });
 }
@@ -1663,22 +1897,16 @@ function doResyncItems() {
 }
 
 function saveSettings() {
-  const newPasscode = document.getElementById('set-site-passcode').value;
   const settings = {
     CompanyName: document.getElementById('set-company').value,
     FlagWarningMinutes: document.getElementById('set-warn').value,
     FlagCriticalMinutes: document.getElementById('set-crit').value,
     ProductionCategoryNames: document.getElementById('set-prod-cats').value,
     BoardRefreshSeconds: document.getElementById('set-refresh').value,
-    AdminPIN: document.getElementById('set-pin').value,
-    SitePasscode: newPasscode
+    ImportPasscode: document.getElementById('set-import-passcode').value
   };
   const resultBox = document.getElementById('settings-result');
   apiPost('updateSettings', { settings: settings }).then(() => {
-    // Keep this device unlocked under the new passcode so the admin isn't
-    // immediately locked out of the device they just changed it from.
-    sitePasscode = newPasscode;
-    localStorage.setItem('df_site_passcode', newPasscode);
     resultBox.className = 'result-box';
     resultBox.textContent = 'Saved.';
     resultBox.classList.remove('hidden');
@@ -1692,13 +1920,9 @@ function saveSettings() {
 
 /* ===================== EVENT WIRING ===================== */
 function wireStaticEvents() {
-  document.getElementById('admin-gear-btn').onclick = () => {
-    if (adminPinVerified) openAdmin(); else openPinModal();
-  };
+  document.getElementById('admin-gear-btn').onclick = openAdmin;
   document.getElementById('admin-close-btn').onclick = closeAdmin;
-  document.getElementById('pin-cancel-btn').onclick = closePinModal;
-  document.getElementById('pin-confirm-btn').onclick = submitPin;
-  document.getElementById('pin-input').addEventListener('keyup', e => { if (e.key === 'Enter') submitPin(); });
+  document.getElementById('logout-btn').onclick = () => { if (confirm('Log out?')) logoutUser(); };
 
   document.getElementById('assign-cancel-btn').onclick = closeAssignModal;
   document.getElementById('view-close-btn').onclick = closeViewModal;
@@ -1713,7 +1937,7 @@ function wireStaticEvents() {
     tab.onclick = () => {
       document.querySelectorAll('.admin-tab').forEach(t => t.classList.remove('active'));
       tab.classList.add('active');
-      ['import', 'products', 'packers', 'settings'].forEach(name => {
+      ['import', 'products', 'packers', 'users', 'settings'].forEach(name => {
         document.getElementById('tab-' + name).classList.toggle('hidden', name !== tab.getAttribute('data-tab'));
       });
     };
@@ -1756,6 +1980,28 @@ function wireStaticEvents() {
   };
   document.getElementById('save-settings-btn').onclick = saveSettings;
 
+  document.getElementById('add-user-btn').onclick = () => {
+    const name = document.getElementById('new-user-name').value.trim();
+    const pin = document.getElementById('new-user-pin').value.trim();
+    const role = document.getElementById('new-user-role').value;
+    const resultBox = document.getElementById('users-result');
+    if (!name || !pin) return;
+    const btn = document.getElementById('add-user-btn');
+    btn.disabled = true;
+    apiPost('saveUser', { originalName: null, name: name, pin: pin, role: role, active: true }).then(users => {
+      document.getElementById('new-user-name').value = '';
+      document.getElementById('new-user-pin').value = '';
+      resultBox.className = 'result-box';
+      resultBox.textContent = `Added ${name}.`;
+      resultBox.classList.remove('hidden');
+      renderUsersAdmin(users);
+    }).catch(err => {
+      resultBox.className = 'result-box error';
+      resultBox.textContent = err.message;
+      resultBox.classList.remove('hidden');
+    }).finally(() => { btn.disabled = false; });
+  };
+
   const printedDateInput = document.getElementById('printed-date-input');
   printedDateInput.value = printedDate;
   printedDateInput.max = todayDateStr();
@@ -1779,6 +2025,7 @@ function wireStaticEvents() {
 
   document.getElementById('view-toggle-packing').onclick = () => setBoardView('packing');
   document.getElementById('view-toggle-production').onclick = () => setBoardView('production');
+  document.getElementById('view-toggle-dashboard').onclick = () => setBoardView('dashboard');
 }
 
 function setBoardView(view) {
@@ -1824,7 +2071,7 @@ function loadProdCompletedHistory(dateStr) {
 /* Refresh age badges every second without waiting for a full board reload */
 setInterval(() => { if (boardData) { renderBoard(); renderProductionBoard(); } }, 15000);
 
-window.addEventListener('load', () => { wireLockScreenEvents(); init(); });
+window.addEventListener('load', () => { wireLoginScreenEvents(); init(); });
 </script>
 </body>
 </html>
