@@ -557,15 +557,31 @@ let prodCompletedDate = todayDateStr(); // date shown in Production's "Completed
 let prodCompletedHistoryOrders = null; // set when prodCompletedDate !== today
 
 /* ===================== API HELPERS ===================== */
+// Every request gets a hard timeout. Without one, a request that stalls
+// instead of failing outright (a dropped connection with no error, or a tab
+// that got backgrounded mid-fetch and never delivers a response) leaves its
+// promise neither resolved nor rejected - forever. For loadBoard() that's
+// especially bad: boardFetchInFlight only ever gets reset in .then()/.catch(),
+// so a fetch that never settles either way freezes ALL future polling silently
+// (the guard keeps skipping every tick since it thinks one's still running) -
+// the board just stops updating until someone hard-refreshes the page. Aborting
+// after a generous timeout guarantees the promise always settles one way or
+// the other, so a stuck request self-recovers instead of wedging polling shut.
+function fetchWithTimeout_(url, options) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 20000);
+  return fetch(url, Object.assign({}, options, { signal: controller.signal }))
+    .finally(() => clearTimeout(timer));
+}
 function apiGet(action, params) {
   const url = new URL(APP_CONFIG.API_URL);
   url.searchParams.set('action', action);
   url.searchParams.set('passcode', sitePasscode);
   Object.keys(params || {}).forEach(k => url.searchParams.set(k, params[k]));
-  return fetch(url.toString()).then(r => r.json()).then(handleApiResponse);
+  return fetchWithTimeout_(url.toString()).then(r => r.json()).then(handleApiResponse);
 }
 function apiPost(action, payload) {
-  return fetch(APP_CONFIG.API_URL, {
+  return fetchWithTimeout_(APP_CONFIG.API_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'text/plain;charset=utf-8' },
     body: JSON.stringify(Object.assign({ action: action, passcode: sitePasscode }, payload || {}))
@@ -604,7 +620,7 @@ function submitSitePasscode() {
   const entered = document.getElementById('lock-input').value;
   const btn = document.getElementById('lock-unlock-btn');
   btn.disabled = true;
-  fetch(APP_CONFIG.API_URL, {
+  fetchWithTimeout_(APP_CONFIG.API_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'text/plain;charset=utf-8' },
     body: JSON.stringify({ action: 'verifySitePasscode', passcode: entered })
@@ -681,7 +697,10 @@ function loadBoard(isFirstLoad) {
   }).catch(err => {
     boardFetchInFlight = false;
     console.error(err);
-    showConnBanner(err && err.message ? err.message : 'unknown error');
+    const message = (err && err.name === 'AbortError')
+      ? 'Server took longer than 20s to respond'
+      : (err && err.message ? err.message : 'unknown error');
+    showConnBanner(message);
   });
 }
 
