@@ -32,7 +32,17 @@
     --info-bg:#eaf1fa;
   }
   *{box-sizing:border-box;}
-  html,body{height:100%;max-width:100%;overflow-x:hidden;}
+  /* NOTE: do not add overflow-x:hidden here. Per the CSS spec, an element
+     can't have overflow-x non-"visible" while overflow-y stays "visible" -
+     the browser silently promotes overflow-y to "auto" instead, turning
+     body into an actual scrollable box. That's invisible on ordinary page
+     scrolling, but it showed up as a real scrollbar rendered on top of
+     printed labels (Production > Print labels) once this was added as a
+     mobile-overflow safety net - removed for that reason. The two real
+     fixes for the mobile issue (admin-tabs' own contained horizontal
+     scroll, and the Users-tab row stacking below ~520px) don't have this
+     problem and are enough on their own. */
+  html,body{height:100%;max-width:100%;}
   body{
     margin:0;
     font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
