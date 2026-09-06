@@ -185,6 +185,12 @@
     margin-top:10px;font-size:13.5px;font-weight:600;color:var(--green-dark);
     display:flex;justify-content:space-between;align-items:center;
   }
+  /* Production's view-modal status can have up to three lines (slip printed,
+     labels printed, completed - each possibly by a different person), unlike
+     every other use of .assigned-strip which is always exactly one row of
+     two facts. .stacked switches the same container to a column of rows. */
+  .assigned-strip.stacked{flex-direction:column;align-items:stretch;gap:6px;}
+  .assigned-strip-row{display:flex;justify-content:space-between;align-items:center;}
   .assign-btn{
     width:100%;margin-top:12px;background:var(--green);color:#fff;border:none;
     padding:13px;border-radius:10px;font-size:16px;font-weight:700;
@@ -1000,6 +1006,19 @@ function itemSummaryHtml(items, primaryDept) {
   return `<div class="item-summary"><span>${escapeHtml(text)}</span>${reviewBadge}</div>`;
 }
 
+// Shared by Production's own needs-processing/completed cards and the
+// Dashboard's order detail panel - one line per print action that's actually
+// happened, naming who did it (slip and labels are tracked and shown
+// separately since they're two independent buttons/printers). Nothing
+// renders for an action that hasn't happened yet, keeping cards short before
+// anything's been printed.
+function productionPrintNotesHtml(o) {
+  const notes = [];
+  if (o.productionPrintedAt) notes.push(`🖨 Slip printed${o.productionPrintedBy ? ' by ' + escapeHtml(o.productionPrintedBy) : ''} ${fmtTime(o.productionPrintedAt)}`);
+  if (o.productionLabelsPrintedAt) notes.push(`🏷 Labels printed${o.productionLabelsPrintedBy ? ' by ' + escapeHtml(o.productionLabelsPrintedBy) : ''} ${fmtTime(o.productionLabelsPrintedAt)}`);
+  return notes.map(t => `<div class="prod-done-note">${t}</div>`).join('');
+}
+
 // Lowercased "ref + customer" blob stashed on each card as data-search, so
 // the search box (see applySearchFilter) can filter without re-parsing
 // rendered DOM text.
@@ -1359,7 +1378,7 @@ function renderProductionBoard() {
     const deliverLine = overdue
       ? `<div class="order-overdue">⚠ Should've been processed ${fmtDateLong(o._packDate)}</div>`
       : (o.deliveryDate ? `<div class="order-deliver">Deliver ${fmtDateLong(o.deliveryDate)}</div>` : '');
-    const printedNote = o.productionPrintedAt ? `<div class="prod-done-note">🖨 Printed ${fmtTime(o.productionPrintedAt)}</div>` : '';
+    const printedNote = productionPrintNotesHtml(o);
     return `<div class="order-card ${flagClass}" data-order-id="${o.orderId}" data-search="${searchBlob(o)}">
       <div class="order-card-head">
         <div>
@@ -1408,7 +1427,8 @@ function renderProductionBoard() {
         </div>
       </div>
       ${itemSummaryHtml(o.items, 'Production')}
-      <div class="assigned-strip"><span>✅ Completed</span><span>${fmtTime(o.productionCompletedAt)}</span></div>
+      ${productionPrintNotesHtml(o)}
+      <div class="assigned-strip"><span>✅ Completed${o.productionCompletedBy ? ' by ' + escapeHtml(o.productionCompletedBy) : ''}</span><span>${fmtTime(o.productionCompletedAt)}</span></div>
       <div class="card-actions">
         <button class="btn-secondary" data-prod-incomplete="${o.orderId}">↩ Not complete</button>
       </div>
@@ -1586,6 +1606,7 @@ function printProductionLabelsForOrder(order) {
     // Restore the shared @page size for the next Packing/Production slip print.
     document.getElementById('print-page-style').textContent = '@page{ size:80mm auto; margin:0; }';
     document.body.setAttribute('data-print-target', 'slip');
+    apiPost('markProductionLabelsPrinted', { orderId: order.orderId }).then(() => loadBoard(false)).catch(() => {});
   };
   window.addEventListener('afterprint', onAfterPrint);
   setTimeout(() => window.print(), 150);
@@ -1789,6 +1810,7 @@ function dashDetailCardHtml(o, statKey) {
         <div class="age-badge">${fmtAge(o._age)}</div>
       </div>
       ${itemSummaryHtml(o.items, statKey === 'prodNeeds' ? 'Production' : 'Packing')}
+      ${statKey === 'prodNeeds' ? productionPrintNotesHtml(o) : ''}
     </div>`;
   }
   if (statKey === 'packAssigned') {
@@ -1809,7 +1831,8 @@ function dashDetailCardHtml(o, statKey) {
     return `<div class="order-card" data-order-id="${o.orderId}">
       <div class="order-card-head"><div>${head}</div></div>
       ${itemSummaryHtml(o.items, 'Production')}
-      <div class="assigned-strip"><span>✅ completed</span><span>${fmtTime(o.productionCompletedAt)}</span></div>
+      ${productionPrintNotesHtml(o)}
+      <div class="assigned-strip"><span>✅ Completed${o.productionCompletedBy ? ' by ' + escapeHtml(o.productionCompletedBy) : ''}</span><span>${fmtTime(o.productionCompletedAt)}</span></div>
     </div>`;
   }
   // needsReview - list the specific items flagged, not just a summary count.
@@ -1879,15 +1902,20 @@ function openViewModal(order, primaryDept) {
     notesEl.classList.add('hidden');
   }
   let assignedHtml;
+  document.getElementById('view-modal-assigned').classList.toggle('stacked', primary === 'Production');
   if (primary === 'Production') {
     const packDate = computePackDate(order);
     const deliverText = order.deliveryDate ? ('Deliver ' + fmtDateLong(order.deliveryDate)) : '';
-    if (order.productionCompletedAt) {
-      assignedHtml = `<span>✅ Completed ${fmtTime(order.productionCompletedAt)}</span><span>${order.productionPrintedAt ? '🖨 Printed ' + fmtTime(order.productionPrintedAt) : ''}</span>`;
-    } else {
-      const statusText = order.productionPrintedAt ? ('🖨 Printed ' + fmtTime(order.productionPrintedAt)) : 'Not yet printed';
-      assignedHtml = `<span>Scheduled to process ${fmtDateLong(packDate)}${deliverText ? ' — ' + deliverText : ''}</span><span>${statusText}</span>`;
-    }
+    const headerRow = order.productionCompletedAt
+      ? `<div class="assigned-strip-row"><span>✅ Completed${order.productionCompletedBy ? ' by ' + escapeHtml(order.productionCompletedBy) : ''}</span><span>${fmtTime(order.productionCompletedAt)}</span></div>`
+      : `<div class="assigned-strip-row"><span>Scheduled to process ${fmtDateLong(packDate)}${deliverText ? ' — ' + deliverText : ''}</span><span>${(order.productionPrintedAt || order.productionLabelsPrintedAt) ? '' : 'Not yet printed'}</span></div>`;
+    const slipRow = order.productionPrintedAt
+      ? `<div class="assigned-strip-row"><span>🖨 Slip printed${order.productionPrintedBy ? ' by ' + escapeHtml(order.productionPrintedBy) : ''}</span><span>${fmtTime(order.productionPrintedAt)}</span></div>`
+      : '';
+    const labelsRow = order.productionLabelsPrintedAt
+      ? `<div class="assigned-strip-row"><span>🏷 Labels printed${order.productionLabelsPrintedBy ? ' by ' + escapeHtml(order.productionLabelsPrintedBy) : ''}</span><span>${fmtTime(order.productionLabelsPrintedAt)}</span></div>`
+      : '';
+    assignedHtml = headerRow + slipRow + labelsRow;
   } else if (order.assignedTo) {
     const status = order.printedAt ? ('✅ Printed ' + fmtTime(order.printedAt)) : ('In progress');
     assignedHtml = `<span>👤 ${escapeHtml(order.assignedTo)} — assigned ${fmtTime(order.assignedAt)}</span><span>${status}</span>`;
