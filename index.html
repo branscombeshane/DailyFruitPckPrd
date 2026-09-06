@@ -253,13 +253,25 @@
      width on a narrow slip) - items are stacked description-then-details blocks
      instead, separated by thin dashed rules, closer to a real receipt/kitchen
      ticket than a printed table. If your roll is 58mm instead of 80mm, change
-     the two "80mm"/"72mm" values below to match. */
+     the two "80mm"/"72mm" values below to match.
+
+     Production also prints LABELS on a completely different, second printer
+     (an Argox D2-250 desktop label printer, fixed 100mm x 75mm die-cut label
+     stock - not a continuous roll like the receipt printer, so its @page needs
+     an exact size, not "auto"). Two different physical page sizes can't both
+     be active at once, so the @page rule itself lives in a separate, tiny
+     <style id="print-page-style"> tag (see just before </body>) that JS
+     overwrites right before each print call and restores back to the slip
+     size afterward - see printSlipForOrder/printProductionSlipForOrder vs.
+     printProductionLabelsForOrder. Which of #print-slip/#print-labels is
+     actually shown is controlled by body[data-print-target], set the same way. */
   #print-slip{display:none;}
-  @page{ size:80mm auto; margin:0; }
+  #print-labels{display:none;}
   @media print{
     body *{visibility:hidden;}
-    #print-slip, #print-slip *{visibility:visible;}
-    #print-slip{
+    body[data-print-target="slip"] #print-slip,
+    body[data-print-target="slip"] #print-slip *{visibility:visible;}
+    body[data-print-target="slip"] #print-slip{
       display:block;position:absolute;top:0;left:0;
       width:72mm;padding:3mm 4mm;
       font-family:Arial,Helvetica,sans-serif;color:#000;font-size:12px;line-height:1.35;
@@ -277,6 +289,29 @@
     .slip-item-qty{font-size:15px;font-weight:700;white-space:nowrap;}
     .slip-footer{margin-top:10px;font-size:10.5px;}
     .slip-footer div{margin-top:4px;}
+
+    /* One label per 100mm x 75mm die-cut sheet - break-after:page moves to the
+       next physical label instead of trying to fit more than one per sheet. */
+    body[data-print-target="labels"] #print-labels,
+    body[data-print-target="labels"] #print-labels *{visibility:visible;}
+    body[data-print-target="labels"] #print-labels{
+      display:block;position:absolute;top:0;left:0;
+      font-family:Arial,Helvetica,sans-serif;color:#000;
+    }
+    .label-page{
+      width:100mm;height:75mm;box-sizing:border-box;padding:4mm 5mm;
+      display:flex;flex-direction:column;justify-content:space-between;
+      page-break-after:always;break-after:page;overflow:hidden;
+    }
+    .label-page:last-child{page-break-after:auto;break-after:auto;}
+    .label-logo-row{display:flex;align-items:center;justify-content:center;min-height:10mm;}
+    .label-logo-row img{max-height:12mm;max-width:70mm;}
+    .label-logo-text{font-size:17px;font-weight:800;letter-spacing:.4px;}
+    .label-product{font-size:19px;font-weight:800;text-align:center;line-height:1.2;word-break:break-word;}
+    .label-details{font-size:11.5px;line-height:1.7;}
+    .label-row{display:flex;justify-content:space-between;gap:8px;}
+    .label-row span{color:#333;}
+    .label-row b{font-weight:700;}
   }
 
   .conn-banner{
@@ -341,7 +376,7 @@
   }
 </style>
 </head>
-<body>
+<body data-print-target="slip">
 
 <!-- ============ LOGIN SCREEN ============ -->
 <div id="lock-screen" class="hidden">
@@ -576,6 +611,11 @@
     <div class="field"><label>Sage categories that mean "Production" (comma-separated)</label><input type="text" id="set-prod-cats"></div>
     <div class="field"><label>Board refresh interval (seconds)</label><input type="number" id="set-refresh"></div>
     <div class="field">
+      <label>Label shelf life (days)</label>
+      <input type="number" id="set-label-shelf-days">
+      <p style="color:var(--muted);font-size:12.5px;margin:6px 0 0;">Used on every printed Production label: Expires = the day it's printed + this many days. One number for every product for now.</p>
+    </div>
+    <div class="field">
       <label>Email-import passcode</label>
       <input type="text" id="set-import-passcode">
       <p style="color:var(--muted);font-size:12.5px;margin:6px 0 0;">Must match the SITE_PASSCODE constant in EmailImport.gs — this is only for that automated inbox watcher, not a personal login. It has no effect on anyone's Users sign-in.</p>
@@ -605,6 +645,19 @@
     <div id="slip-printed-time"></div>
   </div>
 </div>
+
+<!-- ============ PRINT LABELS (Argox D2-250, 100mm x 75mm die-cut) ============
+     One .label-page per physical label, built entirely in JS (printProductionLabelsForOrder)
+     since the count and content differ per order/item - see the CSS comment
+     above #print-labels for why this needs its own dynamically-swapped @page size. -->
+<div id="print-labels">
+  <div id="print-labels-body"></div>
+</div>
+
+<!-- Swapped between the 80mm-wide continuous receipt-roll size and the fixed
+     100mm x 75mm label size right before each print call - see the CSS comment
+     above #print-labels. Starts on the slip size since that's the more common print. -->
+<style id="print-page-style">@page{ size:80mm auto; margin:0; }</style>
 
 <div class="conn-banner hidden" id="conn-banner">Can't reach the server — check the connection. Retrying… <span id="conn-banner-detail"></span></div>
 
@@ -1276,9 +1329,10 @@ function renderProductionBoard() {
       </div>
       ${itemSummaryHtml(o.items, 'Production')}
       <div class="prod-actions">
-        <button class="btn-secondary" data-prod-print="${o.orderId}">Print</button>
-        <button class="btn-primary" data-prod-complete="${o.orderId}">Complete</button>
+        <button class="btn-secondary" data-prod-print-slip="${o.orderId}">🖨 Slip</button>
+        <button class="btn-secondary" data-prod-print-labels="${o.orderId}">🏷 Labels</button>
       </div>
+      <button class="btn-primary" style="width:100%;margin-top:8px;" data-prod-complete="${o.orderId}">Complete</button>
     </div>`;
   }).join('');
 
@@ -1312,7 +1366,10 @@ function renderProductionBoard() {
       <div class="assigned-strip"><span>✅ Completed</span><span>${fmtTime(o.productionCompletedAt)}</span></div>
       <div class="card-actions">
         <button class="btn-secondary" data-prod-incomplete="${o.orderId}">↩ Not complete</button>
-        <button class="btn-secondary" data-prod-reprint="${o.orderId}">🖨 Reprint</button>
+      </div>
+      <div class="card-actions" style="margin-top:8px;">
+        <button class="btn-secondary" data-prod-reprint-slip="${o.orderId}">🖨 Slip</button>
+        <button class="btn-secondary" data-prod-reprint-labels="${o.orderId}">🏷 Labels</button>
       </div>
     </div>`).join('');
 
@@ -1327,12 +1384,20 @@ function findProductionOrder(orderId) {
 }
 
 function attachProductionCardHandlers() {
-  document.querySelectorAll('[data-prod-print]').forEach(btn => {
+  document.querySelectorAll('[data-prod-print-slip]').forEach(btn => {
     btn.onclick = (e) => {
       e.stopPropagation();
-      const orderId = btn.getAttribute('data-prod-print');
+      const orderId = btn.getAttribute('data-prod-print-slip');
       const order = findProductionOrder(orderId);
       if (order) printProductionSlipForOrder(order);
+    };
+  });
+  document.querySelectorAll('[data-prod-print-labels]').forEach(btn => {
+    btn.onclick = (e) => {
+      e.stopPropagation();
+      const orderId = btn.getAttribute('data-prod-print-labels');
+      const order = findProductionOrder(orderId);
+      if (order) printProductionLabelsForOrder(order);
     };
   });
   document.querySelectorAll('[data-prod-complete]').forEach(btn => {
@@ -1357,12 +1422,20 @@ function attachProductionCardHandlers() {
       apiPost('markProductionIncomplete', { orderId: orderId }).then(() => loadBoard(false)).catch(err => { alert(err.message); btn.disabled = false; });
     };
   });
-  document.querySelectorAll('[data-prod-reprint]').forEach(btn => {
+  document.querySelectorAll('[data-prod-reprint-slip]').forEach(btn => {
     btn.onclick = (e) => {
       e.stopPropagation();
-      const orderId = btn.getAttribute('data-prod-reprint');
+      const orderId = btn.getAttribute('data-prod-reprint-slip');
       const order = findProductionOrder(orderId);
       if (order) printProductionSlipForOrder(order);
+    };
+  });
+  document.querySelectorAll('[data-prod-reprint-labels]').forEach(btn => {
+    btn.onclick = (e) => {
+      e.stopPropagation();
+      const orderId = btn.getAttribute('data-prod-reprint-labels');
+      const order = findProductionOrder(orderId);
+      if (order) printProductionLabelsForOrder(order);
     };
   });
   // Tapping the card itself (anywhere that isn't one of the buttons above,
@@ -1379,6 +1452,8 @@ function attachProductionCardHandlers() {
 
 function printProductionSlipForOrder(order) {
   const prodItems = order.items.filter(it => it.department === 'Production');
+  document.getElementById('print-page-style').textContent = '@page{ size:80mm auto; margin:0; }';
+  document.body.setAttribute('data-print-target', 'slip');
   document.getElementById('slip-type-label').textContent = 'Production Job Slip';
   document.getElementById('slip-ref').textContent = order.sageRef;
   document.getElementById('slip-created').textContent = 'Order in: ' + fmtTime(order.createdAt);
@@ -1401,6 +1476,70 @@ function printProductionSlipForOrder(order) {
     document.getElementById('slip-assigned-row').classList.remove('hidden');
     document.getElementById('slip-signature-label').textContent = 'Packer signature: ____________________';
     apiPost('markProductionPrinted', { orderId: order.orderId }).then(() => loadBoard(false)).catch(() => {});
+  };
+  window.addEventListener('afterprint', onAfterPrint);
+  setTimeout(() => window.print(), 150);
+}
+
+/* ===================== PRODUCTION LABELS (Argox D2-250) ===================== */
+// Swap this for `<img src="data:image/png;base64,...">` (or an https:// URL)
+// once a real Daily Fruit logo file is available - text placeholder for now.
+const LABEL_LOGO_HTML = '<div class="label-logo-text">DAILY FRUIT</div>';
+
+// The floor packs Production items in fixed-size batches for labelling - a
+// 95kg order of one item prints nine 10kg labels plus one 5kg label for the
+// remainder, not one 95kg label. Applied the same way regardless of unit
+// (kg, each, ...) until told a given unit should work differently. 10 is a
+// business rule Shane gave, not (yet) something Settings exposes - easy to
+// promote to a Setting later if it needs to change or vary.
+const LABEL_BATCH_SIZE = 10;
+function computeLabelChunks(qty) {
+  const q = Number(qty) || 0;
+  const chunks = [];
+  const fullCount = Math.floor(q / LABEL_BATCH_SIZE + 1e-9); // tolerate float rounding (e.g. 29.999999)
+  for (let i = 0; i < fullCount; i++) chunks.push(LABEL_BATCH_SIZE);
+  const remainder = Math.round((q - fullCount * LABEL_BATCH_SIZE) * 100) / 100;
+  if (remainder > 0) chunks.push(remainder);
+  return chunks;
+}
+
+function printProductionLabelsForOrder(order) {
+  const prodItems = order.items.filter(it => it.department === 'Production');
+  if (!prodItems.length) { alert('This order has no Production items to label.'); return; }
+
+  const shelfDays = Number(boardData && boardData.settings.labelShelfLifeDays) || 5;
+  const now = new Date();
+  const expiry = new Date(now);
+  expiry.setDate(expiry.getDate() + shelfDays);
+  const producedStr = fmtDateLong(dateOnlyStr(now));
+  const expiryStr = fmtDateLong(dateOnlyStr(expiry));
+
+  const labelsHtml = [];
+  prodItems.forEach(it => {
+    computeLabelChunks(it.qty).forEach(chunkQty => {
+      labelsHtml.push(`
+        <div class="label-page">
+          <div class="label-logo-row">${LABEL_LOGO_HTML}</div>
+          <div class="label-product">${escapeHtml(formatQty(chunkQty))}${it.unit ? escapeHtml(' ' + it.unit) : ''} ${escapeHtml(it.description)}</div>
+          <div class="label-details">
+            <div class="label-row"><span>Customer</span><b>${escapeHtml(order.customerName || '')}</b></div>
+            <div class="label-row"><span>Invoice</span><b>${escapeHtml(order.sageRef)}</b></div>
+            <div class="label-row"><span>Produced</span><b>${escapeHtml(producedStr)}</b></div>
+            <div class="label-row"><span>Expires</span><b>${escapeHtml(expiryStr)}</b></div>
+          </div>
+        </div>`);
+    });
+  });
+
+  document.getElementById('print-labels-body').innerHTML = labelsHtml.join('');
+  document.getElementById('print-page-style').textContent = '@page{ size:100mm 75mm; margin:0; }';
+  document.body.setAttribute('data-print-target', 'labels');
+
+  const onAfterPrint = () => {
+    window.removeEventListener('afterprint', onAfterPrint);
+    // Restore the shared @page size for the next Packing/Production slip print.
+    document.getElementById('print-page-style').textContent = '@page{ size:80mm auto; margin:0; }';
+    document.body.setAttribute('data-print-target', 'slip');
   };
   window.addEventListener('afterprint', onAfterPrint);
   setTimeout(() => window.print(), 150);
@@ -1595,6 +1734,8 @@ function setSlipNotes_(order) {
   }
 }
 function printSlipForOrder(order) {
+  document.getElementById('print-page-style').textContent = '@page{ size:80mm auto; margin:0; }';
+  document.body.setAttribute('data-print-target', 'slip');
   document.getElementById('slip-ref').textContent = order.sageRef;
   document.getElementById('slip-created').textContent = 'Order in: ' + fmtTime(order.createdAt);
   document.getElementById('slip-customer').textContent = order.customerName || '';
@@ -1639,6 +1780,7 @@ function loadAdminData() {
     document.getElementById('set-crit').value = data.settings.FlagCriticalMinutes || 20;
     document.getElementById('set-prod-cats').value = data.settings.ProductionCategoryNames || 'Prepped';
     document.getElementById('set-refresh').value = data.settings.BoardRefreshSeconds || 5;
+    document.getElementById('set-label-shelf-days').value = data.settings.LabelShelfLifeDays || 5;
     document.getElementById('set-import-passcode').value = data.settings.ImportPasscode || '';
   }).catch(err => alert(err.message));
 }
@@ -1923,6 +2065,7 @@ function saveSettings() {
     FlagCriticalMinutes: document.getElementById('set-crit').value,
     ProductionCategoryNames: document.getElementById('set-prod-cats').value,
     BoardRefreshSeconds: document.getElementById('set-refresh').value,
+    LabelShelfLifeDays: document.getElementById('set-label-shelf-days').value,
     ImportPasscode: document.getElementById('set-import-passcode').value
   };
   const resultBox = document.getElementById('settings-result');
