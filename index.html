@@ -349,12 +349,15 @@
   /* ---------- topbar user / dashboard ---------- */
   #topbar-user-label{cursor:default;white-space:nowrap;}
   .dashboard-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:14px;}
-  .stat-card{background:var(--card);border-radius:14px;border:2px solid var(--line);padding:16px;}
+  .stat-card{background:var(--card);border-radius:14px;border:2px solid var(--line);padding:16px;cursor:pointer;transition:border-color .12s,background .12s;}
+  .stat-card:hover{border-color:var(--green);}
+  .stat-card.selected{border-color:var(--green-dark);background:var(--ok-bg);}
   .stat-card .stat-value{font-size:30px;font-weight:800;color:var(--green-dark);}
   .stat-card.crit .stat-value{color:var(--crit);}
   .stat-card.warn .stat-value{color:var(--warn);}
   .stat-card .stat-label{font-size:13px;color:var(--muted);font-weight:600;margin-top:4px;}
   .stat-card .stat-sub{font-size:12px;color:var(--muted);margin-top:6px;}
+  #dash-detail-hint{font-size:13px;color:var(--muted);font-weight:600;padding:2px 2px 14px;}
   .dash-flag-row{
     display:flex;justify-content:space-between;align-items:center;gap:10px;
     background:var(--card);border:2px solid var(--crit);border-radius:12px;padding:12px 16px;margin-bottom:10px;
@@ -481,6 +484,11 @@
 <div id="dashboard-view" class="hidden">
   <div class="section-heading">Today's snapshot</div>
   <div class="dashboard-grid" id="dash-stats"></div>
+  <div id="dash-detail-hint">Tap a tile above to see the orders behind it.</div>
+
+  <div class="section-heading hidden" id="dash-detail-heading">Orders <span class="count" id="dash-detail-count">0</span></div>
+  <div class="order-grid" id="dash-detail-grid"></div>
+  <div class="empty-board hidden" id="dash-detail-empty">Nothing here right now.</div>
 
   <div class="section-heading">Production totals <span class="count" id="dash-tally-count">0</span></div>
   <div class="tally-panel" id="dash-production-tally"></div>
@@ -699,6 +707,8 @@ let printedPackerFilter = ''; // '' = all packers; otherwise only show this pack
 let boardView = ['packing', 'production', 'dashboard'].includes(localStorage.getItem('df_board_view')) ? localStorage.getItem('df_board_view') : 'packing';
 let prodCompletedDate = todayDateStr(); // date shown in Production's "Completed" section
 let prodCompletedHistoryOrders = null; // set when prodCompletedDate !== today
+let dashSelectedStat = null; // key of the currently-selected Dashboard stat tile, or null if none picked
+let dashBuckets = {}; // rebuilt each renderDashboard() call - stat key -> { label, emptyText, orders }
 
 /* ===================== API HELPERS ===================== */
 // Every request gets a hard timeout. Without one, a request that stalls
@@ -1599,9 +1609,20 @@ function renderDashboard() {
   const printedTodayByPacker = {};
   const completedTodayOrders = [];
 
+  // Same order objects that make up each stat's count, kept alongside it so
+  // tapping a tile can show exactly what it's counting - no separate lookup
+  // or recompute needed at click time.
+  const needsPackerOrders = [];
+  const packAssignedOrders = [];
+  const printedTodayOrders = [];
+  const prodNeedsOrders = [];
+  const needsReviewOrders = [];
+
   boardData.orders.forEach(o => {
     const items = o.items || [];
-    needsReviewCount += items.filter(it => it.needsReview).length;
+    const orderReviewCount = items.filter(it => it.needsReview).length;
+    needsReviewCount += orderReviewCount;
+    if (orderReviewCount > 0) needsReviewOrders.push(o);
     const hasProdItems = items.some(it => it.department === 'Production');
 
     // Packing side - same three buckets renderBoard() uses.
@@ -1609,14 +1630,18 @@ function renderDashboard() {
       const packDate = computePackDate(o);
       if (packDate <= today) {
         packNeeds++;
-        if (packDate < today) packOverdue++;
+        const overdue = packDate < today;
+        if (overdue) packOverdue++;
         const age = queueAgeMinutes(o, packDate);
-        if (age >= critMin) flagged.push({ dept: 'Packing', sageRef: o.sageRef, customerName: o.customerName, age: age, overdue: packDate < today });
+        needsPackerOrders.push(Object.assign({ _packDate: packDate, _age: age, _overdue: overdue }, o));
+        if (age >= critMin) flagged.push({ dept: 'Packing', sageRef: o.sageRef, customerName: o.customerName, age: age, overdue: overdue });
       }
     } else if (!o.printedAt) {
       packAssigned++;
+      packAssignedOrders.push(o);
     } else if (new Date(o.printedAt).toDateString() === nowStr) {
       packPrintedToday++;
+      printedTodayOrders.push(o);
       printedTodayByPacker[o.assignedTo] = (printedTodayByPacker[o.assignedTo] || 0) + 1;
     }
 
@@ -1631,36 +1656,57 @@ function renderDashboard() {
         const packDate = computePackDate(o);
         if (packDate <= today) {
           prodNeeds++;
-          if (packDate < today) prodOverdue++;
+          const overdue = packDate < today;
+          if (overdue) prodOverdue++;
           const age = queueAgeMinutes(o, packDate);
-          if (age >= critMin) flagged.push({ dept: 'Production', sageRef: o.sageRef, customerName: o.customerName, age: age, overdue: packDate < today });
+          prodNeedsOrders.push(Object.assign({ _packDate: packDate, _age: age, _overdue: overdue }, o));
+          if (age >= critMin) flagged.push({ dept: 'Production', sageRef: o.sageRef, customerName: o.customerName, age: age, overdue: overdue });
         }
       }
     }
   });
 
   flagged.sort((a, b) => b.age - a.age);
+  needsPackerOrders.sort((a, b) => b._age - a._age);
+  prodNeedsOrders.sort((a, b) => b._age - a._age);
+  printedTodayOrders.sort((a, b) => new Date(b.printedAt) - new Date(a.printedAt));
+  completedTodayOrders.sort((a, b) => new Date(b.productionCompletedAt) - new Date(a.productionCompletedAt));
 
   const packTotal = packNeeds + packAssigned + packPrintedToday;
   const packPct = packTotal ? Math.round((packPrintedToday / packTotal) * 100) : 100;
   const prodTotal = prodNeeds + prodCompletedToday;
   const prodPct = prodTotal ? Math.round((prodCompletedToday / prodTotal) * 100) : 100;
 
+  dashBuckets = {
+    needsPacker: { label: 'Needs a packer', dept: 'Packing', emptyText: 'No orders currently need a packer.', orders: needsPackerOrders },
+    packAssigned: { label: 'Packing in progress', dept: 'Packing', emptyText: 'No orders are currently being packed.', orders: packAssignedOrders },
+    printedToday: { label: 'Printed today', dept: 'Packing', emptyText: 'Nothing printed yet today.', orders: printedTodayOrders },
+    prodNeeds: { label: 'Needs processing', dept: 'Production', emptyText: 'Nothing waiting on production right now.', orders: prodNeedsOrders },
+    completedToday: { label: 'Completed today', dept: 'Production', emptyText: 'Nothing completed in production yet today.', orders: completedTodayOrders },
+    needsReview: { label: 'Needs review', dept: null, emptyText: 'Nothing needs review right now.', orders: needsReviewOrders }
+  };
   const stats = [
-    { label: 'Needs a packer', value: packNeeds, cls: packNeeds > 0 ? (packOverdue > 0 ? 'crit' : 'warn') : '', sub: packOverdue ? packOverdue + ' overdue' : '' },
-    { label: 'Packing in progress', value: packAssigned, cls: '', sub: '' },
-    { label: 'Printed today', value: packPrintedToday, cls: '', sub: packTotal ? packPct + '% of today\'s packing done' : '' },
-    { label: 'Needs processing', value: prodNeeds, cls: prodNeeds > 0 ? (prodOverdue > 0 ? 'crit' : 'warn') : '', sub: prodOverdue ? prodOverdue + ' overdue' : '' },
-    { label: 'Completed today', value: prodCompletedToday, cls: '', sub: prodTotal ? prodPct + '% of today\'s production done' : '' },
-    { label: 'Needs review', value: needsReviewCount, cls: needsReviewCount > 0 ? 'warn' : '', sub: needsReviewCount ? 'Unclassified products — see Admin > Products' : '' }
+    { key: 'needsPacker', label: 'Needs a packer', value: packNeeds, cls: packNeeds > 0 ? (packOverdue > 0 ? 'crit' : 'warn') : '', sub: packOverdue ? packOverdue + ' overdue' : '' },
+    { key: 'packAssigned', label: 'Packing in progress', value: packAssigned, cls: '', sub: '' },
+    { key: 'printedToday', label: 'Printed today', value: packPrintedToday, cls: '', sub: packTotal ? packPct + '% of today\'s packing done' : '' },
+    { key: 'prodNeeds', label: 'Needs processing', value: prodNeeds, cls: prodNeeds > 0 ? (prodOverdue > 0 ? 'crit' : 'warn') : '', sub: prodOverdue ? prodOverdue + ' overdue' : '' },
+    { key: 'completedToday', label: 'Completed today', value: prodCompletedToday, cls: '', sub: prodTotal ? prodPct + '% of today\'s production done' : '' },
+    { key: 'needsReview', label: 'Needs review', value: needsReviewCount, cls: needsReviewCount > 0 ? 'warn' : '', sub: needsReviewCount ? 'Unclassified products — see Admin > Products' : '' }
   ];
 
   document.getElementById('dash-stats').innerHTML = stats.map(s => `
-    <div class="stat-card ${s.cls}">
+    <div class="stat-card ${s.cls}${dashSelectedStat === s.key ? ' selected' : ''}" data-stat-key="${s.key}">
       <div class="stat-value">${s.value}</div>
       <div class="stat-label">${escapeHtml(s.label)}</div>
       ${s.sub ? `<div class="stat-sub">${escapeHtml(s.sub)}</div>` : ''}
     </div>`).join('');
+  document.querySelectorAll('#dash-stats .stat-card').forEach(card => {
+    card.onclick = () => {
+      const key = card.getAttribute('data-stat-key');
+      dashSelectedStat = dashSelectedStat === key ? null : key;
+      renderDashboard();
+    };
+  });
 
   document.getElementById('dash-flagged-count').textContent = flagged.length;
   document.getElementById('dash-flagged-empty').classList.toggle('hidden', flagged.length > 0);
@@ -1686,6 +1732,93 @@ function renderDashboard() {
   document.getElementById('dash-tally-count').textContent = completedGroups.length;
   document.getElementById('dash-tally-empty').classList.toggle('hidden', completedGroups.length > 0);
   document.getElementById('dash-production-tally').innerHTML = tallyGroupsHtml(completedGroups);
+
+  renderDashDetail();
+}
+
+// Renders the order list behind whichever stat tile is currently selected
+// (dashSelectedStat / dashBuckets, both just rebuilt above). Hidden entirely
+// when nothing's selected, since it has nothing meaningful to show.
+function renderDashDetail() {
+  const heading = document.getElementById('dash-detail-heading');
+  const hint = document.getElementById('dash-detail-hint');
+  const grid = document.getElementById('dash-detail-grid');
+  const empty = document.getElementById('dash-detail-empty');
+
+  if (!dashSelectedStat) {
+    heading.classList.add('hidden');
+    grid.innerHTML = '';
+    empty.classList.add('hidden');
+    hint.classList.remove('hidden');
+    return;
+  }
+  hint.classList.add('hidden');
+
+  const bucket = dashBuckets[dashSelectedStat];
+  heading.classList.remove('hidden');
+  heading.firstChild.textContent = bucket.label + ' ';
+  document.getElementById('dash-detail-count').textContent = bucket.orders.length;
+  empty.textContent = bucket.emptyText;
+  empty.classList.toggle('hidden', bucket.orders.length > 0);
+  grid.innerHTML = bucket.orders.map(o => dashDetailCardHtml(o, dashSelectedStat)).join('');
+
+  grid.querySelectorAll('.order-card').forEach(card => {
+    card.onclick = () => {
+      const order = boardData.orders.find(x => x.orderId === card.getAttribute('data-order-id'));
+      if (order) openViewModal(order, bucket.dept || undefined);
+    };
+  });
+}
+
+// One order-card variant per stat, each surfacing the detail that actually
+// explains why that order is in this bucket (age, who's packing it, when it
+// printed/completed, or which items still need review).
+function dashDetailCardHtml(o, statKey) {
+  const head = `
+      <div class="order-ref">${escapeHtml(o.sageRef)}</div>
+      <div class="order-customer">${escapeHtml(o.customerName || '')}</div>
+      ${orderNotesLine(o)}`;
+
+  if (statKey === 'needsPacker' || statKey === 'prodNeeds') {
+    const deliverLine = o._overdue
+      ? `<div class="order-overdue">⚠ Should've been packed ${fmtDateLong(o._packDate)}</div>`
+      : (o.deliveryDate ? `<div class="order-deliver">Deliver ${fmtDateLong(o.deliveryDate)}</div>` : '');
+    return `<div class="order-card" data-order-id="${o.orderId}">
+      <div class="order-card-head">
+        <div>${head}<div class="order-arrived">Arrived ${fmtTime(o.createdAt)}</div>${deliverLine}</div>
+        <div class="age-badge">${fmtAge(o._age)}</div>
+      </div>
+      ${itemSummaryHtml(o.items, statKey === 'prodNeeds' ? 'Production' : 'Packing')}
+    </div>`;
+  }
+  if (statKey === 'packAssigned') {
+    return `<div class="order-card" data-order-id="${o.orderId}">
+      <div class="order-card-head"><div>${head}</div></div>
+      ${itemSummaryHtml(o.items, 'Packing')}
+      <div class="assigned-strip"><span>👤 ${escapeHtml(o.assignedTo)}</span><span>${fmtTime(o.assignedAt)}</span></div>
+    </div>`;
+  }
+  if (statKey === 'printedToday') {
+    return `<div class="order-card" data-order-id="${o.orderId}">
+      <div class="order-card-head"><div>${head}</div></div>
+      ${itemSummaryHtml(o.items, 'Packing')}
+      <div class="assigned-strip"><span>✅ ${escapeHtml(o.assignedTo)}</span><span>printed ${fmtTime(o.printedAt)}</span></div>
+    </div>`;
+  }
+  if (statKey === 'completedToday') {
+    return `<div class="order-card" data-order-id="${o.orderId}">
+      <div class="order-card-head"><div>${head}</div></div>
+      ${itemSummaryHtml(o.items, 'Production')}
+      <div class="assigned-strip"><span>✅ completed</span><span>${fmtTime(o.productionCompletedAt)}</span></div>
+    </div>`;
+  }
+  // needsReview - list the specific items flagged, not just a summary count.
+  const reviewItems = (o.items || []).filter(it => it.needsReview);
+  return `<div class="order-card" data-order-id="${o.orderId}">
+    <div class="order-card-head"><div>${head}</div></div>
+    <div class="item-summary"><span class="dept-tag unclassified">${reviewItems.length} need review</span></div>
+    <ul class="item-list">${reviewItems.map(it => `<li><span>${escapeHtml(it.description)}</span><span class="item-qty">${escapeHtml(String(it.qty))} ${escapeHtml(it.unit || '')}</span></li>`).join('')}</ul>
+  </div>`;
 }
 
 function escapeHtml(s) {
