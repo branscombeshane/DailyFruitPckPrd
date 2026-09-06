@@ -1016,12 +1016,18 @@ function jumpToSection(id) {
 }
 
 function renderQuickBar() {
+  const assignedCount = document.getElementById('assigned-count').textContent;
   const packing = [
-    ['Needs a packer', 'unassigned-heading', document.getElementById('unassigned-count').textContent],
-    ['In progress', 'assigned-heading', document.getElementById('assigned-count').textContent],
+    ['Needs a packer', 'unassigned-heading', document.getElementById('unassigned-count').textContent]
+  ];
+  // Same "normally always empty" reasoning as the section itself (see
+  // renderBoard) - only worth a jump-pill when there's actually something
+  // sitting there to jump to.
+  if (assignedCount !== '0') packing.push(['In progress', 'assigned-heading', assignedCount]);
+  packing.push(
     ['Scheduled', 'scheduled-heading', document.getElementById('scheduled-count').textContent],
     ['Printed', 'printed-heading', document.getElementById('printed-count').textContent]
-  ];
+  );
   const production = [
     ['Needs processing', 'prod-needs-heading', document.getElementById('prod-needs-count').textContent],
     ['Scheduled', 'prod-scheduled-heading', document.getElementById('prod-scheduled-count').textContent],
@@ -1104,6 +1110,15 @@ function renderBoard() {
 
   document.getElementById('unassigned-count').textContent = needsPacker.length;
   document.getElementById('assigned-count').textContent = assigned.length;
+  // Assigning a packer prints the slip immediately, so "assigned but not yet
+  // printed" is normally a zero-duration instant, not a real waiting state -
+  // showing an "In progress" section that's always empty just clutters the
+  // board. Hide it entirely in that (normal) case; if an order ever does get
+  // stuck here (e.g. the print dialog never completed), this brings the
+  // section back automatically instead of silently losing that order from
+  // view, self-diagnosing the same way the connection banner does.
+  document.getElementById('assigned-heading').classList.toggle('hidden', assigned.length === 0);
+  document.getElementById('assigned-grid').classList.toggle('hidden', assigned.length === 0);
   document.getElementById('scheduled-count').textContent = scheduled.length;
   document.getElementById('scheduled-empty').classList.toggle('hidden', scheduled.length > 0);
   document.getElementById('printed-count').textContent = printedFiltered.length;
