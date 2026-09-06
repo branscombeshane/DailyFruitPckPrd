@@ -864,9 +864,18 @@ function renderBoard() {
     printed = printedHistoryOrders || [];
   }
 
-  needsPacker.sort((a, b) => a._packDate !== b._packDate
-    ? (a._packDate < b._packDate ? -1 : 1)
-    : queueAgeMinutes(b, b._packDate) - queueAgeMinutes(a, a._packDate));
+  // Sorted by delivery date (not pack date) so whatever must reach a customer
+  // soonest always sits at the top, regardless of when it happened to be
+  // packed/loaded - a same-day rush order and a two-day-old order both due
+  // out today should show together at the top. An order with no delivery
+  // date on file falls back to its load date, same as computePackDate does.
+  needsPacker.sort((a, b) => {
+    const aDeliver = a.deliveryDate || dateOnlyStr(a.createdAt);
+    const bDeliver = b.deliveryDate || dateOnlyStr(b.createdAt);
+    return aDeliver !== bDeliver
+      ? (aDeliver < bDeliver ? -1 : 1)
+      : queueAgeMinutes(b, b._packDate) - queueAgeMinutes(a, a._packDate);
+  });
   scheduled.sort((a, b) => a._packDate !== b._packDate ? (a._packDate < b._packDate ? -1 : 1) : new Date(a.createdAt) - new Date(b.createdAt));
   assigned.sort((a, b) => new Date(a.assignedAt) - new Date(b.assignedAt));
   printed.sort((a, b) => new Date(b.printedAt) - new Date(a.printedAt));
