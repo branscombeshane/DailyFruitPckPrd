@@ -32,7 +32,7 @@
     --info-bg:#eaf1fa;
   }
   *{box-sizing:border-box;}
-  html,body{height:100%;}
+  html,body{height:100%;max-width:100%;overflow-x:hidden;}
   body{
     margin:0;
     font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
@@ -216,10 +216,14 @@
     background:var(--green-dark);color:#fff;padding:16px 20px;
     display:flex;justify-content:space-between;align-items:center;position:sticky;top:0;
   }
-  .admin-tabs{display:flex;gap:8px;padding:14px 20px 0;}
+  .admin-tabs{
+    display:flex;gap:8px;padding:14px 20px 0;overflow-x:auto;-webkit-overflow-scrolling:touch;
+    scrollbar-width:none;
+  }
+  .admin-tabs::-webkit-scrollbar{display:none;}
   .admin-tab{
     padding:10px 16px;border-radius:10px 10px 0 0;background:#e6ece6;border:none;
-    font-weight:700;color:var(--muted);font-size:14px;
+    font-weight:700;color:var(--muted);font-size:14px;flex-shrink:0;white-space:nowrap;
   }
   .admin-tab.active{background:#fff;color:var(--green-dark);}
   .admin-panel{background:#fff;padding:22px;max-width:760px;margin:0 auto 40px;border-radius:0 0 14px 14px;}
@@ -319,8 +323,22 @@
     border-radius:10px;border:2px solid var(--line);margin-bottom:8px;font-weight:600;
   }
   #dashboard-view{padding:18px;max-width:1400px;margin:0 auto;}
-  .user-row{display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--line);flex-wrap:wrap;}
-  .user-row input,.user-row select{border:2px solid var(--line);border-radius:8px;padding:7px 9px;font-size:14px;}
+  .user-row{display:flex;align-items:center;gap:10px;padding:12px 0;border-bottom:1px solid var(--line);flex-wrap:wrap;}
+  .user-row input,.user-row select{border:2px solid var(--line);border-radius:8px;padding:9px 10px;font-size:14px;}
+  .user-name-input{flex:1;min-width:140px;font-weight:700;}
+  .user-pin-input{width:90px;}
+  .user-role-select{min-width:170px;}
+  .user-row-actions{display:flex;align-items:center;gap:10px;margin-left:auto;}
+  /* Below ~520px, Name/PIN/Role/toggle/delete can't fit on one line without
+     squeezing or scrolling the page sideways - stack each field on its own
+     full-width row instead, with the toggle+delete pair together at the end.
+     (Widths above are plain classes, not inline styles, specifically so this
+     can override them - an inline style attribute would always win instead.) */
+  @media (max-width:520px){
+    .user-row{flex-direction:column;align-items:stretch;}
+    .user-name-input,.user-pin-input,.user-role-select{width:100%;min-width:0;}
+    .user-row-actions{margin-left:0;justify-content:space-between;width:100%;}
+  }
 </style>
 </head>
 <body>
@@ -1661,13 +1679,15 @@ function renderUsersAdmin(users) {
   const list = document.getElementById('users-admin-list');
   list.innerHTML = users.map(u => `
     <div class="user-row" data-user-row="${escapeHtml(u.name)}">
-      <input type="text" class="user-name-input" value="${escapeHtml(u.name)}" style="flex:1;min-width:140px;font-weight:700;">
-      <input type="text" class="user-pin-input" inputmode="numeric" value="${escapeHtml(u.pin)}" style="width:90px;">
-      <select class="user-role-select" style="min-width:170px;">
+      <input type="text" class="user-name-input" value="${escapeHtml(u.name)}" placeholder="Name">
+      <input type="text" class="user-pin-input" inputmode="numeric" value="${escapeHtml(u.pin)}" placeholder="PIN">
+      <select class="user-role-select">
         ${['Factory Floor', 'Production Manager', 'Admin'].map(r => `<option ${r === u.role ? 'selected' : ''}>${r}</option>`).join('')}
       </select>
-      <button class="toggle ${u.active ? 'on' : ''}" data-active="${u.active}" title="Active"><span class="knob"></span></button>
-      <button class="icon-btn" style="background:#f3d6d6;color:#a11;width:32px;height:32px;font-size:14px;" data-delete-user title="Delete user">✕</button>
+      <div class="user-row-actions">
+        <button class="toggle ${u.active ? 'on' : ''}" data-active="${u.active}" title="Active"><span class="knob"></span></button>
+        <button class="icon-btn" style="background:#f3d6d6;color:#a11;width:32px;height:32px;font-size:14px;flex-shrink:0;" data-delete-user title="Delete user">✕</button>
+      </div>
     </div>`).join('');
 
   list.querySelectorAll('[data-user-row]').forEach(row => {
