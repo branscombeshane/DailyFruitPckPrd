@@ -6,6 +6,12 @@
 <title>Daily Fruit — Packing</title>
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA2NCA2NCI+PHJlY3Qgd2lkdGg9IjY0IiBoZWlnaHQ9IjY0IiByeD0iMTQiIGZpbGw9IiMzRjZDNEIiLz48dGV4dCB4PSIzMiIgeT0iNDQiIGZvbnQtZmFtaWx5PSJBcmlhbCwgc2Fucy1zZXJpZiIgZm9udC13ZWlnaHQ9IjcwMCIgZm9udC1zaXplPSIyOCIgZmlsbD0iI0ZGRkZGRiIgdGV4dC1hbmNob3I9Im1pZGRsZSI+UFA8L3RleHQ+PC9zdmc+">
 <meta name="theme-color" content="#3F6C4B">
+<!-- manifest.json + sw.js (registered near the bottom of the script below)
+     are what make this installable as a real app - on a PC via the
+     install icon Chrome/Edge show in the address bar, and on mobile via
+     the OS's own "Add to Home Screen"/"Install app" flow. Same pattern
+     already used on the Dispatch system. -->
+<link rel="manifest" href="manifest.json">
 <!-- iOS "Add to Home Screen" support: without these, a home-screen shortcut
      just launches Safari with its normal address bar/tabs and uses a
      screenshot as its icon. These make it open full-screen with no browser
@@ -2520,6 +2526,17 @@ function loadDashHistory(dateStr) {
 
 /* Refresh age badges every second without waiting for a full board reload */
 setInterval(() => { if (boardData) { renderBoard(); renderProductionBoard(); } }, 15000);
+
+// Registers sw.js so the browser can offer this as an installable app (the
+// install icon in Chrome/Edge's address bar on a PC, "Add to Home Screen" on
+// mobile). Wrapped defensively since GitHub Pages' custom-domain setup can
+// occasionally serve this over a path service workers can't register from,
+// and a failed registration should never block the app itself from loading.
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('sw.js').catch(() => {});
+  });
+}
 
 window.addEventListener('load', () => { wireLoginScreenEvents(); init(); });
 </script>
