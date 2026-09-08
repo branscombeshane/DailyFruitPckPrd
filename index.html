@@ -343,27 +343,40 @@
   .conn-banner #conn-banner-detail{font-weight:400;opacity:.85;font-size:12.5px;}
 
   /* ---------- loading indicator ----------
-     Small "Working…" chip shown whenever a button-triggered server call is in
-     flight (assign, print, complete, save, import, classify, delete, login,
-     opening Admin, changing a date picker...) - see beginApiLoading_/
-     endApiLoading_ in the script. Deliberately NOT shown for the silent
-     background board poll. Present in the DOM at all times (not display:none)
-     so the opacity/transform transition can animate it in and out smoothly;
-     pointer-events stay off so it never blocks a tap underneath it. */
+     Full-screen dimming overlay with a big centered spinner, shown whenever a
+     button-triggered server call is in flight (assign, print, complete, save,
+     import, classify, delete, login, opening Admin, changing a date
+     picker...) - see beginApiLoading_/endApiLoading_ in the script.
+     Deliberately NOT shown for the silent background board poll. Two jobs,
+     on two different timers: (1) BLOCK every tap on the board underneath it -
+     added the instant a call starts (the .blocking class flips pointer-events
+     on immediately, no delay) so a slow response can never be mistaken for a
+     dead tap and get tapped again on a touch-screen; (2) the dim+spinner
+     become visible (.visible, opacity fade) only after a short delay, so a
+     call that comes back almost instantly doesn't cause a flash - the click
+     -blocking itself, unlike the visual, is never delayed. Present in the DOM
+     at all times (not display:none) so the fade can animate smoothly. */
   #loading-indicator{
-    position:fixed;top:14px;right:14px;z-index:350;
-    display:flex;align-items:center;gap:8px;
-    background:rgba(20,26,20,.86);color:#fff;
-    padding:8px 14px;border-radius:999px;
-    font-size:13px;font-weight:600;letter-spacing:.2px;
-    box-shadow:0 4px 14px rgba(0,0,0,.22);
-    pointer-events:none;opacity:0;transform:translateY(-6px);
-    transition:opacity .15s ease,transform .15s ease;
+    position:fixed;inset:0;z-index:360;
+    display:flex;align-items:center;justify-content:center;
+    background:rgba(20,26,20,0);
+    opacity:0;pointer-events:none;
+    transition:opacity .15s ease,background-color .15s ease;
   }
-  #loading-indicator.visible{opacity:1;transform:translateY(0);}
+  #loading-indicator.blocking{pointer-events:auto;cursor:wait;}
+  #loading-indicator.visible{opacity:1;background:rgba(20,26,20,.4);}
+  #loading-indicator .loading-box{
+    display:flex;flex-direction:column;align-items:center;gap:16px;
+    background:rgba(20,26,20,.94);color:#fff;
+    padding:30px 40px;border-radius:18px;
+    font-size:19px;font-weight:700;letter-spacing:.3px;
+    box-shadow:0 12px 40px rgba(0,0,0,.4);
+    transform:scale(.92);transition:transform .15s ease;
+  }
+  #loading-indicator.visible .loading-box{transform:scale(1);}
   #loading-indicator .spinner{
-    width:14px;height:14px;border-radius:50%;flex:none;
-    border:2px solid rgba(255,255,255,.35);border-top-color:#fff;
+    width:44px;height:44px;border-radius:50%;flex:none;
+    border:4px solid rgba(255,255,255,.3);border-top-color:#fff;
     animation:df-spin .7s linear infinite;
   }
   @keyframes df-spin{ to{ transform:rotate(360deg); } }
@@ -723,7 +736,7 @@
 <style id="print-page-style">@page{ size:80mm auto; margin:0; }</style>
 
 <div class="conn-banner hidden" id="conn-banner">Can't reach the server — check the connection. Retrying… <span id="conn-banner-detail"></span></div>
-<div id="loading-indicator" aria-hidden="true"><span class="spinner"></span>Working…</div>
+<div id="loading-indicator" aria-hidden="true"><div class="loading-box"><span class="spinner"></span>Working…</div></div>
 
 <script>
 /* =====================================================================
@@ -772,30 +785,38 @@ function fetchWithTimeout_(url, options) {
   return fetch(url, Object.assign({}, options, { signal: controller.signal }))
     .finally(() => clearTimeout(timer));
 }
-// Shows the #loading-indicator chip whenever a button-triggered server call
-// is in flight (assign, print, complete, save, import, classify, delete,
-// login, opening Admin, changing a date picker...), so a slow response never
-// looks like a dead tap - important on the factory-floor touch-screen board,
-// where a tap that seems to do nothing tends to get tapped again. A counter
-// (not a plain flag) handles overlapping calls correctly - the indicator only
-// hides once every in-flight call has settled. A short show-delay avoids a
-// flash of the indicator for calls that come back almost instantly.
+// Shows the full-screen #loading-indicator overlay whenever a button-
+// triggered server call is in flight (assign, print, complete, save, import,
+// classify, delete, login, opening Admin, changing a date picker...). A
+// counter (not a plain flag) handles overlapping calls correctly - the
+// overlay only lifts once every in-flight call has settled. Two separate
+// timings on purpose: the actual tap-blocking (.blocking, pointer-events)
+// goes on IMMEDIATELY, the instant the first call starts - staff must never
+// be able to land a second tap on the board mid-request, no matter how
+// quick the response turns out to be. The dim+spinner becoming visible
+// (.visible, opacity fade) is delayed slightly so a call that comes back
+// almost instantly doesn't cause a visible flash - only the look is
+// delayed, never the actual blocking.
 let apiCallsInFlight = 0;
 let loadingShowTimer = null;
 function beginApiLoading_() {
   apiCallsInFlight++;
-  if (apiCallsInFlight === 1 && !loadingShowTimer) {
-    loadingShowTimer = setTimeout(() => {
-      loadingShowTimer = null;
-      if (apiCallsInFlight > 0) document.getElementById('loading-indicator').classList.add('visible');
-    }, 150);
+  if (apiCallsInFlight === 1) {
+    const el = document.getElementById('loading-indicator');
+    el.classList.add('blocking');
+    if (!loadingShowTimer) {
+      loadingShowTimer = setTimeout(() => {
+        loadingShowTimer = null;
+        if (apiCallsInFlight > 0) el.classList.add('visible');
+      }, 150);
+    }
   }
 }
 function endApiLoading_() {
   apiCallsInFlight = Math.max(0, apiCallsInFlight - 1);
   if (apiCallsInFlight === 0) {
     if (loadingShowTimer) { clearTimeout(loadingShowTimer); loadingShowTimer = null; }
-    document.getElementById('loading-indicator').classList.remove('visible');
+    document.getElementById('loading-indicator').classList.remove('visible', 'blocking');
   }
 }
 // `opts.silent` skips the loading indicator - used only by the background
