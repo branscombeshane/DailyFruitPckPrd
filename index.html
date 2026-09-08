@@ -696,8 +696,18 @@
       <input type="text" id="set-import-passcode">
       <p style="color:var(--muted);font-size:12.5px;margin:6px 0 0;">Must match the SITE_PASSCODE constant in EmailImport.gs — this is only for that automated inbox watcher, not a personal login. It has no effect on anyone's Users sign-in.</p>
     </div>
+    <div class="field">
+      <label>Keep history for (days)</label>
+      <input type="number" id="set-retention-days">
+      <p style="color:var(--muted);font-size:12.5px;margin:6px 0 0;">Orders older than this are permanently deleted automatically, once a day, to keep the system running fast. An order that isn't fully finished yet (not printed, or a Production line not yet marked complete) is never deleted no matter how old — only genuinely finished orders. This can't be undone from within the app (Google Sheets' own File &gt; Version History is the only way back).</p>
+    </div>
     <button class="btn-primary" id="save-settings-btn">Save settings</button>
     <div class="result-box hidden" id="settings-result"></div>
+
+    <h3 style="margin-top:26px;">Data cleanup</h3>
+    <p style="color:var(--muted);font-size:12.5px;margin:0 0 10px;">Runs automatically every night. Use this to run it right now instead of waiting — for example, right after lowering the retention setting above.</p>
+    <button class="btn-secondary" id="purge-now-btn">🗑 Purge old data now</button>
+    <div class="result-box hidden" id="purge-now-result"></div>
   </div>
 </div>
 
@@ -2123,6 +2133,7 @@ function loadAdminData() {
     document.getElementById('set-refresh').value = data.settings.BoardRefreshSeconds || 5;
     document.getElementById('set-label-shelf-days').value = data.settings.LabelShelfLifeDays || 5;
     document.getElementById('set-import-passcode').value = data.settings.ImportPasscode || '';
+    document.getElementById('set-retention-days').value = data.settings.HistoryRetentionDays || 14;
   }).catch(err => alert(err.message));
 }
 
@@ -2427,7 +2438,8 @@ function saveSettings() {
     ProductionCategoryNames: document.getElementById('set-prod-cats').value,
     BoardRefreshSeconds: document.getElementById('set-refresh').value,
     LabelShelfLifeDays: document.getElementById('set-label-shelf-days').value,
-    ImportPasscode: document.getElementById('set-import-passcode').value
+    ImportPasscode: document.getElementById('set-import-passcode').value,
+    HistoryRetentionDays: document.getElementById('set-retention-days').value
   };
   const resultBox = document.getElementById('settings-result');
   apiPost('updateSettings', { settings: settings }).then(() => {
@@ -2439,6 +2451,26 @@ function saveSettings() {
     resultBox.className = 'result-box error';
     resultBox.textContent = err.message;
     resultBox.classList.remove('hidden');
+  });
+}
+
+function doPurgeNow() {
+  const days = document.getElementById('set-retention-days').value || 14;
+  if (!confirm(`Permanently delete every fully-finished order older than ${days} day(s) (plus their items and old import-log rows)? This can't be undone from within the app. Orders that aren't fully finished yet are never touched, no matter how old.`)) return;
+  const resultBox = document.getElementById('purge-now-result');
+  resultBox.className = 'result-box';
+  resultBox.textContent = 'Purging…';
+  resultBox.classList.remove('hidden');
+  apiPost('purgeOldData', {}).then(res => {
+    resultBox.className = 'result-box';
+    resultBox.textContent = (res.ordersRemoved || res.itemsRemoved || res.logRemoved)
+      ? `Removed ${res.ordersRemoved} order(s), ${res.itemsRemoved} item(s) and ${res.logRemoved} import-log row(s) older than ${res.retentionDays} day(s) (before ${res.cutoff}).` +
+        (res.oldIncompleteKept ? ` Kept ${res.oldIncompleteKept} older order(s) that weren't fully finished yet.` : '')
+      : `Nothing to remove — no fully-finished orders older than ${res.retentionDays} day(s) (before ${res.cutoff}).`;
+    loadBoard(false);
+  }).catch(err => {
+    resultBox.className = 'result-box error';
+    resultBox.textContent = err.message;
   });
 }
 
@@ -2503,6 +2535,7 @@ function wireStaticEvents() {
     });
   };
   document.getElementById('save-settings-btn').onclick = saveSettings;
+  document.getElementById('purge-now-btn').onclick = doPurgeNow;
 
   document.getElementById('add-user-btn').onclick = () => {
     const name = document.getElementById('new-user-name').value.trim();
