@@ -2240,6 +2240,7 @@ function renderNeedsReviewList(needsReview) {
           <option value="Prepped">Prepped</option>
         </select>
         <button class="btn-secondary" data-review-save="${escapeHtml(p.reviewKey)}" data-review-code="${escapeHtml(p.productCode || '')}" data-review-desc="${escapeHtml(p.description || '')}">Save</button>
+        <button class="icon-btn" style="background:#f3d6d6;color:#a11;width:38px;height:38px;font-size:14px;flex:0 0 auto;" data-review-delete="${escapeHtml(p.reviewKey)}" data-review-code="${escapeHtml(p.productCode || '')}" data-review-desc="${escapeHtml(p.description || '')}" title="Delete — dismiss without adding a product">✕</button>
       </div>
     </div>`).join('');
   el.querySelectorAll('[data-review-save]').forEach(btn => {
@@ -2254,6 +2255,25 @@ function renderNeedsReviewList(needsReview) {
       apiPost('classifyProduct', { productCode: code, description: desc, category: category }).then(res => {
         renderNeedsReviewList(res.needsReview);
         renderProductsList(res.products);
+        loadBoard(false);
+      }).catch(err => { alert(err.message); btn.disabled = false; });
+    };
+  });
+  // "Delete" here is a dismissal, not a product-list deletion: it clears the
+  // NeedsReview flag on the matching order line(s) without ever touching the
+  // Products sheet - for when the description itself is garbage (an
+  // EmailImport.gs PDF-parsing slip, not a real product) and shouldn't be
+  // permanently catalogued just to make the nag go away. Whatever
+  // Packing/Production default those lines already had stays as-is.
+  el.querySelectorAll('[data-review-delete]').forEach(btn => {
+    btn.onclick = () => {
+      const code = btn.getAttribute('data-review-code');
+      const desc = btn.getAttribute('data-review-desc');
+      const label = code || desc || '(no description)';
+      if (!confirm(`Dismiss "${label}" from Needs Review? This does NOT add it as a product - it just clears the review flag on the matching order line(s) (they'll stay whatever they already defaulted to). If this exact code/description comes in again on a future order, it'll be flagged for review again.`)) return;
+      btn.disabled = true;
+      apiPost('dismissNeedsReview', { productCode: code, description: desc }).then(res => {
+        renderNeedsReviewList(res.needsReview);
         loadBoard(false);
       }).catch(err => { alert(err.message); btn.disabled = false; });
     };
