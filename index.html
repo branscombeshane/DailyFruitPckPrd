@@ -708,6 +708,11 @@
     <p style="color:var(--muted);font-size:12.5px;margin:0 0 10px;">Runs automatically every night. Use this to run it right now instead of waiting — for example, right after lowering the retention setting above.</p>
     <button class="btn-secondary" id="purge-now-btn">🗑 Purge old data now</button>
     <div class="result-box hidden" id="purge-now-result"></div>
+
+    <h3 style="margin-top:26px;color:#a11;">Pre-launch testing</h3>
+    <p style="color:var(--muted);font-size:12.5px;margin:0 0 10px;">Before Packing/Production are actually using this system day to day, real Sage orders still keep flowing in every 5 minutes (nobody's completing them yet) and pile up as test data. Use this to wipe the slate clean while you're still setting things up — unlike Purge above, this deletes <strong>every</strong> order and item, finished or not, no matter how old. Packers, Users, Settings and Products are never touched. Remove this button once you've gone live and don't need it any more.</p>
+    <button id="reset-order-data-btn" style="background:#f3d6d6;color:#a11;border:none;padding:10px 16px;border-radius:9px;font-weight:700;font-size:14px;">⚠ Reset order data (testing only)</button>
+    <div class="result-box hidden" id="reset-order-data-result"></div>
   </div>
 </div>
 
@@ -2536,6 +2541,22 @@ function doPurgeNow() {
   });
 }
 
+function doResetOrderData() {
+  if (!confirm("Permanently delete EVERY order and item currently in the system - finished or not, no matter how old - plus the import log? This is only meant for wiping out accumulated test data before go-live. Packers, Users, Settings and Products are not affected. This can't be undone from within the app.")) return;
+  const resultBox = document.getElementById('reset-order-data-result');
+  resultBox.className = 'result-box';
+  resultBox.textContent = 'Resetting…';
+  resultBox.classList.remove('hidden');
+  apiPost('resetOrderData', {}, { timeoutMs: 60000 }).then(res => {
+    resultBox.className = 'result-box';
+    resultBox.textContent = `Removed ${res.ordersRemoved} order(s), ${res.itemsRemoved} item(s) and ${res.logRemoved} import-log row(s). The board is now empty and ready for more test data.`;
+    loadBoard(false);
+  }).catch(err => {
+    resultBox.className = 'result-box error';
+    resultBox.textContent = err.message;
+  });
+}
+
 /* ===================== EVENT WIRING ===================== */
 function wireStaticEvents() {
   document.getElementById('admin-gear-btn').onclick = openAdmin;
@@ -2611,6 +2632,7 @@ function wireStaticEvents() {
   };
   document.getElementById('save-settings-btn').onclick = saveSettings;
   document.getElementById('purge-now-btn').onclick = doPurgeNow;
+  document.getElementById('reset-order-data-btn').onclick = doResetOrderData;
 
   document.getElementById('add-user-btn').onclick = () => {
     const name = document.getElementById('new-user-name').value.trim();
