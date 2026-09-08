@@ -980,11 +980,18 @@ function applyBoardView() {
 // that from snowballing; a first load or a manual action-triggered refresh
 // still always goes through.
 let boardFetchInFlight = false;
+// A single missed poll is usually just a brief WiFi blip that's already gone
+// by the very next tick 5s later - showing the banner for that is more
+// alarming to staff than useful. Only surface it once two polls in a row
+// have failed, i.e. the problem has lasted several seconds rather than
+// blinked past on its own; reset the moment a poll succeeds again.
+let boardPollFailCount = 0;
 function loadBoard(isFirstLoad) {
   if (boardFetchInFlight && !isFirstLoad) return;
   boardFetchInFlight = true;
   apiGet('getBoard', {}, { silent: true }).then(data => {
     boardFetchInFlight = false;
+    boardPollFailCount = 0;
     boardData = data;
     document.getElementById('slip-company').textContent = data.settings.companyName || 'Daily Fruit';
     if (data.settings.boardRefreshSeconds && pollTimer) {
@@ -997,6 +1004,8 @@ function loadBoard(isFirstLoad) {
   }).catch(err => {
     boardFetchInFlight = false;
     console.error(err);
+    boardPollFailCount++;
+    if (boardPollFailCount < 2) return;
     const message = (err && err.name === 'AbortError')
       ? 'Server took longer than 20s to respond'
       : (err && err.message ? err.message : 'unknown error');
