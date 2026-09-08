@@ -986,10 +986,26 @@ let boardFetchInFlight = false;
 // have failed, i.e. the problem has lasted several seconds rather than
 // blinked past on its own; reset the moment a poll succeeds again.
 let boardPollFailCount = 0;
+// Every loadBoard() attempt gets its own generation number. Tablets that
+// sleep/lock or get backgrounded mid-poll pause their JS timers - on wake,
+// a 20s abort timer that was already counting down can fire the instant the
+// screen comes back on (real time kept passing while backgrounded), so the
+// browser reports "AbortError: signal is aborted without reason" for a
+// request that was never actually given a fair 20s to complete, even though
+// Apps Script's own execution log shows it finishing in a few seconds. The
+// visibilitychange handler below reacts by forcing a brand new poll the
+// instant the tab becomes visible again rather than waiting on that stale
+// one - the generation check makes sure that when the old, now-abandoned
+// attempt's abort/response finally does arrive, it's silently ignored
+// instead of clobbering the fresh attempt's state or flashing the banner
+// right after a successful recovery.
+let boardLoadGeneration = 0;
 function loadBoard(isFirstLoad) {
   if (boardFetchInFlight && !isFirstLoad) return;
   boardFetchInFlight = true;
+  const myGeneration = ++boardLoadGeneration;
   apiGet('getBoard', {}, { silent: true }).then(data => {
+    if (myGeneration !== boardLoadGeneration) return; // superseded by a newer poll (e.g. a wake-from-sleep refresh) - ignore this stale result
     boardFetchInFlight = false;
     boardPollFailCount = 0;
     boardData = data;
@@ -1002,6 +1018,7 @@ function loadBoard(isFirstLoad) {
     renderBoard();
     renderProductionBoard();
   }).catch(err => {
+    if (myGeneration !== boardLoadGeneration) return; // superseded - a fresher poll already took over, ignore this stale failure
     boardFetchInFlight = false;
     console.error(err);
     boardPollFailCount++;
@@ -2497,6 +2514,19 @@ function wireStaticEvents() {
     applySearchFilter();
   });
   window.addEventListener('resize', measureStickyOffset);
+
+  // A tablet that got locked/backgrounded and is now being picked back up
+  // shouldn't have to wait out a possibly-already-doomed stale poll (see the
+  // boardLoadGeneration comment above loadBoard) - jump straight to a fresh
+  // one and restart the regular polling timer from that point.
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible' && pollTimer) {
+      clearInterval(pollTimer);
+      loadBoard(true);
+      const refreshSecs = (boardData && boardData.settings.boardRefreshSeconds) || 5;
+      pollTimer = setInterval(() => loadBoard(false), Math.max(3, refreshSecs) * 1000);
+    }
+  });
 
   document.querySelectorAll('.admin-tab').forEach(tab => {
     tab.onclick = () => {
