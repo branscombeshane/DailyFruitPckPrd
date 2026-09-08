@@ -789,9 +789,18 @@ let dashHistoryCompletedOrders = null; // set when dashDate !== today, from getO
 // the board just stops updating until someone hard-refreshes the page. Aborting
 // after a generous timeout guarantees the promise always settles one way or
 // the other, so a stuck request self-recovers instead of wedging polling shut.
-function fetchWithTimeout_(url, options) {
+// Default timeout is generous enough for a normal quick action (assign,
+// print, complete, a single order's worth of work) while still failing fast
+// if the connection is genuinely dead. A handful of heavier admin operations
+// (opening Admin itself, bulk CSV imports, resyncing every order, purging
+// old data) read/write far more of the sheet than a single order does and
+// can legitimately take longer, especially on a "cold" Apps Script container
+// or a sheet that's grown large - those pass a longer timeoutMs explicitly
+// so a slow-but-succeeding operation doesn't get killed and reported as an
+// error partway through (see fetchWithTimeout_'s callers).
+function fetchWithTimeout_(url, options, timeoutMs) {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 20000);
+  const timer = setTimeout(() => controller.abort(), timeoutMs || 20000);
   return fetch(url, Object.assign({}, options, { signal: controller.signal }))
     .finally(() => clearTimeout(timer));
 }
@@ -829,6 +838,33 @@ function endApiLoading_() {
     document.getElementById('loading-indicator').classList.remove('visible', 'blocking');
   }
 }
+// A brief, self-clearing hiccup reaching Google's Apps Script backend - our
+// own 20s client timeout firing on a request Apps Script actually handled
+// fine, or Google's infrastructure occasionally returning an HTML error page
+// instead of the expected JSON - is common enough on this backend that a
+// single such failure isn't worth bothering anyone with. The board's own
+// poll already proves this: it tries again 5s later and almost always just
+// works. This gives every call one automatic retry on exactly those transient
+// failure types before ever surfacing an error - never on a well-formed
+// application error (a wrong PIN, "Order not found", etc, which comes back
+// as valid JSON with ok:false and is never retried, since retrying wouldn't
+// change the answer).
+function isTransientFetchError_(err) {
+  if (!err) return false;
+  if (err.name === 'AbortError') return true; // our own client-side timeout
+  if (err instanceof TypeError) return true; // network failure - offline, DNS, connection reset
+  if (err instanceof SyntaxError) return true; // Google sent back an HTML error page instead of JSON
+  return false;
+}
+function fetchJsonWithRetry_(url, options, timeoutMs, attempt) {
+  attempt = attempt || 1;
+  return fetchWithTimeout_(url, options, timeoutMs).then(r => r.json()).catch(err => {
+    if (attempt < 2 && isTransientFetchError_(err)) {
+      return new Promise(resolve => setTimeout(resolve, 1000)).then(() => fetchJsonWithRetry_(url, options, timeoutMs, attempt + 1));
+    }
+    throw err;
+  });
+}
 // `opts.silent` skips the loading indicator - used only by the background
 // board poll (loadBoard), which already refreshes every few seconds on its
 // own; showing a "loading" cue on every single silent poll tick would be
@@ -841,16 +877,16 @@ function apiGet(action, params, opts) {
   url.searchParams.set('userName', userName);
   url.searchParams.set('userPin', userPin);
   Object.keys(params || {}).forEach(k => url.searchParams.set(k, params[k]));
-  const req = fetchWithTimeout_(url.toString()).then(r => r.json()).then(handleApiResponse);
+  const req = fetchJsonWithRetry_(url.toString(), undefined, opts && opts.timeoutMs).then(handleApiResponse);
   return silent ? req : req.finally(endApiLoading_);
 }
-function apiPost(action, payload) {
+function apiPost(action, payload, opts) {
   beginApiLoading_();
-  return fetchWithTimeout_(APP_CONFIG.API_URL, {
+  return fetchJsonWithRetry_(APP_CONFIG.API_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'text/plain;charset=utf-8' },
     body: JSON.stringify(Object.assign({ action: action, userName: userName, userPin: userPin }, payload || {}))
-  }).then(r => r.json()).then(handleApiResponse).finally(endApiLoading_);
+  }, opts && opts.timeoutMs).then(handleApiResponse).finally(endApiLoading_);
 }
 // These three exact messages are the only ones authenticateUser_ (Code.gs)
 // throws for a bad login - if a normal (already-logged-in) request comes
@@ -2146,7 +2182,7 @@ function openAdmin() {
 function closeAdmin() { document.getElementById('admin-overlay').classList.add('hidden'); }
 
 function loadAdminData() {
-  apiGet('getAdminData').then(data => {
+  apiGet('getAdminData', {}, { timeoutMs: 60000 }).then(data => {
     renderPackersAdmin(data.packers);
     renderImportLog(data.importLog);
     renderNeedsReviewList(data.needsReview);
@@ -2267,7 +2303,7 @@ function doImport() {
   resultBox.className = 'result-box';
   resultBox.textContent = 'Importing…';
   resultBox.classList.remove('hidden');
-  apiPost('importCsv', { csvText: text }).then(res => {
+  apiPost('importCsv', { csvText: text }, { timeoutMs: 60000 }).then(res => {
     resultBox.className = 'result-box';
     let msg = `Imported ${res.ordersImported} order(s), ${res.itemsImported} item(s). Skipped ${res.ordersSkipped} already-imported order(s).`;
     if (res.itemsNeedingReview) msg += ` ${res.itemsNeedingReview} item(s) had an unrecognised product code and defaulted to Packing — see the Products tab.`;
@@ -2425,7 +2461,7 @@ function doImportProducts() {
   resultBox.className = 'result-box';
   resultBox.textContent = 'Importing…';
   resultBox.classList.remove('hidden');
-  apiPost('importProductsCsv', { csvText: text }).then(res => {
+  apiPost('importProductsCsv', { csvText: text }, { timeoutMs: 60000 }).then(res => {
     resultBox.className = 'result-box';
     resultBox.textContent = `Added ${res.productsAdded} new product(s). ${res.productsUnchanged} already on the list were left as-is (their category wasn't touched). ${res.itemsBackfilled} order line(s) that were waiting on classification just got corrected.`;
     renderNeedsReviewList(res.needsReview);
@@ -2442,7 +2478,7 @@ function doResyncItems() {
   resultBox.className = 'result-box';
   resultBox.textContent = 'Rechecking…';
   resultBox.classList.remove('hidden');
-  apiPost('resyncOrderItems', {}).then(res => {
+  apiPost('resyncOrderItems', {}, { timeoutMs: 60000 }).then(res => {
     resultBox.className = 'result-box';
     resultBox.textContent = res.itemsBackfilled
       ? `Fixed ${res.itemsBackfilled} order line(s) that were stuck unclassified despite already having a matching product.`
@@ -2487,7 +2523,7 @@ function doPurgeNow() {
   resultBox.className = 'result-box';
   resultBox.textContent = 'Purging…';
   resultBox.classList.remove('hidden');
-  apiPost('purgeOldData', {}).then(res => {
+  apiPost('purgeOldData', {}, { timeoutMs: 60000 }).then(res => {
     resultBox.className = 'result-box';
     resultBox.textContent = (res.ordersRemoved || res.itemsRemoved || res.logRemoved)
       ? `Removed ${res.ordersRemoved} order(s), ${res.itemsRemoved} item(s) and ${res.logRemoved} import-log row(s) older than ${res.retentionDays} day(s) (before ${res.cutoff}).` +
