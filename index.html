@@ -342,6 +342,32 @@
   }
   .conn-banner #conn-banner-detail{font-weight:400;opacity:.85;font-size:12.5px;}
 
+  /* ---------- loading indicator ----------
+     Small "Working…" chip shown whenever a button-triggered server call is in
+     flight (assign, print, complete, save, import, classify, delete, login,
+     opening Admin, changing a date picker...) - see beginApiLoading_/
+     endApiLoading_ in the script. Deliberately NOT shown for the silent
+     background board poll. Present in the DOM at all times (not display:none)
+     so the opacity/transform transition can animate it in and out smoothly;
+     pointer-events stay off so it never blocks a tap underneath it. */
+  #loading-indicator{
+    position:fixed;top:14px;right:14px;z-index:350;
+    display:flex;align-items:center;gap:8px;
+    background:rgba(20,26,20,.86);color:#fff;
+    padding:8px 14px;border-radius:999px;
+    font-size:13px;font-weight:600;letter-spacing:.2px;
+    box-shadow:0 4px 14px rgba(0,0,0,.22);
+    pointer-events:none;opacity:0;transform:translateY(-6px);
+    transition:opacity .15s ease,transform .15s ease;
+  }
+  #loading-indicator.visible{opacity:1;transform:translateY(0);}
+  #loading-indicator .spinner{
+    width:14px;height:14px;border-radius:50%;flex:none;
+    border:2px solid rgba(255,255,255,.35);border-top-color:#fff;
+    animation:df-spin .7s linear infinite;
+  }
+  @keyframes df-spin{ to{ transform:rotate(360deg); } }
+
   /* ---------- site lock screen ---------- */
   #lock-screen{
     position:fixed;inset:0;background:var(--green-dark);z-index:300;
@@ -697,6 +723,7 @@
 <style id="print-page-style">@page{ size:80mm auto; margin:0; }</style>
 
 <div class="conn-banner hidden" id="conn-banner">Can't reach the server — check the connection. Retrying… <span id="conn-banner-detail"></span></div>
+<div id="loading-indicator" aria-hidden="true"><span class="spinner"></span>Working…</div>
 
 <script>
 /* =====================================================================
@@ -745,20 +772,54 @@ function fetchWithTimeout_(url, options) {
   return fetch(url, Object.assign({}, options, { signal: controller.signal }))
     .finally(() => clearTimeout(timer));
 }
-function apiGet(action, params) {
+// Shows the #loading-indicator chip whenever a button-triggered server call
+// is in flight (assign, print, complete, save, import, classify, delete,
+// login, opening Admin, changing a date picker...), so a slow response never
+// looks like a dead tap - important on the factory-floor touch-screen board,
+// where a tap that seems to do nothing tends to get tapped again. A counter
+// (not a plain flag) handles overlapping calls correctly - the indicator only
+// hides once every in-flight call has settled. A short show-delay avoids a
+// flash of the indicator for calls that come back almost instantly.
+let apiCallsInFlight = 0;
+let loadingShowTimer = null;
+function beginApiLoading_() {
+  apiCallsInFlight++;
+  if (apiCallsInFlight === 1 && !loadingShowTimer) {
+    loadingShowTimer = setTimeout(() => {
+      loadingShowTimer = null;
+      if (apiCallsInFlight > 0) document.getElementById('loading-indicator').classList.add('visible');
+    }, 150);
+  }
+}
+function endApiLoading_() {
+  apiCallsInFlight = Math.max(0, apiCallsInFlight - 1);
+  if (apiCallsInFlight === 0) {
+    if (loadingShowTimer) { clearTimeout(loadingShowTimer); loadingShowTimer = null; }
+    document.getElementById('loading-indicator').classList.remove('visible');
+  }
+}
+// `opts.silent` skips the loading indicator - used only by the background
+// board poll (loadBoard), which already refreshes every few seconds on its
+// own; showing a "loading" cue on every single silent poll tick would be
+// constant and meaningless, unlike an actual button press waiting on a reply.
+function apiGet(action, params, opts) {
+  const silent = !!(opts && opts.silent);
+  if (!silent) beginApiLoading_();
   const url = new URL(APP_CONFIG.API_URL);
   url.searchParams.set('action', action);
   url.searchParams.set('userName', userName);
   url.searchParams.set('userPin', userPin);
   Object.keys(params || {}).forEach(k => url.searchParams.set(k, params[k]));
-  return fetchWithTimeout_(url.toString()).then(r => r.json()).then(handleApiResponse);
+  const req = fetchWithTimeout_(url.toString()).then(r => r.json()).then(handleApiResponse);
+  return silent ? req : req.finally(endApiLoading_);
 }
 function apiPost(action, payload) {
+  beginApiLoading_();
   return fetchWithTimeout_(APP_CONFIG.API_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'text/plain;charset=utf-8' },
     body: JSON.stringify(Object.assign({ action: action, userName: userName, userPin: userPin }, payload || {}))
-  }).then(r => r.json()).then(handleApiResponse);
+  }).then(r => r.json()).then(handleApiResponse).finally(endApiLoading_);
 }
 // These three exact messages are the only ones authenticateUser_ (Code.gs)
 // throws for a bad login - if a normal (already-logged-in) request comes
@@ -806,11 +867,12 @@ function submitLogin() {
   if (!name || !pin) return;
   const btn = document.getElementById('login-btn');
   btn.disabled = true;
+  beginApiLoading_();
   fetchWithTimeout_(APP_CONFIG.API_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'text/plain;charset=utf-8' },
     body: JSON.stringify({ action: 'login', userName: name, userPin: pin })
-  }).then(r => r.json()).then(res => {
+  }).then(r => r.json()).finally(endApiLoading_).then(res => {
     btn.disabled = false;
     if (!res.ok) {
       document.getElementById('login-error').textContent = res.error;
@@ -890,7 +952,7 @@ let boardFetchInFlight = false;
 function loadBoard(isFirstLoad) {
   if (boardFetchInFlight && !isFirstLoad) return;
   boardFetchInFlight = true;
-  apiGet('getBoard').then(data => {
+  apiGet('getBoard', {}, { silent: true }).then(data => {
     boardFetchInFlight = false;
     boardData = data;
     document.getElementById('slip-company').textContent = data.settings.companyName || 'Daily Fruit';
