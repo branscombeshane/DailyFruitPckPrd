@@ -491,9 +491,6 @@
   <div class="order-grid" id="unassigned-grid"></div>
   <div class="empty-board hidden" id="unassigned-empty">All caught up — no unassigned orders 🎉</div>
 
-  <div class="section-heading" id="assigned-heading">In progress <span class="count" id="assigned-count">0</span></div>
-  <div class="order-grid" id="assigned-grid"></div>
-
   <div class="section-heading" id="scheduled-heading">Scheduled <span class="count" id="scheduled-count">0</span></div>
   <div class="order-grid" id="scheduled-grid"></div>
   <div class="empty-board hidden" id="scheduled-empty">Nothing loaded ahead of time right now.</div>
@@ -977,7 +974,7 @@ function init() {
   if (pollTimer) clearInterval(pollTimer);
   pollTimer = setInterval(() => loadBoard(false), 5000);
   if (historyPollTimer) clearInterval(historyPollTimer);
-  historyPollTimer = setInterval(refreshTodayHistories, 20000);
+  historyPollTimer = setInterval(refreshTodayHistories, 120000);
 }
 
 function wireLoginScreenEvents() {
@@ -1224,18 +1221,11 @@ function jumpToSection(id) {
 }
 
 function renderQuickBar() {
-  const assignedCount = document.getElementById('assigned-count').textContent;
   const packing = [
-    ['Needs a packer', 'unassigned-heading', document.getElementById('unassigned-count').textContent]
-  ];
-  // Same "normally always empty" reasoning as the section itself (see
-  // renderBoard) - only worth a jump-pill when there's actually something
-  // sitting there to jump to.
-  if (assignedCount !== '0') packing.push(['In progress', 'assigned-heading', assignedCount]);
-  packing.push(
+    ['Needs a packer', 'unassigned-heading', document.getElementById('unassigned-count').textContent],
     ['Scheduled', 'scheduled-heading', document.getElementById('scheduled-count').textContent],
     ['Printed', 'printed-heading', document.getElementById('printed-count').textContent]
-  );
+  ];
   const production = [
     ['Needs processing', 'prod-needs-heading', document.getElementById('prod-needs-count').textContent],
     ['Scheduled', 'prod-scheduled-heading', document.getElementById('prod-scheduled-count').textContent],
@@ -1266,7 +1256,6 @@ function renderBoard() {
 
   const needsPacker = [];
   const scheduled = [];
-  const assigned = [];
   // The "Printed" section (today's included) is fetched separately via
   // getOrdersForDate rather than derived from boardData.orders - a fully-done
   // order drops off the live board payload the instant it's done (see
@@ -1282,11 +1271,12 @@ function renderBoard() {
       if (packDate <= today) needsPacker.push(Object.assign({ _packDate: packDate }, o));
       else scheduled.push(Object.assign({ _packDate: packDate }, o));
     }
-    else if (!o.printedAt) assigned.push(o);
-    // An order that's printed but not yet fully done (production still
-    // pending) stays in boardData.orders too, but it has nothing to show here
-    // - it'll appear in "printed" above via the fetch once it's actually done,
-    // same as any other printed order.
+    // Assigning a packer marks the order printed in the same server write
+    // (see assignOrder_ in Code.gs) - there's no "assigned but not yet
+    // printed" state to show any more. An order that's printed but not yet
+    // fully done (production still pending) stays in boardData.orders too,
+    // but it has nothing to show here - it'll appear in "printed" above via
+    // the fetch, same as any other printed order.
   });
 
   // Sorted by delivery date (not pack date) so whatever must reach a customer
@@ -1302,7 +1292,6 @@ function renderBoard() {
       : queueAgeMinutes(b, b._packDate) - queueAgeMinutes(a, a._packDate);
   });
   scheduled.sort((a, b) => a._packDate !== b._packDate ? (a._packDate < b._packDate ? -1 : 1) : new Date(a.createdAt) - new Date(b.createdAt));
-  assigned.sort((a, b) => new Date(a.assignedAt) - new Date(b.assignedAt));
   printed.sort((a, b) => new Date(b.printedAt) - new Date(a.printedAt));
 
   // The packer dropdown's options are whoever actually printed something on
@@ -1321,16 +1310,6 @@ function renderBoard() {
   const printedFiltered = printedPackerFilter ? printed.filter(o => o.assignedTo === printedPackerFilter) : printed;
 
   document.getElementById('unassigned-count').textContent = needsPacker.length;
-  document.getElementById('assigned-count').textContent = assigned.length;
-  // Assigning a packer prints the slip immediately, so "assigned but not yet
-  // printed" is normally a zero-duration instant, not a real waiting state -
-  // showing an "In progress" section that's always empty just clutters the
-  // board. Hide it entirely in that (normal) case; if an order ever does get
-  // stuck here (e.g. the print dialog never completed), this brings the
-  // section back automatically instead of silently losing that order from
-  // view, self-diagnosing the same way the connection banner does.
-  document.getElementById('assigned-heading').classList.toggle('hidden', assigned.length === 0);
-  document.getElementById('assigned-grid').classList.toggle('hidden', assigned.length === 0);
   document.getElementById('scheduled-count').textContent = scheduled.length;
   document.getElementById('scheduled-empty').classList.toggle('hidden', scheduled.length > 0);
   document.getElementById('printed-count').textContent = printedFiltered.length;
@@ -1379,20 +1358,6 @@ function renderBoard() {
         <div class="schedule-badge">Pack ${fmtDateLong(o._packDate)}</div>
       </div>
       ${itemSummaryHtml(o.items)}
-    </div>`).join('');
-
-  const aGrid = document.getElementById('assigned-grid');
-  aGrid.innerHTML = assigned.map(o => `
-    <div class="order-card assigned" data-order-id="${o.orderId}" data-action="view" data-search="${searchBlob(o)}">
-      <div class="order-card-head">
-        <div>
-          <div class="order-ref">${escapeHtml(o.sageRef)}</div>
-          <div class="order-customer">${escapeHtml(o.customerName || '')}</div>
-          ${orderNotesLine(o)}
-        </div>
-      </div>
-      ${itemSummaryHtml(o.items)}
-      <div class="assigned-strip"><span>👤 ${escapeHtml(o.assignedTo)}</span><span>${fmtTime(o.assignedAt)}</span></div>
     </div>`).join('');
 
   const pGrid = document.getElementById('printed-grid');
@@ -1657,7 +1622,7 @@ function attachProductionCardHandlers() {
       btn.disabled = true;
       apiPost('markProductionComplete', { orderId: orderId }).then(() => {
         loadBoard(false);
-        if (prodCompletedDate === todayDateStr()) loadProdCompletedHistory(todayDateStr());
+        if (prodCompletedDate === todayDateStr()) loadProdCompletedHistory(todayDateStr(), { silent: true });
       }).catch(err => { alert(err.message); btn.disabled = false; });
     };
   });
@@ -1671,7 +1636,7 @@ function attachProductionCardHandlers() {
       btn.disabled = true;
       apiPost('markProductionIncomplete', { orderId: orderId }).then(() => {
         loadBoard(false);
-        if (prodCompletedDate === todayDateStr()) loadProdCompletedHistory(todayDateStr());
+        if (prodCompletedDate === todayDateStr()) loadProdCompletedHistory(todayDateStr(), { silent: true });
       }).catch(err => { alert(err.message); btn.disabled = false; });
     };
   });
@@ -1810,7 +1775,7 @@ function renderDashboard() {
   const critMin = boardData.settings.flagCriticalMinutes;
   const today = todayDateStr();
 
-  let packNeeds = 0, packAssigned = 0, packOverdue = 0;
+  let packNeeds = 0, packOverdue = 0;
   let prodNeeds = 0, prodOverdue = 0;
   let needsReviewCount = 0;
   const flagged = [];
@@ -1819,7 +1784,6 @@ function renderDashboard() {
   // tapping a tile can show exactly what it's counting - no separate lookup
   // or recompute needed at click time.
   const needsPackerOrders = [];
-  const packAssignedOrders = [];
   const prodNeedsOrders = [];
   const needsReviewOrders = [];
 
@@ -1832,7 +1796,10 @@ function renderDashboard() {
 
     // Packing side - same buckets renderBoard() uses. "Printed" isn't derived
     // here any more - see printedTodayOrders below - because a fully-done
-    // order drops off boardData.orders the instant it's done.
+    // order drops off boardData.orders the instant it's done. There's no
+    // "Packing in progress" bucket any more either - assigning a packer marks
+    // an order printed in the same server write (see assignOrder_ in
+    // Code.gs), so it's never sitting assigned-without-printed to count.
     if (!o.assignedTo) {
       const packDate = computePackDate(o);
       if (packDate <= today) {
@@ -1843,9 +1810,6 @@ function renderDashboard() {
         needsPackerOrders.push(Object.assign({ _packDate: packDate, _age: age, _overdue: overdue }, o));
         if (age >= critMin) flagged.push({ dept: 'Packing', sageRef: o.sageRef, customerName: o.customerName, age: age, overdue: overdue });
       }
-    } else if (!o.printedAt) {
-      packAssigned++;
-      packAssignedOrders.push(o);
     }
 
     // Production side - same buckets renderProductionBoard() uses. Same
@@ -1892,7 +1856,7 @@ function renderDashboard() {
   // (needs-a-packer/needs-processing counts) - once a past date is picked,
   // packPrintedToday/prodCompletedToday no longer describe today's queue at
   // all, so that percentage would be comparing two unrelated things.
-  const packTotal = packNeeds + packAssigned + packPrintedToday;
+  const packTotal = packNeeds + packPrintedToday;
   const packPct = packTotal ? Math.round((packPrintedToday / packTotal) * 100) : 100;
   const prodTotal = prodNeeds + prodCompletedToday;
   const prodPct = prodTotal ? Math.round((prodCompletedToday / prodTotal) * 100) : 100;
@@ -1902,7 +1866,6 @@ function renderDashboard() {
 
   dashBuckets = {
     needsPacker: { label: 'Needs a packer', dept: 'Packing', emptyText: 'No orders currently need a packer.', orders: needsPackerOrders },
-    packAssigned: { label: 'Packing in progress', dept: 'Packing', emptyText: 'No orders are currently being packed.', orders: packAssignedOrders },
     printedToday: { label: printedLabel, dept: 'Packing', emptyText: isToday ? 'Nothing printed yet today.' : 'Nothing was printed on this day.', orders: printedTodayOrders },
     prodNeeds: { label: 'Needs processing', dept: 'Production', emptyText: 'Nothing waiting on production right now.', orders: prodNeedsOrders },
     completedToday: { label: completedLabel, dept: 'Production', emptyText: isToday ? 'Nothing completed in production yet today.' : 'Nothing was completed in production on this day.', orders: completedTodayOrders },
@@ -1910,7 +1873,6 @@ function renderDashboard() {
   };
   const stats = [
     { key: 'needsPacker', label: 'Needs a packer', value: packNeeds, cls: packNeeds > 0 ? (packOverdue > 0 ? 'crit' : 'warn') : '', sub: packOverdue ? packOverdue + ' overdue' : '' },
-    { key: 'packAssigned', label: 'Packing in progress', value: packAssigned, cls: '', sub: '' },
     { key: 'printedToday', label: printedLabel, value: packPrintedToday, cls: '', sub: isToday ? (packTotal ? packPct + '% of today\'s packing done' : '') : dateNote },
     { key: 'prodNeeds', label: 'Needs processing', value: prodNeeds, cls: prodNeeds > 0 ? (prodOverdue > 0 ? 'crit' : 'warn') : '', sub: prodOverdue ? prodOverdue + ' overdue' : '' },
     { key: 'completedToday', label: completedLabel, value: prodCompletedToday, cls: '', sub: isToday ? (prodTotal ? prodPct + '% of today\'s production done' : '') : dateNote },
@@ -2025,13 +1987,6 @@ function dashDetailCardHtml(o, statKey) {
       ${statKey === 'prodNeeds' ? productionPrintNotesHtml(o) : ''}
     </div>`;
   }
-  if (statKey === 'packAssigned') {
-    return `<div class="order-card" data-order-id="${o.orderId}">
-      <div class="order-card-head"><div>${head}</div></div>
-      ${itemSummaryHtml(o.items, 'Packing')}
-      <div class="assigned-strip"><span>👤 ${escapeHtml(o.assignedTo)}</span><span>${fmtTime(o.assignedAt)}</span></div>
-    </div>`;
-  }
   if (statKey === 'printedToday') {
     return `<div class="order-card" data-order-id="${o.orderId}">
       <div class="order-card-head"><div>${head}</div></div>
@@ -2093,6 +2048,10 @@ function assignOrderTo(orderId, packerName, tileBtn) {
     closeAssignModal();
     printSlipForOrder(order);
     loadBoard(false);
+    // Assigning now marks the order printed in the same server write (see
+    // assignOrder_) - refresh Printed-today in the background so it shows up
+    // there right away instead of waiting out the slower history poll.
+    if (printedDate === todayDateStr()) loadPrintedHistory(todayDateStr(), { silent: true });
   }).catch(err => {
     alert(err.message);
     loadBoard(false);
@@ -2129,8 +2088,10 @@ function openViewModal(order, primaryDept) {
       : '';
     assignedHtml = headerRow + slipRow + labelsRow;
   } else if (order.assignedTo) {
-    const status = order.printedAt ? ('✅ Printed ' + fmtTime(order.printedAt)) : ('In progress');
-    assignedHtml = `<span>👤 ${escapeHtml(order.assignedTo)} — assigned ${fmtTime(order.assignedAt)}</span><span>${status}</span>`;
+    // Assigning a packer marks the order printed in the same server write
+    // (see assignOrder_ in Code.gs) - order.assignedTo now always implies
+    // order.printedAt, no separate "in progress" status to show.
+    assignedHtml = `<span>👤 ${escapeHtml(order.assignedTo)} — assigned ${fmtTime(order.assignedAt)}</span><span>✅ Printed ${fmtTime(order.printedAt)}</span>`;
   } else {
     const packDate = computePackDate(order);
     const deliverText = order.deliveryDate ? ('Deliver ' + fmtDateLong(order.deliveryDate)) : '';
@@ -2170,14 +2131,12 @@ function printSlipForOrder(order) {
     </div>`).join('');
   document.getElementById('slip-unclassified-note').classList.toggle('hidden', !order.items.some(it => it.needsReview));
 
-  const onAfterPrint = () => {
-    window.removeEventListener('afterprint', onAfterPrint);
-    apiPost('markPrinted', { orderId: order.orderId }).then(() => {
-      loadBoard(false);
-      if (printedDate === todayDateStr()) loadPrintedHistory(todayDateStr());
-    }).catch(() => {});
-  };
-  window.addEventListener('afterprint', onAfterPrint);
+  // Purely a best-effort physical print from here - the order was already
+  // marked printed server-side the moment a packer was chosen (see
+  // assignOrder_ in Code.gs), so nothing needs to report back on whether this
+  // print dialog actually completes. That used to matter (an order only
+  // became "printed" once this fired) and a blocked/dismissed print prompt
+  // on a phone could leave an order stuck - it can't any more.
   setTimeout(() => window.print(), 150);
 }
 
@@ -2589,7 +2548,7 @@ function wireStaticEvents() {
       const refreshSecs = (boardData && boardData.settings.boardRefreshSeconds) || 5;
       pollTimer = setInterval(() => loadBoard(false), Math.max(3, refreshSecs) * 1000);
       if (historyPollTimer) clearInterval(historyPollTimer);
-      historyPollTimer = setInterval(refreshTodayHistories, 20000);
+      historyPollTimer = setInterval(refreshTodayHistories, 120000);
     }
   });
 
@@ -2709,15 +2668,19 @@ function setBoardView(view) {
    all once it's done (see buildBoard_ in Code.gs), so this is the only place
    "today's" printed orders come from too, not just a picked past date. Called
    on a slower background cycle for "today" by refreshTodayHistories(), and
-   whenever the date picker changes. */
-function loadPrintedHistory(dateStr) {
+   whenever the date picker changes. opts.silent skips the full-screen loading
+   overlay (see apiGet) - passed by every automatic/background caller, so the
+   overlay only ever appears for a deliberate date-picker change, never for a
+   routine background refresh happening every couple of minutes. */
+function loadPrintedHistory(dateStr, opts) {
+  const silent = !!(opts && opts.silent);
   const dateChanged = dateStr !== printedDate;
   printedDate = dateStr;
   if (dateChanged) {
     printedHistoryOrders = [];
     renderBoard();
   }
-  apiGet('getOrdersForDate', { date: dateStr }).then(res => {
+  apiGet('getOrdersForDate', { date: dateStr }, { silent: silent }).then(res => {
     if (printedDate !== dateStr) return; // user picked a different date while this was loading
     printedHistoryOrders = res.orders;
     renderBoard();
@@ -2725,14 +2688,15 @@ function loadPrintedHistory(dateStr) {
 }
 
 /* Same as loadPrintedHistory, for Production's "Completed" section. */
-function loadProdCompletedHistory(dateStr) {
+function loadProdCompletedHistory(dateStr, opts) {
+  const silent = !!(opts && opts.silent);
   const dateChanged = dateStr !== prodCompletedDate;
   prodCompletedDate = dateStr;
   if (dateChanged) {
     prodCompletedHistoryOrders = [];
     renderProductionBoard();
   }
-  apiGet('getOrdersForDate', { date: dateStr, type: 'productionCompleted' }).then(res => {
+  apiGet('getOrdersForDate', { date: dateStr, type: 'productionCompleted' }, { silent: silent }).then(res => {
     if (prodCompletedDate !== dateStr) return; // user picked a different date while this was loading
     prodCompletedHistoryOrders = res.orders;
     renderProductionBoard();
@@ -2741,9 +2705,10 @@ function loadProdCompletedHistory(dateStr) {
 
 /* Loads the Dashboard's Printed/Completed/Production totals/Packers for the
    given day (today included, same reasoning as loadPrintedHistory above) -
-   Needs a packer/Packing in progress/Needs processing/Needs review/Needs
-   attention always stay live, see the comment in renderDashboard() for why. */
-function loadDashHistory(dateStr) {
+   Needs a packer/Needs processing/Needs review/Needs attention always stay
+   live, see the comment in renderDashboard() for why. */
+function loadDashHistory(dateStr, opts) {
+  const silent = !!(opts && opts.silent);
   const dateChanged = dateStr !== dashDate;
   dashDate = dateStr;
   if (dateChanged) {
@@ -2753,8 +2718,8 @@ function loadDashHistory(dateStr) {
     renderDashboard();
   }
   Promise.all([
-    apiGet('getOrdersForDate', { date: dateStr }),
-    apiGet('getOrdersForDate', { date: dateStr, type: 'productionCompleted' })
+    apiGet('getOrdersForDate', { date: dateStr }, { silent: silent }),
+    apiGet('getOrdersForDate', { date: dateStr, type: 'productionCompleted' }, { silent: silent })
   ]).then(([printedRes, completedRes]) => {
     if (dashDate !== dateStr) return; // user picked a different date while this was loading
     dashHistoryPrintedOrders = printedRes.orders;
@@ -2765,16 +2730,19 @@ function loadDashHistory(dateStr) {
 
 // Keeps whichever of today's Printed/Completed/Dashboard sections is
 // currently showing "today" fresh on its own slower cadence, now that none of
-// them ride along with the fast (3-5s) live board poll any more. Dashboard's
-// pair of fetches is skipped for a role that can't even see that tab, so a
-// Factory Floor device packing or processing orders all day isn't making two
-// extra requests every cycle for a screen it never opens.
+// them ride along with the fast (3-5s) live board poll any more - every call
+// here is silent (see loadPrintedHistory), since this runs automatically in
+// the background and has nothing to do with a button press or a deliberate
+// date change. Dashboard's pair of fetches is skipped for a role that can't
+// even see that tab, so a Factory Floor device packing or processing orders
+// all day isn't making two extra requests every cycle for a screen it never
+// opens.
 let historyPollTimer = null;
 function refreshTodayHistories() {
   const today = todayDateStr();
-  if (printedDate === today) loadPrintedHistory(today);
-  if (prodCompletedDate === today) loadProdCompletedHistory(today);
-  if (dashDate === today && (userRole === 'Production Manager' || userRole === 'Admin')) loadDashHistory(today);
+  if (printedDate === today) loadPrintedHistory(today, { silent: true });
+  if (prodCompletedDate === today) loadProdCompletedHistory(today, { silent: true });
+  if (dashDate === today && (userRole === 'Production Manager' || userRole === 'Admin')) loadDashHistory(today, { silent: true });
 }
 
 /* Refresh age badges every second without waiting for a full board reload */
