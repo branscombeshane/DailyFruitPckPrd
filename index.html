@@ -571,6 +571,22 @@
   </div>
 </div>
 
+<!-- ============ KITCHEN MANAGER MODAL (production complete) ============ -->
+<div class="modal-overlay hidden" id="kitchen-manager-modal">
+  <div class="modal-box">
+    <h2 id="kitchen-manager-modal-ref"></h2>
+    <div class="modal-sub" id="kitchen-manager-modal-customer"></div>
+    <div class="modal-sub" style="margin:16px 0 8px;font-weight:700;color:var(--ink);">Who's marking this complete?</div>
+    <div class="tile-grid" id="kitchen-manager-modal-grid" style="grid-template-columns:repeat(auto-fill,minmax(130px,1fr));"></div>
+    <div class="empty-note hidden" id="kitchen-manager-modal-none" style="text-align:left;padding:10px 0;">
+      No active Kitchen Managers yet. Tap the ⚙ icon to add Kitchen Managers in Admin.
+    </div>
+    <div class="modal-actions">
+      <button class="btn-cancel" id="kitchen-manager-cancel-btn" style="flex:1;">Cancel</button>
+    </div>
+  </div>
+</div>
+
 <!-- ============ VIEW (already assigned) MODAL ============ -->
 <div class="modal-overlay hidden" id="view-modal">
   <div class="modal-box">
@@ -594,7 +610,9 @@
   <div class="admin-tabs">
     <button class="admin-tab active" data-tab="import">Import orders</button>
     <button class="admin-tab" data-tab="products">Products</button>
+    <button class="admin-tab" data-tab="shifts">Shifts</button>
     <button class="admin-tab" data-tab="packers">Packers</button>
+    <button class="admin-tab" data-tab="kitchen-managers">Kitchen Managers</button>
     <button class="admin-tab" data-tab="users">Users</button>
     <button class="admin-tab" data-tab="settings">Settings</button>
   </div>
@@ -646,9 +664,20 @@
     <div id="products-list" style="max-height:400px;overflow-y:auto;"></div>
   </div>
 
+  <div class="admin-panel hidden" id="tab-shifts">
+    <h3>Shifts</h3>
+    <p style="color:var(--muted);font-size:14px;">Define your shifts here (e.g. "Day", "Night"), then assign each Packer, Kitchen Manager and factory-floor User to one on their own tab. Someone logged in under a different shift's account won't see that shift's names as tap tiles — on purpose, so it's obvious at a glance when the wrong account is logged in and forces a switch. Leave a Packer/Kitchen Manager/User's shift blank to make them visible to every shift.</p>
+    <div id="shifts-admin-list"></div>
+    <div class="field" style="margin-top:16px;">
+      <label>Add a shift</label>
+      <input type="text" id="new-shift-name" placeholder="e.g. Day, Afternoon, Night">
+    </div>
+    <button class="btn-primary" id="add-shift-btn">Add shift</button>
+  </div>
+
   <div class="admin-panel hidden" id="tab-packers">
     <h3>Packers</h3>
-    <p style="color:var(--muted);font-size:14px;">These names appear as tap tiles on the packing screen. Switch a packer off instead of deleting them if they might come back.</p>
+    <p style="color:var(--muted);font-size:14px;">These names appear as tap tiles on the packing screen. Switch a packer off instead of deleting them if they might come back. Set a Shift so they only show up as a tap tile once that shift's account is logged in — leave it blank to keep them visible to every shift.</p>
     <div id="packers-admin-list"></div>
     <div class="field" style="margin-top:16px;">
       <label>Add a packer</label>
@@ -657,9 +686,20 @@
     <button class="btn-primary" id="add-packer-btn">Add packer</button>
   </div>
 
+  <div class="admin-panel hidden" id="tab-kitchen-managers">
+    <h3>Kitchen Managers</h3>
+    <p style="color:var(--muted);font-size:14px;">These names appear as tap tiles when someone taps Complete on a Production order, to select who's actually marking it complete. Switch one off instead of deleting them if they might come back. Set a Shift the same way Packers use them — leave it blank to keep them visible to every shift.</p>
+    <div id="kitchen-managers-admin-list"></div>
+    <div class="field" style="margin-top:16px;">
+      <label>Add a Kitchen Manager</label>
+      <input type="text" id="new-kitchen-manager-name" placeholder="Full name">
+    </div>
+    <button class="btn-primary" id="add-kitchen-manager-btn">Add Kitchen Manager</button>
+  </div>
+
   <div class="admin-panel hidden" id="tab-users">
     <h3>Users</h3>
-    <p style="color:var(--muted);font-size:14px;">Everyone who can sign into this app, and what they see once they're in. <strong>Factory Floor</strong> gets Packing + Production only. <strong>Production Manager</strong> also gets the Dashboard. <strong>Admin</strong> gets everything, including this screen. There must always be at least one active Admin — the last one can't be demoted, deactivated, or deleted.</p>
+    <p style="color:var(--muted);font-size:14px;">Everyone who can sign into this app, and what they see once they're in. <strong>Factory Floor</strong> gets Packing + Production only. <strong>Production Manager</strong> also gets the Dashboard. <strong>Admin</strong> gets everything, including this screen. There must always be at least one active Admin — the last one can't be demoted, deactivated, or deleted. Set a Shift on an account (Factory Floor accounts, typically — one per shift) to limit which Packers/Kitchen Managers show up as tap tiles once that account is logged in; leave it blank for an account that should see everyone regardless of shift.</p>
     <div id="users-admin-list"></div>
     <h3 style="margin-top:26px;">Add a user</h3>
     <div class="field"><label>Full name</label><input type="text" id="new-user-name" placeholder="Full name"></div>
@@ -670,6 +710,12 @@
         <option>Factory Floor</option>
         <option>Production Manager</option>
         <option>Admin</option>
+      </select>
+    </div>
+    <div class="field">
+      <label>Shift (optional)</label>
+      <select id="new-user-shift">
+        <option value="">No shift restriction</option>
       </select>
     </div>
     <button class="btn-primary" id="add-user-btn">Add user</button>
@@ -762,12 +808,14 @@ const APP_CONFIG = {
 let boardData = null;
 let pollTimer = null;
 let pendingAssignOrderId = null;
+let pendingProdCompleteOrderId = null;
 // Auth travels as userName/userPin on every request (see requireUser_ in
 // Code.gs) - kept in localStorage so a device stays signed in across
 // reloads, same as the old single-passcode gate did, just per-person now.
 let userName = localStorage.getItem('df_user_name') || '';
 let userPin = localStorage.getItem('df_user_pin') || '';
 let userRole = localStorage.getItem('df_user_role') || '';
+let userShift = localStorage.getItem('df_user_shift') || ''; // '' = no shift restriction (sees/is seen by everyone) - see shiftVisible_ in Code.gs
 let printedDate = todayDateStr(); // date shown in the "Printed" section - defaults to today
 let printedHistoryOrders = []; // always fetched via getOrdersForDate (today included - see refreshTodayHistories) - the live board payload no longer carries done orders at all
 let printedPackerFilter = ''; // '' = all packers; otherwise only show this packer's printed orders
@@ -914,10 +962,11 @@ function hideConnBanner() { document.getElementById('conn-banner').classList.add
 
 /* ===================== LOGIN ===================== */
 function logoutUser(message) {
-  userName = ''; userPin = ''; userRole = '';
+  userName = ''; userPin = ''; userRole = ''; userShift = '';
   localStorage.removeItem('df_user_name');
   localStorage.removeItem('df_user_pin');
   localStorage.removeItem('df_user_role');
+  localStorage.removeItem('df_user_shift');
   if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
   document.getElementById('board-view').classList.add('hidden');
   document.getElementById('production-view').classList.add('hidden');
@@ -951,9 +1000,11 @@ function submitLogin() {
     userName = res.data.name;
     userPin = pin;
     userRole = res.data.role;
+    userShift = res.data.shift || '';
     localStorage.setItem('df_user_name', userName);
     localStorage.setItem('df_user_pin', userPin);
     localStorage.setItem('df_user_role', userRole);
+    localStorage.setItem('df_user_shift', userShift);
     document.getElementById('lock-screen').classList.add('hidden');
     init();
   }).catch(() => {
@@ -990,7 +1041,7 @@ function applyRoleUI() {
   const canSeeDashboard = userRole === 'Production Manager' || userRole === 'Admin';
   document.getElementById('view-toggle-dashboard').classList.toggle('hidden', !canSeeDashboard);
   document.getElementById('admin-gear-btn').classList.toggle('hidden', userRole !== 'Admin');
-  document.getElementById('topbar-user-label').textContent = userName + ' (' + userRole + ')';
+  document.getElementById('topbar-user-label').textContent = userName + ' (' + userRole + (userShift ? ' · ' + userShift : '') + ')';
   if (boardView === 'dashboard' && !canSeeDashboard) setBoardView('packing');
 }
 
@@ -1618,12 +1669,7 @@ function attachProductionCardHandlers() {
       const orderId = btn.getAttribute('data-prod-complete');
       const order = findProductionOrder(orderId);
       if (!order) return;
-      if (!confirm(`Mark order ${order.sageRef} as complete? This removes it from the prep tally.`)) return;
-      btn.disabled = true;
-      apiPost('markProductionComplete', { orderId: orderId }).then(() => {
-        loadBoard(false);
-        if (prodCompletedDate === todayDateStr()) loadProdCompletedHistory(todayDateStr(), { silent: true });
-      }).catch(err => { alert(err.message); btn.disabled = false; });
+      openKitchenManagerModal(order);
     };
   });
   document.querySelectorAll('[data-prod-incomplete]').forEach(btn => {
@@ -2059,6 +2105,45 @@ function assignOrderTo(orderId, packerName, tileBtn) {
   });
 }
 
+/* ===================== KITCHEN MANAGER MODAL ===================== */
+function openKitchenManagerModal(order) {
+  pendingProdCompleteOrderId = order.orderId;
+  document.getElementById('kitchen-manager-modal-ref').textContent = order.sageRef;
+  document.getElementById('kitchen-manager-modal-customer').textContent = order.customerName || '';
+
+  const grid = document.getElementById('kitchen-manager-modal-grid');
+  const note = document.getElementById('kitchen-manager-modal-none');
+  const kitchenManagers = (boardData && boardData.kitchenManagers) || [];
+  note.classList.toggle('hidden', kitchenManagers.length > 0);
+  grid.innerHTML = '';
+  kitchenManagers.forEach(name => {
+    const btn = document.createElement('button');
+    btn.className = 'packer-tile';
+    btn.textContent = name;
+    btn.onclick = () => completeProductionAs(order.orderId, name, btn);
+    grid.appendChild(btn);
+  });
+
+  document.getElementById('kitchen-manager-modal').classList.remove('hidden');
+}
+function closeKitchenManagerModal() {
+  pendingProdCompleteOrderId = null;
+  document.getElementById('kitchen-manager-modal').classList.add('hidden');
+}
+function completeProductionAs(orderId, kitchenManagerName, tileBtn) {
+  if (pendingProdCompleteOrderId !== orderId) return; // modal already closed/changed
+  document.querySelectorAll('#kitchen-manager-modal-grid .packer-tile').forEach(b => b.disabled = true);
+  apiPost('markProductionComplete', { orderId: orderId, kitchenManagerName: kitchenManagerName }).then(() => {
+    closeKitchenManagerModal();
+    loadBoard(false);
+    if (prodCompletedDate === todayDateStr()) loadProdCompletedHistory(todayDateStr(), { silent: true });
+  }).catch(err => {
+    alert(err.message);
+    loadBoard(false);
+    closeKitchenManagerModal();
+  });
+}
+
 /* ===================== VIEW MODAL ===================== */
 function openViewModal(order, primaryDept) {
   const primary = primaryDept || 'Packing';
@@ -2150,13 +2235,23 @@ function openAdmin() {
 }
 function closeAdmin() { document.getElementById('admin-overlay').classList.add('hidden'); }
 
+// Shared by the Packers/Kitchen Managers/Users admin tabs, whose per-row
+// Shift dropdown all pick from the same Admin-defined list (see the Shifts
+// tab) - populated by loadAdminData() before any of those three render, so
+// it's always in sync with whatever Shifts currently exist.
+let allShifts = [];
+
 function loadAdminData() {
   apiGet('getAdminData', {}, { timeoutMs: 60000 }).then(data => {
+    allShifts = data.shifts;
+    renderShiftsAdmin(data.shifts);
     renderPackersAdmin(data.packers);
+    renderKitchenManagersAdmin(data.kitchenManagers);
     renderImportLog(data.importLog);
     renderNeedsReviewList(data.needsReview);
     renderProductsList(data.products);
     renderUsersAdmin(data.users);
+    document.getElementById('new-user-shift').innerHTML = shiftOptionsHtml('');
     document.getElementById('set-company').value = data.settings.CompanyName || '';
     document.getElementById('set-warn').value = data.settings.FlagWarningMinutes || 10;
     document.getElementById('set-crit').value = data.settings.FlagCriticalMinutes || 20;
@@ -2168,12 +2263,52 @@ function loadAdminData() {
   }).catch(err => alert(err.message));
 }
 
+// Options for a Shift <select> - shared by the Packers/Kitchen Managers/Users
+// admin rows and the Add-user form. Lists every shift Admin has ever defined,
+// active or not - a Packer/User already assigned to a since-deactivated
+// shift should still show that selection correctly rather than falling back
+// to blank, which would look like the assignment silently vanished.
+function shiftOptionsHtml(selected) {
+  return '<option value="">No shift</option>' +
+    allShifts.map(s => `<option value="${escapeHtml(s.name)}" ${s.name === selected ? 'selected' : ''}>${escapeHtml(s.name)}</option>`).join('');
+}
+
+function renderShiftsAdmin(shifts) {
+  const list = document.getElementById('shifts-admin-list');
+  if (!shifts.length) { list.innerHTML = '<div class="log-row">No shifts defined yet - add one below.</div>'; return; }
+  list.innerHTML = shifts.map(s => `
+    <div class="packer-row">
+      <span>${escapeHtml(s.name)}</span>
+      <div style="display:flex;align-items:center;gap:10px;">
+        <button class="toggle ${s.active ? 'on' : ''}" data-name="${escapeHtml(s.name)}" data-active="${s.active}"><span class="knob"></span></button>
+        <button class="icon-btn" style="background:#f3d6d6;color:#a11;width:32px;height:32px;font-size:14px;" data-delete-name="${escapeHtml(s.name)}" title="Delete shift">✕</button>
+      </div>
+    </div>`).join('');
+  list.querySelectorAll('.toggle').forEach(btn => {
+    btn.onclick = () => {
+      const name = btn.getAttribute('data-name');
+      const nowActive = btn.getAttribute('data-active') !== 'true';
+      btn.disabled = true;
+      apiPost('setShiftActive', { name: name, active: nowActive }).then(shifts => { allShifts = shifts; renderShiftsAdmin(shifts); }).catch(err => { alert(err.message); btn.disabled = false; });
+    };
+  });
+  list.querySelectorAll('[data-delete-name]').forEach(btn => {
+    btn.onclick = () => {
+      const name = btn.getAttribute('data-delete-name');
+      if (!confirm(`Delete shift "${name}"? This won't change any Packer/Kitchen Manager/User already set to this shift - they'll just no longer match anyone until reassigned. This can't be undone.`)) return;
+      btn.disabled = true;
+      apiPost('deleteShift', { name: name }).then(shifts => { allShifts = shifts; renderShiftsAdmin(shifts); }).catch(err => { alert(err.message); btn.disabled = false; });
+    };
+  });
+}
+
 function renderPackersAdmin(packers) {
   const list = document.getElementById('packers-admin-list');
   list.innerHTML = packers.map(p => `
     <div class="packer-row">
       <span>${escapeHtml(p.name)}</span>
       <div style="display:flex;align-items:center;gap:10px;">
+        <select class="packer-shift-select" data-name="${escapeHtml(p.name)}" style="padding:8px 9px;border:2px solid var(--line);border-radius:8px;">${shiftOptionsHtml(p.shift)}</select>
         <button class="toggle ${p.active ? 'on' : ''}" data-name="${escapeHtml(p.name)}" data-active="${p.active}"><span class="knob"></span></button>
         <button class="icon-btn" style="background:#f3d6d6;color:#a11;width:32px;height:32px;font-size:14px;" data-delete-name="${escapeHtml(p.name)}" title="Delete packer">✕</button>
       </div>
@@ -2186,12 +2321,58 @@ function renderPackersAdmin(packers) {
       apiPost('setPackerActive', { name: name, active: nowActive }).then(packers => renderPackersAdmin(packers)).catch(err => { alert(err.message); btn.disabled = false; });
     };
   });
+  list.querySelectorAll('.packer-shift-select').forEach(sel => {
+    sel.onchange = () => {
+      const name = sel.getAttribute('data-name');
+      sel.disabled = true;
+      apiPost('setPackerShift', { name: name, shift: sel.value }).then(packers => renderPackersAdmin(packers)).catch(err => { alert(err.message); sel.disabled = false; });
+    };
+  });
   list.querySelectorAll('[data-delete-name]').forEach(btn => {
     btn.onclick = () => {
       const name = btn.getAttribute('data-delete-name');
       if (!confirm(`Delete packer "${name}"? This can't be undone — if they might come back, use the toggle to switch them off instead.`)) return;
       btn.disabled = true;
       apiPost('deletePacker', { name: name }).then(packers => renderPackersAdmin(packers)).catch(err => { alert(err.message); btn.disabled = false; });
+    };
+  });
+}
+
+// Structurally identical to renderPackersAdmin above - Kitchen Managers are
+// a separate tap-tile roster (see markProductionComplete_ in Code.gs) but
+// managed the exact same way.
+function renderKitchenManagersAdmin(kitchenManagers) {
+  const list = document.getElementById('kitchen-managers-admin-list');
+  list.innerHTML = kitchenManagers.map(k => `
+    <div class="packer-row">
+      <span>${escapeHtml(k.name)}</span>
+      <div style="display:flex;align-items:center;gap:10px;">
+        <select class="km-shift-select" data-name="${escapeHtml(k.name)}" style="padding:8px 9px;border:2px solid var(--line);border-radius:8px;">${shiftOptionsHtml(k.shift)}</select>
+        <button class="toggle ${k.active ? 'on' : ''}" data-name="${escapeHtml(k.name)}" data-active="${k.active}"><span class="knob"></span></button>
+        <button class="icon-btn" style="background:#f3d6d6;color:#a11;width:32px;height:32px;font-size:14px;" data-delete-name="${escapeHtml(k.name)}" title="Delete Kitchen Manager">✕</button>
+      </div>
+    </div>`).join('');
+  list.querySelectorAll('.toggle').forEach(btn => {
+    btn.onclick = () => {
+      const name = btn.getAttribute('data-name');
+      const nowActive = btn.getAttribute('data-active') !== 'true';
+      btn.disabled = true;
+      apiPost('setKitchenManagerActive', { name: name, active: nowActive }).then(kms => renderKitchenManagersAdmin(kms)).catch(err => { alert(err.message); btn.disabled = false; });
+    };
+  });
+  list.querySelectorAll('.km-shift-select').forEach(sel => {
+    sel.onchange = () => {
+      const name = sel.getAttribute('data-name');
+      sel.disabled = true;
+      apiPost('setKitchenManagerShift', { name: name, shift: sel.value }).then(kms => renderKitchenManagersAdmin(kms)).catch(err => { alert(err.message); sel.disabled = false; });
+    };
+  });
+  list.querySelectorAll('[data-delete-name]').forEach(btn => {
+    btn.onclick = () => {
+      const name = btn.getAttribute('data-delete-name');
+      if (!confirm(`Delete Kitchen Manager "${name}"? This can't be undone — if they might come back, use the toggle to switch them off instead.`)) return;
+      btn.disabled = true;
+      apiPost('deleteKitchenManager', { name: name }).then(kms => renderKitchenManagersAdmin(kms)).catch(err => { alert(err.message); btn.disabled = false; });
     };
   });
 }
@@ -2209,6 +2390,7 @@ function renderUsersAdmin(users) {
       <select class="user-role-select">
         ${['Factory Floor', 'Production Manager', 'Admin'].map(r => `<option ${r === u.role ? 'selected' : ''}>${r}</option>`).join('')}
       </select>
+      <select class="user-shift-select">${shiftOptionsHtml(u.shift)}</select>
       <div class="user-row-actions">
         <button class="toggle ${u.active ? 'on' : ''}" data-active="${u.active}" title="Active"><span class="knob"></span></button>
         <button class="icon-btn" style="background:#f3d6d6;color:#a11;width:32px;height:32px;font-size:14px;flex-shrink:0;" data-delete-user title="Delete user">✕</button>
@@ -2220,6 +2402,7 @@ function renderUsersAdmin(users) {
     const nameInput = row.querySelector('.user-name-input');
     const pinInput = row.querySelector('.user-pin-input');
     const roleSelect = row.querySelector('.user-role-select');
+    const shiftSelect = row.querySelector('.user-shift-select');
     const toggleBtn = row.querySelector('.toggle');
     const deleteBtn = row.querySelector('[data-delete-user]');
 
@@ -2228,17 +2411,20 @@ function renderUsersAdmin(users) {
       const newName = nameInput.value.trim();
       const newPin = pinInput.value.trim();
       const newRole = roleSelect.value;
-      apiPost('saveUser', { originalName: originalName, name: newName, pin: newPin, role: newRole, active: active })
+      const newShift = shiftSelect.value;
+      apiPost('saveUser', { originalName: originalName, name: newName, pin: newPin, role: newRole, active: active, shift: newShift })
         .then(users => {
-          // Editing your OWN account (renaming yourself, changing your own PIN
-          // or role) would otherwise sign this device out on its very next
-          // request, since it's still sending the old name/PIN - keep this
-          // session's own stored credentials in sync instead.
+          // Editing your OWN account (renaming yourself, changing your own PIN,
+          // role, or shift) would otherwise sign this device out - or leave it
+          // showing the wrong shift's packers - on its very next request, since
+          // it's still sending the old name/PIN/shift - keep this session's own
+          // stored credentials in sync instead.
           if (originalName.toLowerCase() === userName.toLowerCase()) {
-            userName = newName; userPin = newPin; userRole = newRole;
+            userName = newName; userPin = newPin; userRole = newRole; userShift = newShift;
             localStorage.setItem('df_user_name', userName);
             localStorage.setItem('df_user_pin', userPin);
             localStorage.setItem('df_user_role', userRole);
+            localStorage.setItem('df_user_shift', userShift);
             applyRoleUI();
           }
           renderUsersAdmin(users);
@@ -2248,6 +2434,7 @@ function renderUsersAdmin(users) {
     nameInput.addEventListener('change', doSave);
     pinInput.addEventListener('change', doSave);
     roleSelect.addEventListener('change', doSave);
+    shiftSelect.addEventListener('change', doSave);
     toggleBtn.onclick = () => {
       toggleBtn.setAttribute('data-active', toggleBtn.getAttribute('data-active') !== 'true');
       toggleBtn.classList.toggle('on');
@@ -2528,6 +2715,7 @@ function wireStaticEvents() {
   document.getElementById('logout-btn').onclick = () => { if (confirm('Log out?')) logoutUser(); };
 
   document.getElementById('assign-cancel-btn').onclick = closeAssignModal;
+  document.getElementById('kitchen-manager-cancel-btn').onclick = closeKitchenManagerModal;
   document.getElementById('view-close-btn').onclick = closeViewModal;
 
   document.getElementById('order-search').addEventListener('input', (e) => {
@@ -2556,7 +2744,7 @@ function wireStaticEvents() {
     tab.onclick = () => {
       document.querySelectorAll('.admin-tab').forEach(t => t.classList.remove('active'));
       tab.classList.add('active');
-      ['import', 'products', 'packers', 'users', 'settings'].forEach(name => {
+      ['import', 'products', 'shifts', 'packers', 'kitchen-managers', 'users', 'settings'].forEach(name => {
         document.getElementById('tab-' + name).classList.toggle('hidden', name !== tab.getAttribute('data-tab'));
       });
     };
@@ -2597,6 +2785,38 @@ function wireStaticEvents() {
       btn.textContent = 'Add packer';
     });
   };
+
+  document.getElementById('add-shift-btn').onclick = () => {
+    const input = document.getElementById('new-shift-name');
+    const name = input.value.trim();
+    if (!name) return;
+    const btn = document.getElementById('add-shift-btn');
+    btn.disabled = true;
+    btn.textContent = 'Adding…';
+    apiPost('addShift', { name: name }).then(shifts => {
+      input.value = '';
+      renderShiftsAdmin(shifts);
+    }).catch(err => alert(err.message)).finally(() => {
+      btn.disabled = false;
+      btn.textContent = 'Add shift';
+    });
+  };
+
+  document.getElementById('add-kitchen-manager-btn').onclick = () => {
+    const input = document.getElementById('new-kitchen-manager-name');
+    const name = input.value.trim();
+    if (!name) return;
+    const btn = document.getElementById('add-kitchen-manager-btn');
+    btn.disabled = true;
+    btn.textContent = 'Adding…';
+    apiPost('addKitchenManager', { name: name }).then(kitchenManagers => {
+      input.value = '';
+      renderKitchenManagersAdmin(kitchenManagers);
+    }).catch(err => alert(err.message)).finally(() => {
+      btn.disabled = false;
+      btn.textContent = 'Add Kitchen Manager';
+    });
+  };
   document.getElementById('save-settings-btn').onclick = saveSettings;
   document.getElementById('purge-now-btn').onclick = doPurgeNow;
   document.getElementById('reset-order-data-btn').onclick = doResetOrderData;
@@ -2605,11 +2825,12 @@ function wireStaticEvents() {
     const name = document.getElementById('new-user-name').value.trim();
     const pin = document.getElementById('new-user-pin').value.trim();
     const role = document.getElementById('new-user-role').value;
+    const shift = document.getElementById('new-user-shift').value;
     const resultBox = document.getElementById('users-result');
     if (!name || !pin) return;
     const btn = document.getElementById('add-user-btn');
     btn.disabled = true;
-    apiPost('saveUser', { originalName: null, name: name, pin: pin, role: role, active: true }).then(users => {
+    apiPost('saveUser', { originalName: null, name: name, pin: pin, role: role, active: true, shift: shift }).then(users => {
       document.getElementById('new-user-name').value = '';
       document.getElementById('new-user-pin').value = '';
       resultBox.className = 'result-box';
