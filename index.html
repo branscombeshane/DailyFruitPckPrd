@@ -288,7 +288,7 @@
      after #print-labels) to match.
 
      Production also prints LABELS on a completely different, second printer
-     (an Argox D2-250 desktop label printer, fixed 100mm x 75mm die-cut label
+     (an Argox D2-250 desktop label printer, fixed 58mm x 43mm die-cut label
      stock - not a continuous roll like the receipt printer, so its @page needs
      an exact size, not "auto"). Two different physical page sizes can't both
      be active at once, so the @page rule itself lives in a separate, tiny
@@ -322,8 +322,18 @@
     .slip-footer{margin-top:11px;font-size:12.5px;}
     .slip-footer div{margin-top:4px;}
 
-    /* One label per 100mm x 75mm die-cut sheet - break-after:page moves to the
-       next physical label instead of trying to fit more than one per sheet. */
+    /* One label per 58mm x 43mm die-cut sheet - break-after:page moves to the
+       next physical label instead of trying to fit more than one per sheet.
+       Every measurement below was rescaled down from the original 100mm x
+       75mm design (roughly 0.58x linearly, ~1/3 the print area) rather than
+       just shrunk arbitrarily - product name/qty stays the largest, most
+       prominent text since it's what a packer checks at a glance, the four
+       detail rows shrink the most since they're reference info once printed,
+       and the logo shrinks enough to not crowd out either. overflow:hidden on
+       .label-page is a safety net, not a design choice - if a genuinely long
+       customer name or item description ever gets clipped by it, that's a
+       sign these sizes need revisiting, not that overflow:hidden is doing its
+       job correctly. */
     body[data-print-target="labels"] #print-labels,
     body[data-print-target="labels"] #print-labels *{visibility:visible;}
     body[data-print-target="labels"] #print-labels{
@@ -331,17 +341,17 @@
       font-family:Arial,Helvetica,sans-serif;color:#000;
     }
     .label-page{
-      width:100mm;height:75mm;box-sizing:border-box;padding:4mm 5mm;
+      width:58mm;height:43mm;box-sizing:border-box;padding:2mm 2.5mm;
       display:flex;flex-direction:column;justify-content:space-between;
       page-break-after:always;break-after:page;overflow:hidden;
     }
     .label-page:last-child{page-break-after:auto;break-after:auto;}
-    .label-logo-row{display:flex;align-items:center;justify-content:center;min-height:10mm;}
-    .label-logo-row img{max-height:12mm;max-width:70mm;}
-    .label-logo-text{font-size:17px;font-weight:800;letter-spacing:.4px;}
-    .label-product{font-size:19px;font-weight:800;text-align:center;line-height:1.2;word-break:break-word;}
-    .label-details{font-size:11.5px;line-height:1.7;}
-    .label-row{display:flex;justify-content:space-between;gap:8px;}
+    .label-logo-row{display:flex;align-items:center;justify-content:center;min-height:5mm;}
+    .label-logo-row img{max-height:6mm;max-width:40mm;}
+    .label-logo-text{font-size:10px;font-weight:800;letter-spacing:.3px;}
+    .label-product{font-size:12.5px;font-weight:800;text-align:center;line-height:1.15;word-break:break-word;}
+    .label-details{font-size:8px;line-height:1.35;}
+    .label-row{display:flex;justify-content:space-between;gap:5px;}
     .label-row span{color:#333;}
     .label-row b{font-weight:700;}
   }
@@ -790,7 +800,7 @@
   </div>
 </div>
 
-<!-- ============ PRINT LABELS (Argox D2-250, 100mm x 75mm die-cut) ============
+<!-- ============ PRINT LABELS (Argox D2-250, 58mm x 43mm die-cut) ============
      One .label-page per physical label, built entirely in JS (printProductionLabelsForOrder)
      since the count and content differ per order/item - see the CSS comment
      above #print-labels for why this needs its own dynamically-swapped @page size. -->
@@ -799,7 +809,7 @@
 </div>
 
 <!-- Swapped between the 80mm-wide continuous receipt-roll size and the fixed
-     100mm x 75mm label size right before each print call - see the CSS comment
+     58mm x 43mm label size right before each print call - see the CSS comment
      above #print-labels. Starts on the slip size since that's the more common print. -->
 <style id="print-page-style">@page{ size:80mm auto; margin:0; }</style>
 
@@ -1807,7 +1817,7 @@ function printProductionLabelsForOrder(order) {
   });
 
   document.getElementById('print-labels-body').innerHTML = labelsHtml.join('');
-  document.getElementById('print-page-style').textContent = '@page{ size:100mm 75mm; margin:0; }';
+  document.getElementById('print-page-style').textContent = '@page{ size:58mm 43mm; margin:0; }';
   document.body.setAttribute('data-print-target', 'labels');
 
   const onAfterPrint = () => {
