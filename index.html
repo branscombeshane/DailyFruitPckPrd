@@ -357,7 +357,9 @@
       font-family:Arial,Helvetica,sans-serif;color:#000;
     }
     .label-page{
-      width:58mm;height:43mm;box-sizing:border-box;padding:1.8mm 2.5mm;
+      /* Asymmetric padding, right side much wider than left - see the long
+         comment on .label-row below for why. */
+      width:58mm;height:43mm;box-sizing:border-box;padding:1.8mm 5mm 1.8mm 2.5mm;
       display:flex;flex-direction:column;justify-content:space-between;
       page-break-after:always;break-after:page;overflow:hidden;
     }
@@ -367,15 +369,21 @@
     .label-logo-text{font-size:9px;font-weight:800;letter-spacing:.3px;}
     .label-product{font-size:11.5px;font-weight:800;text-align:center;line-height:1.12;word-break:break-word;}
     .label-details{font-size:7px;line-height:1.25;}
-    /* Customer names (e.g. "EXCELLERATE - FLS CHLOOKOP...") can be longer
-       than the value column has room for on one line. The old rule
-       (justify-content:space-between, no width limit on the value) let long
-       values run past the right edge of the label and get sliced off by
-       .label-page's overflow:hidden - that's what showed up as "shifted
-       right" in print, when it was really text getting cut, not a printer
-       registration offset. Giving the label a fixed width and the value a
-       constrained, wrappable width fixes it: long values wrap onto a second
-       line instead of disappearing off the edge. */
+    /* Two real prints now (Excellerate, then Tsebo - Uni of Witwatersrand)
+       have shown right-side clipping on this Argox printer/label stock, and
+       the second one clipped SHORT values too (Batch No., Expires) - not
+       just a long-wrapped customer name. A too-long value getting sliced by
+       .label-page's overflow:hidden was a real bug and stays fixed below,
+       but a short value getting clipped can only mean the printer's own
+       printable area doesn't reach all the way to the physical right edge
+       (a "dead zone" a few mm wide, common on desktop thermal label
+       printers) - something no amount of driver/margin settings can fix
+       from Shane's side, since our virtual 58mm-wide page doesn't know
+       about it. The fix lives here instead: .label-page's right padding is
+       much wider than the left (5mm vs 2.5mm) so every right-aligned value -
+       long or short - sits well clear of that zone, not flush against it.
+       If a printed label ever shows clipping AGAIN after this, the right
+       padding needs to grow further, not the wrap logic below. */
     .label-row{display:flex;align-items:flex-start;gap:2px;}
     .label-row span{color:#333;flex:0 0 30%;}
     .label-row b{font-weight:700;flex:1 1 auto;min-width:0;text-align:right;word-break:break-word;overflow-wrap:break-word;}
