@@ -269,13 +269,23 @@
   /* ---------- print slip (Epson TM-T20III, 80mm thermal receipt roll) ----------
      Thermal receipt printers aren't a fixed page size like A4/Letter - they're a
      continuous roll that's only constrained in WIDTH (80mm), so @page uses
-     "auto" height (no page breaks) and everything below is sized to fit ~72mm
-     of printable width. No background fills (thermal heads render those as slow,
-     ink-heavy dithering) and no table borders (heavy on a thermal head and wastes
-     width on a narrow slip) - items are stacked description-then-details blocks
-     instead, separated by thin dashed rules, closer to a real receipt/kitchen
-     ticket than a printed table. If your roll is 58mm instead of 80mm, change
-     the two "80mm"/"72mm" values below to match.
+     "auto" height (no page breaks). #print-slip is sized to the FULL 80mm page
+     width (matching @page below) with its own 4mm left/right padding creating
+     an equal safety margin on BOTH edges - not just extra blank space on one
+     side - because Shane's actual prints were shaving the first character off
+     every left-aligned line (Order/Customer/Notes/item names all missing their
+     first letter): the box used to be narrower than the page but pinned flush
+     to the LEFT edge with all the spare width sitting unused on the right, so
+     there was zero buffer wherever the real printer's printable area starts
+     even a hair inside the nominal 80mm roll width. Symmetric padding on a
+     full-width box fixes that regardless of which edge (or both) a given
+     printer trims. No background fills (thermal heads render those as slow,
+     ink-heavy dithering) and no table borders (heavy on a thermal head and
+     wastes width on a narrow slip) - items are stacked description-then-details
+     blocks instead, separated by thin dashed rules, closer to a real
+     receipt/kitchen ticket than a printed table. If your roll is 58mm instead
+     of 80mm, change the two "80mm" values below (the @page one too, just
+     after #print-labels) to match.
 
      Production also prints LABELS on a completely different, second printer
      (an Argox D2-250 desktop label printer, fixed 100mm x 75mm die-cut label
@@ -295,21 +305,21 @@
     body[data-print-target="slip"] #print-slip *{visibility:visible;}
     body[data-print-target="slip"] #print-slip{
       display:block;position:absolute;top:0;left:0;
-      width:72mm;padding:3mm 4mm;
-      font-family:Arial,Helvetica,sans-serif;color:#000;font-size:12px;line-height:1.35;
+      width:80mm;padding:3.5mm 4mm;
+      font-family:Arial,Helvetica,sans-serif;color:#000;font-size:14.5px;line-height:1.4;
     }
-    .slip-header{text-align:center;border-bottom:1px dashed #000;padding-bottom:6px;margin-bottom:6px;}
-    .slip-header h1{font-size:16px;margin:0 0 2px;}
-    .slip-type{font-size:11px;text-transform:uppercase;letter-spacing:1px;}
-    .slip-ref-line{font-size:20px;font-weight:700;text-align:center;margin:6px 0;}
-    .slip-meta{font-size:12px;margin-top:3px;word-break:break-word;}
-    .slip-rule{border-top:1px dashed #000;margin:8px 0;}
-    .slip-items{margin-top:4px;}
-    .slip-item{padding:4px 0;border-bottom:1px dashed #999;}
-    .slip-item-desc{font-size:13px;font-weight:700;word-break:break-word;}
-    .slip-item-meta{display:flex;justify-content:space-between;gap:8px;font-size:11px;margin-top:1px;}
-    .slip-item-qty{font-size:15px;font-weight:700;white-space:nowrap;}
-    .slip-footer{margin-top:10px;font-size:10.5px;}
+    .slip-header{text-align:center;border-bottom:1px dashed #000;padding-bottom:7px;margin-bottom:7px;}
+    .slip-header h1{font-size:19px;margin:0 0 2px;}
+    .slip-type{font-size:13px;text-transform:uppercase;letter-spacing:1px;}
+    .slip-ref-line{font-size:24px;font-weight:700;text-align:center;margin:7px 0;}
+    .slip-meta{font-size:14.5px;margin-top:4px;word-break:break-word;}
+    .slip-rule{border-top:1px dashed #000;margin:9px 0;}
+    .slip-items{margin-top:5px;}
+    .slip-item{padding:5px 0;border-bottom:1px dashed #999;}
+    .slip-item-desc{font-size:16px;font-weight:700;word-break:break-word;}
+    .slip-item-meta{display:flex;justify-content:space-between;gap:8px;font-size:13px;margin-top:2px;}
+    .slip-item-qty{font-size:18px;font-weight:700;white-space:nowrap;}
+    .slip-footer{margin-top:11px;font-size:12.5px;}
     .slip-footer div{margin-top:4px;}
 
     /* One label per 100mm x 75mm die-cut sheet - break-after:page moves to the
