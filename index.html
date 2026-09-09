@@ -300,9 +300,24 @@
   #print-slip{display:none;}
   #print-labels{display:none;}
   @media print{
-    body *{visibility:hidden;}
-    body[data-print-target="slip"] #print-slip,
-    body[data-print-target="slip"] #print-slip *{visibility:visible;}
+    /* Hiding the rest of the app with visibility:hidden (the previous
+       approach here) does NOT remove those elements from layout - the whole
+       app (every order card, every Admin list/tab, however tall it happens
+       to be at print time) still occupies its normal document height, just
+       invisibly. That's what was causing "3 sheets of paper" and 2 extra
+       blank prints per slip on Shane's Mac even after the Roll Paper 80mm
+       size was set correctly: Chrome's print pagination paginates the whole
+       (invisible) app's height, not just the one visibly-printed block -
+       confirmed by reproducing it with a plain tall hidden div and watching
+       the page count grow, then confirming display:none instead of
+       visibility:hidden made it go away (visibility:hidden was tried first
+       and did NOT fix it - display:none, which removes an element from
+       layout entirely rather than just hiding it visually, is the part that
+       actually matters here). #print-slip and #print-labels are both direct
+       children of <body> with no wrapper, so this hides every OTHER direct
+       child instead - their own internal contents are never touched by this
+       rule at all, so nothing needs its display re-declared. */
+    body > *:not(#print-slip):not(#print-labels){display:none!important;}
     body[data-print-target="slip"] #print-slip{
       display:block;position:absolute;top:0;left:0;
       width:80mm;padding:3.5mm 4mm;
@@ -334,8 +349,6 @@
        customer name or item description ever gets clipped by it, that's a
        sign these sizes need revisiting, not that overflow:hidden is doing its
        job correctly. */
-    body[data-print-target="labels"] #print-labels,
-    body[data-print-target="labels"] #print-labels *{visibility:visible;}
     body[data-print-target="labels"] #print-labels{
       display:block;position:absolute;top:0;left:0;
       font-family:Arial,Helvetica,sans-serif;color:#000;
