@@ -342,28 +342,31 @@
        Every measurement below was rescaled down from the original 100mm x
        75mm design (roughly 0.58x linearly, ~1/3 the print area) rather than
        just shrunk arbitrarily - product name/qty stays the largest, most
-       prominent text since it's what a packer checks at a glance, the four
-       detail rows shrink the most since they're reference info once printed,
-       and the logo shrinks enough to not crowd out either. overflow:hidden on
-       .label-page is a safety net, not a design choice - if a genuinely long
-       customer name or item description ever gets clipped by it, that's a
-       sign these sizes need revisiting, not that overflow:hidden is doing its
-       job correctly. */
+       prominent text since it's what a packer checks at a glance, the detail
+       rows shrink the most since they're reference info once printed, and
+       the logo shrinks enough to not crowd out either. Shrunk again (and the
+       detail rows/notice/address below added) to fit the fixed compliance
+       text every label now needs alongside the original fields - still
+       comfortably inside the 43mm height in testing with worst-case (long
+       customer name + long description) data. overflow:hidden on .label-page
+       is a safety net, not a design choice - if a genuinely long value ever
+       gets clipped by it, that's a sign these sizes need revisiting, not
+       that overflow:hidden is doing its job correctly. */
     body[data-print-target="labels"] #print-labels{
       display:block;position:absolute;top:0;left:0;
       font-family:Arial,Helvetica,sans-serif;color:#000;
     }
     .label-page{
-      width:58mm;height:43mm;box-sizing:border-box;padding:2mm 2.5mm;
+      width:58mm;height:43mm;box-sizing:border-box;padding:1.8mm 2.5mm;
       display:flex;flex-direction:column;justify-content:space-between;
       page-break-after:always;break-after:page;overflow:hidden;
     }
     .label-page:last-child{page-break-after:auto;break-after:auto;}
-    .label-logo-row{display:flex;align-items:center;justify-content:center;min-height:5mm;}
-    .label-logo-row img{max-height:6mm;max-width:40mm;}
-    .label-logo-text{font-size:10px;font-weight:800;letter-spacing:.3px;}
-    .label-product{font-size:12.5px;font-weight:800;text-align:center;line-height:1.15;word-break:break-word;}
-    .label-details{font-size:7.5px;line-height:1.3;}
+    .label-logo-row{display:flex;align-items:center;justify-content:center;min-height:4mm;}
+    .label-logo-row img{max-height:5.5mm;max-width:38mm;}
+    .label-logo-text{font-size:9px;font-weight:800;letter-spacing:.3px;}
+    .label-product{font-size:11.5px;font-weight:800;text-align:center;line-height:1.12;word-break:break-word;}
+    .label-details{font-size:7px;line-height:1.25;}
     /* Customer names (e.g. "EXCELLERATE - FLS CHLOOKOP...") can be longer
        than the value column has room for on one line. The old rule
        (justify-content:space-between, no width limit on the value) let long
@@ -376,6 +379,11 @@
     .label-row{display:flex;align-items:flex-start;gap:2px;}
     .label-row span{color:#333;flex:0 0 30%;}
     .label-row b{font-weight:700;flex:1 1 auto;min-width:0;text-align:right;word-break:break-word;overflow-wrap:break-word;}
+    /* Fixed compliance text on every label, same on every print - see
+       LABEL_FIXED_TEXT near printProductionLabelsForOrder if the wording or
+       address ever needs to change. */
+    .label-notice{font-size:7.5px;font-weight:800;text-align:center;line-height:1.15;}
+    .label-address{font-size:6px;color:#333;text-align:center;line-height:1.15;}
   }
 
   .conn-banner{
@@ -653,6 +661,7 @@
     <button class="admin-tab active" data-tab="import">Import orders</button>
     <button class="admin-tab" data-tab="products">Products</button>
     <button class="admin-tab" data-tab="shifts">Shifts</button>
+    <button class="admin-tab" data-tab="customer-shelf-life">Customer Shelf Life</button>
     <button class="admin-tab" data-tab="packers">Packers</button>
     <button class="admin-tab" data-tab="kitchen-managers">Kitchen Managers</button>
     <button class="admin-tab" data-tab="users">Users</button>
@@ -715,6 +724,21 @@
       <input type="text" id="new-shift-name" placeholder="e.g. Day, Afternoon, Night">
     </div>
     <button class="btn-primary" id="add-shift-btn">Add shift</button>
+  </div>
+
+  <div class="admin-panel hidden" id="tab-customer-shelf-life">
+    <h3>Customer Shelf Life</h3>
+    <p style="color:var(--muted);font-size:14px;">Every Production label's "Expires" date defaults to Settings &gt; "Label shelf life days". Only add a customer here if they've specifically asked for a different shelf life — everyone not listed (or switched off below) still uses the default.</p>
+    <div id="customer-shelf-life-admin-list"></div>
+    <div class="field" style="margin-top:16px;">
+      <label>Add a customer override</label>
+      <input type="text" id="new-customer-shelf-life-name" placeholder="Customer name, exactly as it appears on Sage orders">
+    </div>
+    <div class="field">
+      <label>Shelf life (days)</label>
+      <input type="number" id="new-customer-shelf-life-days" min="1" step="1" placeholder="e.g. 3">
+    </div>
+    <button class="btn-primary" id="add-customer-shelf-life-btn">Add override</button>
   </div>
 
   <div class="admin-panel hidden" id="tab-packers">
@@ -1818,11 +1842,45 @@ function computeLabelChunks(qty) {
   return chunks;
 }
 
-function printProductionLabelsForOrder(order) {
+// Fixed compliance text printed on every Production label, unchanged from
+// order to order - edit the wording/address here if it ever needs to change,
+// there's nowhere else it's defined.
+const LABEL_FIXED_TEXT = {
+  refrigeration: 'Keep Refrigerated at ≤ 5 °C',
+  address: 'Daily Fruit - 37, 15th Street, Marlboro, 2090'
+};
+
+// Most customers use Settings > "Label shelf life days" - a few have asked
+// for a different one (Admin > Customer Shelf Life), matched case-
+// insensitively/trimmed against the order's customer name so small
+// formatting differences in how Sage sends it don't silently miss the
+// override. Falls back to the global default whenever there's no match.
+function shelfLifeDaysForOrder(order) {
+  const overrides = (boardData && boardData.settings.customerShelfLifeDays) || {};
+  const key = String((order && order.customerName) || '').trim().toLowerCase();
+  return Number(overrides[key]) || Number(boardData && boardData.settings.labelShelfLifeDays) || 5;
+}
+
+// async: the very first label print for an order needs a fresh Batch No from
+// the server (see getOrCreateProductionBatchNo_ in Code.gs) before it can be
+// built and printed - a reprint gets the same number back rather than a new
+// one, since it's the same physical batch. That's one extra network
+// round-trip before the print dialog opens, same trade Assign-and-print
+// already makes elsewhere in this app.
+async function printProductionLabelsForOrder(order) {
   const prodItems = order.items.filter(it => it.department === 'Production');
   if (!prodItems.length) { alert('This order has no Production items to label.'); return; }
 
-  const shelfDays = Number(boardData && boardData.settings.labelShelfLifeDays) || 5;
+  let batchNo = '';
+  try {
+    const res = await apiPost('getProductionBatchNo', { orderId: order.orderId });
+    batchNo = res.batchNo || '';
+  } catch (err) {
+    alert('Could not get a batch number for these labels: ' + err.message);
+    return;
+  }
+
+  const shelfDays = shelfLifeDaysForOrder(order);
   const now = new Date();
   const expiry = new Date(now);
   expiry.setDate(expiry.getDate() + shelfDays);
@@ -1839,9 +1897,12 @@ function printProductionLabelsForOrder(order) {
           <div class="label-details">
             <div class="label-row"><span>Customer</span><b>${escapeHtml(order.customerName || '')}</b></div>
             <div class="label-row"><span>Invoice</span><b>${escapeHtml(order.sageRef)}</b></div>
+            <div class="label-row"><span>Batch No.</span><b>${escapeHtml(batchNo)}</b></div>
             <div class="label-row"><span>Produced</span><b>${escapeHtml(producedStr)}</b></div>
             <div class="label-row"><span>Expires</span><b>${escapeHtml(expiryStr)}</b></div>
           </div>
+          <div class="label-notice">${escapeHtml(LABEL_FIXED_TEXT.refrigeration)}</div>
+          <div class="label-address">${escapeHtml(LABEL_FIXED_TEXT.address)}</div>
         </div>`);
     });
   });
@@ -2295,6 +2356,7 @@ function loadAdminData() {
   apiGet('getAdminData', {}, { timeoutMs: 60000 }).then(data => {
     allShifts = data.shifts;
     renderShiftsAdmin(data.shifts);
+    renderCustomerShelfLifeAdmin(data.customerShelfLife);
     renderPackersAdmin(data.packers);
     renderKitchenManagersAdmin(data.kitchenManagers);
     renderImportLog(data.importLog);
@@ -2348,6 +2410,50 @@ function renderShiftsAdmin(shifts) {
       if (!confirm(`Delete shift "${name}"? This won't change any Packer/Kitchen Manager/User already set to this shift - they'll just no longer match anyone until reassigned. This can't be undone.`)) return;
       btn.disabled = true;
       apiPost('deleteShift', { name: name }).then(shifts => { allShifts = shifts; renderShiftsAdmin(shifts); }).catch(err => { alert(err.message); btn.disabled = false; });
+    };
+  });
+}
+
+function renderCustomerShelfLifeAdmin(list) {
+  const box = document.getElementById('customer-shelf-life-admin-list');
+  if (!list.length) { box.innerHTML = '<div class="log-row">No customer overrides yet — everyone uses the default shelf life below.</div>'; return; }
+  box.innerHTML = list.map(c => `
+    <div class="packer-row">
+      <span>${escapeHtml(c.customerName)}</span>
+      <div style="display:flex;align-items:center;gap:10px;">
+        <input type="number" class="cust-shelf-days-input" data-name="${escapeHtml(c.customerName)}" value="${c.days}" min="1" step="1" style="width:60px;">
+        <span style="color:var(--muted);font-size:13px;">days</span>
+        <button class="toggle ${c.active ? 'on' : ''}" data-name="${escapeHtml(c.customerName)}" data-active="${c.active}"><span class="knob"></span></button>
+        <button class="icon-btn" style="background:#f3d6d6;color:#a11;width:32px;height:32px;font-size:14px;" data-delete-name="${escapeHtml(c.customerName)}" title="Delete override">✕</button>
+      </div>
+    </div>`).join('');
+  box.querySelectorAll('.cust-shelf-days-input').forEach(input => {
+    // Committed on blur/Enter, not on every keystroke - matches setPackerShift's
+    // pattern of only calling the API once the person's actually done editing.
+    const commit = () => {
+      const name = input.getAttribute('data-name');
+      const days = Number(input.value);
+      if (!days || days < 1) { alert('Days must be a positive number.'); return; }
+      input.disabled = true;
+      apiPost('setCustomerShelfLifeDays', { customerName: name, days: days }).then(list => renderCustomerShelfLifeAdmin(list)).catch(err => { alert(err.message); input.disabled = false; });
+    };
+    input.addEventListener('blur', commit);
+    input.addEventListener('keydown', e => { if (e.key === 'Enter') input.blur(); });
+  });
+  box.querySelectorAll('.toggle').forEach(btn => {
+    btn.onclick = () => {
+      const name = btn.getAttribute('data-name');
+      const nowActive = btn.getAttribute('data-active') !== 'true';
+      btn.disabled = true;
+      apiPost('setCustomerShelfLifeActive', { customerName: name, active: nowActive }).then(list => renderCustomerShelfLifeAdmin(list)).catch(err => { alert(err.message); btn.disabled = false; });
+    };
+  });
+  box.querySelectorAll('[data-delete-name]').forEach(btn => {
+    btn.onclick = () => {
+      const name = btn.getAttribute('data-delete-name');
+      if (!confirm(`Delete the shelf life override for "${name}"? They'll go back to the default shelf life. This can't be undone.`)) return;
+      btn.disabled = true;
+      apiPost('deleteCustomerShelfLife', { customerName: name }).then(list => renderCustomerShelfLifeAdmin(list)).catch(err => { alert(err.message); btn.disabled = false; });
     };
   });
 }
@@ -2794,7 +2900,7 @@ function wireStaticEvents() {
     tab.onclick = () => {
       document.querySelectorAll('.admin-tab').forEach(t => t.classList.remove('active'));
       tab.classList.add('active');
-      ['import', 'products', 'shifts', 'packers', 'kitchen-managers', 'users', 'settings'].forEach(name => {
+      ['import', 'products', 'shifts', 'customer-shelf-life', 'packers', 'kitchen-managers', 'users', 'settings'].forEach(name => {
         document.getElementById('tab-' + name).classList.toggle('hidden', name !== tab.getAttribute('data-tab'));
       });
     };
@@ -2849,6 +2955,26 @@ function wireStaticEvents() {
     }).catch(err => alert(err.message)).finally(() => {
       btn.disabled = false;
       btn.textContent = 'Add shift';
+    });
+  };
+
+  document.getElementById('add-customer-shelf-life-btn').onclick = () => {
+    const nameInput = document.getElementById('new-customer-shelf-life-name');
+    const daysInput = document.getElementById('new-customer-shelf-life-days');
+    const name = nameInput.value.trim();
+    const days = Number(daysInput.value);
+    if (!name) return;
+    if (!days || days < 1) { alert('Days must be a positive number.'); return; }
+    const btn = document.getElementById('add-customer-shelf-life-btn');
+    btn.disabled = true;
+    btn.textContent = 'Adding…';
+    apiPost('addCustomerShelfLife', { customerName: name, days: days }).then(list => {
+      nameInput.value = '';
+      daysInput.value = '';
+      renderCustomerShelfLifeAdmin(list);
+    }).catch(err => alert(err.message)).finally(() => {
+      btn.disabled = false;
+      btn.textContent = 'Add override';
     });
   };
 
