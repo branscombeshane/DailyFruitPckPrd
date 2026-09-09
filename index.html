@@ -772,16 +772,16 @@ let userName = localStorage.getItem('df_user_name') || '';
 let userPin = localStorage.getItem('df_user_pin') || '';
 let userRole = localStorage.getItem('df_user_role') || '';
 let printedDate = todayDateStr(); // date shown in the "Printed" section - defaults to today
-let printedHistoryOrders = null; // set when printedDate !== today, from getOrdersForDate
+let printedHistoryOrders = []; // always fetched via getOrdersForDate (today included - see refreshTodayHistories) - the live board payload no longer carries done orders at all
 let printedPackerFilter = ''; // '' = all packers; otherwise only show this packer's printed orders
 let boardView = ['packing', 'production', 'dashboard'].includes(localStorage.getItem('df_board_view')) ? localStorage.getItem('df_board_view') : 'packing';
 let prodCompletedDate = todayDateStr(); // date shown in Production's "Completed" section
-let prodCompletedHistoryOrders = null; // set when prodCompletedDate !== today
+let prodCompletedHistoryOrders = []; // always fetched via getOrdersForDate (today included - see refreshTodayHistories)
 let dashSelectedStat = null; // key of the currently-selected Dashboard stat tile, or null if none picked
 let dashBuckets = {}; // rebuilt each renderDashboard() call - stat key -> { label, emptyText, orders }
 let dashDate = todayDateStr(); // date the Dashboard's Printed/Completed/Production totals/Packers are showing - defaults to today (live)
-let dashHistoryPrintedOrders = null; // set when dashDate !== today, from getOrdersForDate
-let dashHistoryCompletedOrders = null; // set when dashDate !== today, from getOrdersForDate (type: productionCompleted)
+let dashHistoryPrintedOrders = []; // always fetched via getOrdersForDate (today included - see refreshTodayHistories)
+let dashHistoryCompletedOrders = []; // always fetched via getOrdersForDate (type: productionCompleted; today included - see refreshTodayHistories)
 
 /* ===================== API HELPERS ===================== */
 // Every request gets a hard timeout. Without one, a request that stalls
@@ -973,8 +973,11 @@ function init() {
   if (!appStarted) { wireStaticEvents(); appStarted = true; }
   applyRoleUI();
   loadBoard(true);
+  refreshTodayHistories();
   if (pollTimer) clearInterval(pollTimer);
   pollTimer = setInterval(() => loadBoard(false), 5000);
+  if (historyPollTimer) clearInterval(historyPollTimer);
+  historyPollTimer = setInterval(refreshTodayHistories, 20000);
 }
 
 function wireLoginScreenEvents() {
@@ -1264,7 +1267,12 @@ function renderBoard() {
   const needsPacker = [];
   const scheduled = [];
   const assigned = [];
-  let printed = [];
+  // The "Printed" section (today's included) is fetched separately via
+  // getOrdersForDate rather than derived from boardData.orders - a fully-done
+  // order drops off the live board payload the instant it's done (see
+  // buildBoard_ in Code.gs), so it can only be found here. See
+  // loadPrintedHistory/refreshTodayHistories.
+  const printed = printedHistoryOrders || [];
   const isToday = printedDate === todayDateStr();
   const today = todayDateStr();
 
@@ -1275,12 +1283,11 @@ function renderBoard() {
       else scheduled.push(Object.assign({ _packDate: packDate }, o));
     }
     else if (!o.printedAt) assigned.push(o);
-    else if (isToday && new Date(o.printedAt).toDateString() === new Date().toDateString()) printed.push(o);
+    // An order that's printed but not yet fully done (production still
+    // pending) stays in boardData.orders too, but it has nothing to show here
+    // - it'll appear in "printed" above via the fetch once it's actually done,
+    // same as any other printed order.
   });
-
-  if (!isToday) {
-    printed = printedHistoryOrders || [];
-  }
 
   // Sorted by delivery date (not pack date) so whatever must reach a customer
   // soonest always sits at the top, regardless of when it happened to be
@@ -1512,19 +1519,22 @@ function renderProductionBoard() {
 
   const needsProcessing = [];
   const scheduled = [];
-  let completed = [];
+  // Same as Packing's "Printed" section (see renderBoard) - "Completed"
+  // (today's included) is fetched separately via getOrdersForDate rather than
+  // derived from boardData.orders, since a fully-done order drops off that
+  // live payload the instant it's done. See loadProdCompletedHistory/
+  // refreshTodayHistories.
+  const completed = prodCompletedHistoryOrders || [];
 
   prodOrders.forEach(o => {
-    if (o.productionCompletedAt) {
-      if (isToday && new Date(o.productionCompletedAt).toDateString() === new Date().toDateString()) completed.push(o);
-      return;
-    }
+    // Production's own part is already done - it'll show under "Completed"
+    // above via the fetch. (Packing may not have printed this order yet, an
+    // uncommon ordering, but there's nothing left for Production to do with it.)
+    if (o.productionCompletedAt) return;
     const packDate = computePackDate(o);
     if (packDate <= today) needsProcessing.push(Object.assign({ _packDate: packDate }, o));
     else scheduled.push(Object.assign({ _packDate: packDate }, o));
   });
-
-  if (!isToday) completed = prodCompletedHistoryOrders || [];
 
   needsProcessing.sort((a, b) => a._packDate !== b._packDate
     ? (a._packDate < b._packDate ? -1 : 1)
@@ -1645,7 +1655,10 @@ function attachProductionCardHandlers() {
       if (!order) return;
       if (!confirm(`Mark order ${order.sageRef} as complete? This removes it from the prep tally.`)) return;
       btn.disabled = true;
-      apiPost('markProductionComplete', { orderId: orderId }).then(() => loadBoard(false)).catch(err => { alert(err.message); btn.disabled = false; });
+      apiPost('markProductionComplete', { orderId: orderId }).then(() => {
+        loadBoard(false);
+        if (prodCompletedDate === todayDateStr()) loadProdCompletedHistory(todayDateStr());
+      }).catch(err => { alert(err.message); btn.disabled = false; });
     };
   });
   document.querySelectorAll('[data-prod-incomplete]').forEach(btn => {
@@ -1656,7 +1669,10 @@ function attachProductionCardHandlers() {
       if (!order) return;
       if (!confirm(`Mark order ${order.sageRef} as NOT complete? It'll move back to "Needs processing" and count in the prep tally again.`)) return;
       btn.disabled = true;
-      apiPost('markProductionIncomplete', { orderId: orderId }).then(() => loadBoard(false)).catch(err => { alert(err.message); btn.disabled = false; });
+      apiPost('markProductionIncomplete', { orderId: orderId }).then(() => {
+        loadBoard(false);
+        if (prodCompletedDate === todayDateStr()) loadProdCompletedHistory(todayDateStr());
+      }).catch(err => { alert(err.message); btn.disabled = false; });
     };
   });
   document.querySelectorAll('[data-prod-reprint-slip]').forEach(btn => {
@@ -1793,21 +1809,17 @@ function renderDashboard() {
   if (!boardData) return;
   const critMin = boardData.settings.flagCriticalMinutes;
   const today = todayDateStr();
-  const nowStr = new Date().toDateString();
 
-  let packNeeds = 0, packAssigned = 0, packPrintedToday = 0, packOverdue = 0;
-  let prodNeeds = 0, prodCompletedToday = 0, prodOverdue = 0;
+  let packNeeds = 0, packAssigned = 0, packOverdue = 0;
+  let prodNeeds = 0, prodOverdue = 0;
   let needsReviewCount = 0;
   const flagged = [];
-  let printedTodayByPacker = {};
-  let completedTodayOrders = [];
 
   // Same order objects that make up each stat's count, kept alongside it so
   // tapping a tile can show exactly what it's counting - no separate lookup
   // or recompute needed at click time.
   const needsPackerOrders = [];
   const packAssignedOrders = [];
-  let printedTodayOrders = [];
   const prodNeedsOrders = [];
   const needsReviewOrders = [];
 
@@ -1818,7 +1830,9 @@ function renderDashboard() {
     if (orderReviewCount > 0) needsReviewOrders.push(o);
     const hasProdItems = items.some(it => it.department === 'Production');
 
-    // Packing side - same three buckets renderBoard() uses.
+    // Packing side - same buckets renderBoard() uses. "Printed" isn't derived
+    // here any more - see printedTodayOrders below - because a fully-done
+    // order drops off boardData.orders the instant it's done.
     if (!o.assignedTo) {
       const packDate = computePackDate(o);
       if (packDate <= today) {
@@ -1832,29 +1846,19 @@ function renderDashboard() {
     } else if (!o.printedAt) {
       packAssigned++;
       packAssignedOrders.push(o);
-    } else if (new Date(o.printedAt).toDateString() === nowStr) {
-      packPrintedToday++;
-      printedTodayOrders.push(o);
-      printedTodayByPacker[o.assignedTo] = (printedTodayByPacker[o.assignedTo] || 0) + 1;
     }
 
-    // Production side - same buckets renderProductionBoard() uses.
-    if (hasProdItems) {
-      if (o.productionCompletedAt) {
-        if (new Date(o.productionCompletedAt).toDateString() === nowStr) {
-          prodCompletedToday++;
-          completedTodayOrders.push(o);
-        }
-      } else {
-        const packDate = computePackDate(o);
-        if (packDate <= today) {
-          prodNeeds++;
-          const overdue = packDate < today;
-          if (overdue) prodOverdue++;
-          const age = queueAgeMinutes(o, packDate);
-          prodNeedsOrders.push(Object.assign({ _packDate: packDate, _age: age, _overdue: overdue }, o));
-          if (age >= critMin) flagged.push({ dept: 'Production', sageRef: o.sageRef, customerName: o.customerName, age: age, overdue: overdue });
-        }
+    // Production side - same buckets renderProductionBoard() uses. Same
+    // deal - "Completed" comes from completedTodayOrders below, not here.
+    if (hasProdItems && !o.productionCompletedAt) {
+      const packDate = computePackDate(o);
+      if (packDate <= today) {
+        prodNeeds++;
+        const overdue = packDate < today;
+        if (overdue) prodOverdue++;
+        const age = queueAgeMinutes(o, packDate);
+        prodNeedsOrders.push(Object.assign({ _packDate: packDate, _age: age, _overdue: overdue }, o));
+        if (age >= critMin) flagged.push({ dept: 'Production', sageRef: o.sageRef, customerName: o.customerName, age: age, overdue: overdue });
       }
     }
   });
@@ -1862,29 +1866,27 @@ function renderDashboard() {
   flagged.sort((a, b) => b.age - a.age);
   needsPackerOrders.sort((a, b) => b._age - a._age);
   prodNeedsOrders.sort((a, b) => b._age - a._age);
-  printedTodayOrders.sort((a, b) => new Date(b.printedAt) - new Date(a.printedAt));
-  completedTodayOrders.sort((a, b) => new Date(b.productionCompletedAt) - new Date(a.productionCompletedAt));
 
-  // A picked-past-date view (dashDate !== today, see loadDashHistory) swaps in
-  // that day's actual Printed/Completed orders here, fetched via the same
-  // getOrdersForDate endpoint Packing's and Production's own date pickers
-  // already use. Everything else - Needs a packer, Packing in progress,
-  // Needs processing, Needs review, Needs attention - stays tied to the real
-  // current moment no matter what date is being viewed, same as Packing's and
+  // Printed/Completed (and the packer breakdown they feed) are fetched
+  // separately via getOrdersForDate for whichever date dashDate is currently
+  // showing - today included, same as Packing's and Production's own
+  // Printed/Completed sections (see loadDashHistory/refreshTodayHistories) -
+  // rather than derived from boardData.orders, which no longer carries a
+  // fully-done order at all. Needs a packer/Packing in progress/Needs
+  // processing/Needs review/Needs attention stay tied to the real current
+  // moment no matter what date is being viewed, same as Packing's and
   // Production's own "Needs..." sections never change when THEIR date
-  // pickers move (only their own Printed/Completed sections do) - there's no
-  // stored snapshot of "what was overdue back then" to show, and showing
-  // live backlog numbers under a past-dated heading would just be confusing.
+  // pickers move - there's no stored snapshot of "what was overdue back
+  // then" to show, and showing live backlog numbers under a past-dated
+  // heading would just be confusing.
   const isToday = dashDate === today;
   document.getElementById('dash-heading-label').textContent = isToday ? "Today's snapshot" : 'Snapshot for ' + fmtDateLong(dashDate);
-  if (!isToday) {
-    printedTodayOrders = (dashHistoryPrintedOrders || []).slice().sort((a, b) => new Date(b.printedAt) - new Date(a.printedAt));
-    packPrintedToday = printedTodayOrders.length;
-    printedTodayByPacker = {};
-    printedTodayOrders.forEach(o => { printedTodayByPacker[o.assignedTo] = (printedTodayByPacker[o.assignedTo] || 0) + 1; });
-    completedTodayOrders = (dashHistoryCompletedOrders || []).slice().sort((a, b) => new Date(b.productionCompletedAt) - new Date(a.productionCompletedAt));
-    prodCompletedToday = completedTodayOrders.length;
-  }
+  const printedTodayOrders = (dashHistoryPrintedOrders || []).slice().sort((a, b) => new Date(b.printedAt) - new Date(a.printedAt));
+  const packPrintedToday = printedTodayOrders.length;
+  const printedTodayByPacker = {};
+  printedTodayOrders.forEach(o => { printedTodayByPacker[o.assignedTo] = (printedTodayByPacker[o.assignedTo] || 0) + 1; });
+  const completedTodayOrders = (dashHistoryCompletedOrders || []).slice().sort((a, b) => new Date(b.productionCompletedAt) - new Date(a.productionCompletedAt));
+  const prodCompletedToday = completedTodayOrders.length;
 
   // The %-done sub-labels only make sense against TODAY's own live backlog
   // (needs-a-packer/needs-processing counts) - once a past date is picked,
@@ -2170,7 +2172,10 @@ function printSlipForOrder(order) {
 
   const onAfterPrint = () => {
     window.removeEventListener('afterprint', onAfterPrint);
-    apiPost('markPrinted', { orderId: order.orderId }).then(() => loadBoard(false)).catch(() => {});
+    apiPost('markPrinted', { orderId: order.orderId }).then(() => {
+      loadBoard(false);
+      if (printedDate === todayDateStr()) loadPrintedHistory(todayDateStr());
+    }).catch(() => {});
   };
   window.addEventListener('afterprint', onAfterPrint);
   setTimeout(() => window.print(), 150);
@@ -2580,8 +2585,11 @@ function wireStaticEvents() {
     if (document.visibilityState === 'visible' && pollTimer) {
       clearInterval(pollTimer);
       loadBoard(true);
+      refreshTodayHistories();
       const refreshSecs = (boardData && boardData.settings.boardRefreshSeconds) || 5;
       pollTimer = setInterval(() => loadBoard(false), Math.max(3, refreshSecs) * 1000);
+      if (historyPollTimer) clearInterval(historyPollTimer);
+      historyPollTimer = setInterval(refreshTodayHistories, 20000);
     }
   });
 
@@ -2696,56 +2704,54 @@ function setBoardView(view) {
   applyBoardView();
 }
 
-/* Switches the "Printed" section to show a past day's completed orders (or back to today's live list) */
+/* Loads the "Printed" section's orders for the given day (today included) via
+   getOrdersForDate - the live board payload no longer carries a done order at
+   all once it's done (see buildBoard_ in Code.gs), so this is the only place
+   "today's" printed orders come from too, not just a picked past date. Called
+   on a slower background cycle for "today" by refreshTodayHistories(), and
+   whenever the date picker changes. */
 function loadPrintedHistory(dateStr) {
+  const dateChanged = dateStr !== printedDate;
   printedDate = dateStr;
-  if (dateStr === todayDateStr()) {
-    printedHistoryOrders = null;
+  if (dateChanged) {
+    printedHistoryOrders = [];
     renderBoard();
-    return;
   }
-  printedHistoryOrders = [];
-  renderBoard();
   apiGet('getOrdersForDate', { date: dateStr }).then(res => {
     if (printedDate !== dateStr) return; // user picked a different date while this was loading
     printedHistoryOrders = res.orders;
     renderBoard();
-  }).catch(err => alert(err.message));
+  }).catch(err => { if (dateChanged) alert(err.message); else console.error(err); });
 }
 
-/* Switches Production's "Completed" section to show a past day (or back to today's live list) */
+/* Same as loadPrintedHistory, for Production's "Completed" section. */
 function loadProdCompletedHistory(dateStr) {
+  const dateChanged = dateStr !== prodCompletedDate;
   prodCompletedDate = dateStr;
-  if (dateStr === todayDateStr()) {
-    prodCompletedHistoryOrders = null;
+  if (dateChanged) {
+    prodCompletedHistoryOrders = [];
     renderProductionBoard();
-    return;
   }
-  prodCompletedHistoryOrders = [];
-  renderProductionBoard();
   apiGet('getOrdersForDate', { date: dateStr, type: 'productionCompleted' }).then(res => {
     if (prodCompletedDate !== dateStr) return; // user picked a different date while this was loading
     prodCompletedHistoryOrders = res.orders;
     renderProductionBoard();
-  }).catch(err => alert(err.message));
+  }).catch(err => { if (dateChanged) alert(err.message); else console.error(err); });
 }
 
-/* Switches the Dashboard's Printed/Completed/Production totals/Packers to a past
-   day's activity (or back to today's live snapshot) - Needs a packer/Packing in
-   progress/Needs processing/Needs review/Needs attention always stay live, see
-   the comment in renderDashboard() for why. */
+/* Loads the Dashboard's Printed/Completed/Production totals/Packers for the
+   given day (today included, same reasoning as loadPrintedHistory above) -
+   Needs a packer/Packing in progress/Needs processing/Needs review/Needs
+   attention always stay live, see the comment in renderDashboard() for why. */
 function loadDashHistory(dateStr) {
+  const dateChanged = dateStr !== dashDate;
   dashDate = dateStr;
-  dashSelectedStat = null; // whatever was selected belonged to the old date's bucket, which may no longer exist
-  if (dateStr === todayDateStr()) {
-    dashHistoryPrintedOrders = null;
-    dashHistoryCompletedOrders = null;
+  if (dateChanged) {
+    dashSelectedStat = null; // whatever was selected belonged to the old date's bucket, which may no longer exist
+    dashHistoryPrintedOrders = [];
+    dashHistoryCompletedOrders = [];
     renderDashboard();
-    return;
   }
-  dashHistoryPrintedOrders = [];
-  dashHistoryCompletedOrders = [];
-  renderDashboard();
   Promise.all([
     apiGet('getOrdersForDate', { date: dateStr }),
     apiGet('getOrdersForDate', { date: dateStr, type: 'productionCompleted' })
@@ -2754,7 +2760,21 @@ function loadDashHistory(dateStr) {
     dashHistoryPrintedOrders = printedRes.orders;
     dashHistoryCompletedOrders = completedRes.orders;
     renderDashboard();
-  }).catch(err => alert(err.message));
+  }).catch(err => { if (dateChanged) alert(err.message); else console.error(err); });
+}
+
+// Keeps whichever of today's Printed/Completed/Dashboard sections is
+// currently showing "today" fresh on its own slower cadence, now that none of
+// them ride along with the fast (3-5s) live board poll any more. Dashboard's
+// pair of fetches is skipped for a role that can't even see that tab, so a
+// Factory Floor device packing or processing orders all day isn't making two
+// extra requests every cycle for a screen it never opens.
+let historyPollTimer = null;
+function refreshTodayHistories() {
+  const today = todayDateStr();
+  if (printedDate === today) loadPrintedHistory(today);
+  if (prodCompletedDate === today) loadProdCompletedHistory(today);
+  if (dashDate === today && (userRole === 'Production Manager' || userRole === 'Admin')) loadDashHistory(today);
 }
 
 /* Refresh age badges every second without waiting for a full board reload */
