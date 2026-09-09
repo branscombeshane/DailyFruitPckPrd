@@ -830,12 +830,20 @@ let pollTimer = null;
 let pendingAssignOrderId = null;
 let pendingProdCompleteOrderId = null;
 // Auth travels as userName/userPin on every request (see requireUser_ in
-// Code.gs) - kept in localStorage so a device stays signed in across
-// reloads, same as the old single-passcode gate did, just per-person now.
-let userName = localStorage.getItem('df_user_name') || '';
-let userPin = localStorage.getItem('df_user_pin') || '';
-let userRole = localStorage.getItem('df_user_role') || '';
-let userShift = localStorage.getItem('df_user_shift') || ''; // '' = no shift restriction (sees/is seen by everyone) - see shiftVisible_ in Code.gs
+// Code.gs) - kept in sessionStorage (NOT localStorage) so a device stays
+// signed in across an in-use reload/backgrounding (a tablet locking/sleeping,
+// a tab refresh) but is forced back to the lock screen the moment the app is
+// actually closed and reopened - a browser tab closing or a PWA being fully
+// killed/relaunched starts a brand new browsing session with empty
+// sessionStorage, same-origin or not. Deliberately changed FROM localStorage
+// (which survives indefinitely across closes) per Shane: with the Shifts
+// feature crediting whoever's logged in, a device that silently stayed
+// signed in as whoever last used it - potentially days later, a different
+// person, a different shift - would quietly misattribute their work.
+let userName = sessionStorage.getItem('df_user_name') || '';
+let userPin = sessionStorage.getItem('df_user_pin') || '';
+let userRole = sessionStorage.getItem('df_user_role') || '';
+let userShift = sessionStorage.getItem('df_user_shift') || ''; // '' = no shift restriction (sees/is seen by everyone) - see shiftVisible_ in Code.gs
 let printedDate = todayDateStr(); // date shown in the "Printed" section - defaults to today
 let printedHistoryOrders = []; // always fetched via getOrdersForDate (today included - see refreshTodayHistories) - the live board payload no longer carries done orders at all
 let printedPackerFilter = ''; // '' = all packers; otherwise only show this packer's printed orders
@@ -983,10 +991,10 @@ function hideConnBanner() { document.getElementById('conn-banner').classList.add
 /* ===================== LOGIN ===================== */
 function logoutUser(message) {
   userName = ''; userPin = ''; userRole = ''; userShift = '';
-  localStorage.removeItem('df_user_name');
-  localStorage.removeItem('df_user_pin');
-  localStorage.removeItem('df_user_role');
-  localStorage.removeItem('df_user_shift');
+  sessionStorage.removeItem('df_user_name');
+  sessionStorage.removeItem('df_user_pin');
+  sessionStorage.removeItem('df_user_role');
+  sessionStorage.removeItem('df_user_shift');
   if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
   document.getElementById('board-view').classList.add('hidden');
   document.getElementById('production-view').classList.add('hidden');
@@ -1021,10 +1029,10 @@ function submitLogin() {
     userPin = pin;
     userRole = res.data.role;
     userShift = res.data.shift || '';
-    localStorage.setItem('df_user_name', userName);
-    localStorage.setItem('df_user_pin', userPin);
-    localStorage.setItem('df_user_role', userRole);
-    localStorage.setItem('df_user_shift', userShift);
+    sessionStorage.setItem('df_user_name', userName);
+    sessionStorage.setItem('df_user_pin', userPin);
+    sessionStorage.setItem('df_user_role', userRole);
+    sessionStorage.setItem('df_user_shift', userShift);
     document.getElementById('lock-screen').classList.add('hidden');
     init();
   }).catch(() => {
@@ -2441,10 +2449,10 @@ function renderUsersAdmin(users) {
           // stored credentials in sync instead.
           if (originalName.toLowerCase() === userName.toLowerCase()) {
             userName = newName; userPin = newPin; userRole = newRole; userShift = newShift;
-            localStorage.setItem('df_user_name', userName);
-            localStorage.setItem('df_user_pin', userPin);
-            localStorage.setItem('df_user_role', userRole);
-            localStorage.setItem('df_user_shift', userShift);
+            sessionStorage.setItem('df_user_name', userName);
+            sessionStorage.setItem('df_user_pin', userPin);
+            sessionStorage.setItem('df_user_role', userRole);
+            sessionStorage.setItem('df_user_shift', userShift);
             applyRoleUI();
           }
           renderUsersAdmin(users);
