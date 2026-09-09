@@ -363,10 +363,19 @@
     .label-logo-row img{max-height:6mm;max-width:40mm;}
     .label-logo-text{font-size:10px;font-weight:800;letter-spacing:.3px;}
     .label-product{font-size:12.5px;font-weight:800;text-align:center;line-height:1.15;word-break:break-word;}
-    .label-details{font-size:8px;line-height:1.35;}
-    .label-row{display:flex;justify-content:space-between;gap:5px;}
-    .label-row span{color:#333;}
-    .label-row b{font-weight:700;}
+    .label-details{font-size:7.5px;line-height:1.3;}
+    /* Customer names (e.g. "EXCELLERATE - FLS CHLOOKOP...") can be longer
+       than the value column has room for on one line. The old rule
+       (justify-content:space-between, no width limit on the value) let long
+       values run past the right edge of the label and get sliced off by
+       .label-page's overflow:hidden - that's what showed up as "shifted
+       right" in print, when it was really text getting cut, not a printer
+       registration offset. Giving the label a fixed width and the value a
+       constrained, wrappable width fixes it: long values wrap onto a second
+       line instead of disappearing off the edge. */
+    .label-row{display:flex;align-items:flex-start;gap:2px;}
+    .label-row span{color:#333;flex:0 0 30%;}
+    .label-row b{font-weight:700;flex:1 1 auto;min-width:0;text-align:right;word-break:break-word;overflow-wrap:break-word;}
   }
 
   .conn-banner{
