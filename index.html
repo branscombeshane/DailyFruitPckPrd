@@ -1496,7 +1496,10 @@ function renderBoard() {
         </div>
       </div>
       <div class="assigned-strip"><span>✅ ${escapeHtml(o.assignedTo)}</span><span>printed ${fmtTime(o.printedAt)}</span></div>
-      <div class="card-actions"><button class="btn-secondary" data-reprint="${o.orderId}">🖨 Reprint</button></div>
+      <div class="card-actions">
+        <button class="btn-secondary" data-reprint="${o.orderId}">🖨 Reprint</button>
+        <button class="btn-secondary" data-print-packing-labels="${o.orderId}">🏷 Labels</button>
+      </div>
     </div>`).join('');
 
   attachCardHandlers();
@@ -1523,6 +1526,15 @@ function attachCardHandlers() {
       const order = boardData.orders.find(o => o.orderId === orderId)
         || (printedHistoryOrders || []).find(o => o.orderId === orderId);
       if (order) printSlipForOrder(order);
+    };
+  });
+  document.querySelectorAll('#board-view [data-print-packing-labels]').forEach(btn => {
+    btn.onclick = (e) => {
+      e.stopPropagation();
+      const orderId = btn.getAttribute('data-print-packing-labels');
+      const order = boardData.orders.find(o => o.orderId === orderId)
+        || (printedHistoryOrders || []).find(o => o.orderId === orderId);
+      if (order) printPackingLabelsForOrder(order);
     };
   });
 }
@@ -1917,6 +1929,66 @@ async function printProductionLabelsForOrder(order) {
     document.getElementById('print-page-style').textContent = '@page{ size:80mm auto; margin:0; }';
     document.body.setAttribute('data-print-target', 'slip');
     apiPost('markProductionLabelsPrinted', { orderId: order.orderId }).then(() => loadBoard(false)).catch(() => {});
+  };
+  window.addEventListener('afterprint', onAfterPrint);
+  setTimeout(() => window.print(), 150);
+}
+
+// Packing's own label print, reachable from the "🏷 Labels" button on an
+// already-printed order card. Deliberately simpler than the Production
+// version above: ONE label per Packing line item as printed, no
+// computeLabelChunks batching by quantity - a Packing item is picked as one
+// unit, not split into 10kg portions the way Production items are. Same
+// label design (logo/product/details/notice/address) and the same
+// fixed-shelf-life-with-per-customer-override logic, just its own Batch No.
+// (see getOrCreatePackingBatchNo_/markPackingLabelsPrinted_ in Code.gs) so
+// printing Packing labels can never collide with or overwrite a Production
+// batch number already assigned to the same order.
+async function printPackingLabelsForOrder(order) {
+  const packItems = order.items.filter(it => it.department === 'Packing');
+  if (!packItems.length) { alert('This order has no Packing items to label.'); return; }
+
+  let batchNo = '';
+  try {
+    const res = await apiPost('getPackingBatchNo', { orderId: order.orderId });
+    batchNo = res.batchNo || '';
+  } catch (err) {
+    alert('Could not get a batch number for these labels: ' + err.message);
+    return;
+  }
+
+  const shelfDays = shelfLifeDaysForOrder(order);
+  const now = new Date();
+  const expiry = new Date(now);
+  expiry.setDate(expiry.getDate() + shelfDays);
+  const producedStr = fmtDateLong(dateOnlyStr(now));
+  const expiryStr = fmtDateLong(dateOnlyStr(expiry));
+
+  const labelsHtml = packItems.map(it => `
+        <div class="label-page">
+          <div class="label-logo-row">${LABEL_LOGO_HTML}</div>
+          <div class="label-product">${escapeHtml(formatQty(it.qty))}${it.unit ? escapeHtml(' ' + it.unit) : ''} ${escapeHtml(it.description)}</div>
+          <div class="label-details">
+            <div class="label-row"><span>Customer</span><b>${escapeHtml(order.customerName || '')}</b></div>
+            <div class="label-row"><span>Invoice</span><b>${escapeHtml(order.sageRef)}</b></div>
+            <div class="label-row"><span>Batch No.</span><b>${escapeHtml(batchNo)}</b></div>
+            <div class="label-row"><span>Produced</span><b>${escapeHtml(producedStr)}</b></div>
+            <div class="label-row"><span>Expires</span><b>${escapeHtml(expiryStr)}</b></div>
+          </div>
+          <div class="label-notice">${escapeHtml(LABEL_FIXED_TEXT.refrigeration)}</div>
+          <div class="label-address">${escapeHtml(LABEL_FIXED_TEXT.address)}</div>
+        </div>`);
+
+  document.getElementById('print-labels-body').innerHTML = labelsHtml.join('');
+  document.getElementById('print-page-style').textContent = '@page{ size:58mm 43mm; margin:0; }';
+  document.body.setAttribute('data-print-target', 'labels');
+
+  const onAfterPrint = () => {
+    window.removeEventListener('afterprint', onAfterPrint);
+    // Restore the shared @page size for the next Packing/Production slip print.
+    document.getElementById('print-page-style').textContent = '@page{ size:80mm auto; margin:0; }';
+    document.body.setAttribute('data-print-target', 'slip');
+    apiPost('markPackingLabelsPrinted', { orderId: order.orderId }).then(() => loadBoard(false)).catch(() => {});
   };
   window.addEventListener('afterprint', onAfterPrint);
   setTimeout(() => window.print(), 150);
