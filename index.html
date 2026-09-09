@@ -629,12 +629,13 @@
   </div>
 </div>
 
-<!-- ============ KITCHEN MANAGER MODAL (production complete) ============ -->
+<!-- ============ KITCHEN MANAGER MODAL (production complete / not complete) ============ -->
 <div class="modal-overlay hidden" id="kitchen-manager-modal">
   <div class="modal-box">
     <h2 id="kitchen-manager-modal-ref"></h2>
     <div class="modal-sub" id="kitchen-manager-modal-customer"></div>
-    <div class="modal-sub" style="margin:16px 0 8px;font-weight:700;color:var(--ink);">Who's marking this complete?</div>
+    <div class="modal-sub" id="kitchen-manager-modal-prompt" style="margin:16px 0 8px;font-weight:700;color:var(--ink);">Who's marking this complete?</div>
+    <div class="modal-sub hidden" id="kitchen-manager-modal-incomplete-note" style="margin:-4px 0 8px;">It'll move back to "Needs processing" and count in the prep tally again.</div>
     <div class="tile-grid" id="kitchen-manager-modal-grid" style="grid-template-columns:repeat(auto-fill,minmax(130px,1fr));"></div>
     <div class="empty-note hidden" id="kitchen-manager-modal-none" style="text-align:left;padding:10px 0;">
       No active Kitchen Managers yet. Tap the ⚙ icon to add Kitchen Managers in Admin.
@@ -882,7 +883,8 @@ const APP_CONFIG = {
 let boardData = null;
 let pollTimer = null;
 let pendingAssignOrderId = null;
-let pendingProdCompleteOrderId = null;
+// pendingKitchenManagerOrderId/kitchenManagerModalMode are declared with the
+// Kitchen Manager modal functions below, since they're only ever used there.
 // Auth travels as userName/userPin on every request (see requireUser_ in
 // Code.gs) - kept in sessionStorage (NOT localStorage) so a device stays
 // signed in across an in-use reload/backgrounding (a tablet locking/sleeping,
@@ -1316,11 +1318,16 @@ function itemSummaryHtml(items, primaryDept) {
 // happened, naming who did it (slip and labels are tracked and shown
 // separately since they're two independent buttons/printers). Nothing
 // renders for an action that hasn't happened yet, keeping cards short before
-// anything's been printed.
+// anything's been printed. Also surfaces who last marked the order NOT
+// complete (see ProductionIncompleteAt/By in Code.gs) - shown on BOTH the
+// still-pending card (the reason it's back in the queue) and, if it's since
+// been completed again, as a secondary note on the completed card too, since
+// that field is deliberately never cleared by completing.
 function productionPrintNotesHtml(o) {
   const notes = [];
   if (o.productionPrintedAt) notes.push(`🖨 Slip printed${o.productionPrintedBy ? ' by ' + escapeHtml(o.productionPrintedBy) : ''} ${fmtTime(o.productionPrintedAt)}`);
   if (o.productionLabelsPrintedAt) notes.push(`🏷 Labels printed${o.productionLabelsPrintedBy ? ' by ' + escapeHtml(o.productionLabelsPrintedBy) : ''} ${fmtTime(o.productionLabelsPrintedAt)}`);
+  if (o.productionIncompleteAt) notes.push(`↩ Marked not complete${o.productionIncompleteBy ? ' by ' + escapeHtml(o.productionIncompleteBy) : ''} ${fmtTime(o.productionIncompleteAt)}`);
   return notes.map(t => `<div class="prod-done-note">${t}</div>`).join('');
 }
 
@@ -1772,12 +1779,10 @@ function attachProductionCardHandlers() {
       const orderId = btn.getAttribute('data-prod-incomplete');
       const order = findProductionOrder(orderId);
       if (!order) return;
-      if (!confirm(`Mark order ${order.sageRef} as NOT complete? It'll move back to "Needs processing" and count in the prep tally again.`)) return;
-      btn.disabled = true;
-      apiPost('markProductionIncomplete', { orderId: orderId }).then(() => {
-        loadBoard(false);
-        if (prodCompletedDate === todayDateStr()) loadProdCompletedHistory(todayDateStr(), { silent: true });
-      }).catch(err => { alert(err.message); btn.disabled = false; });
+      // Opens the same Kitchen Manager tap-tile picker Complete uses, instead
+      // of a plain confirm() - Shane asked to know WHO reverts an order, not
+      // just that it happened, and a shared device/shift login can't say.
+      openKitchenManagerModal(order, 'incomplete');
     };
   });
   document.querySelectorAll('[data-prod-reprint-slip]').forEach(btn => {
@@ -2297,10 +2302,21 @@ function assignOrderTo(orderId, packerName, tileBtn) {
 }
 
 /* ===================== KITCHEN MANAGER MODAL ===================== */
-function openKitchenManagerModal(order) {
-  pendingProdCompleteOrderId = order.orderId;
+// Shared by both "Complete" and "↩ Not complete" on the Production board -
+// same tap-tile picker either way, since a shared device/shift login can't
+// say who actually tapped it, and Shane wants to know who reverts an order,
+// not just who completes it. `mode` ('complete' or 'incomplete') only
+// changes the prompt text and which action fires on a tile tap.
+let pendingKitchenManagerOrderId = null;
+let kitchenManagerModalMode = 'complete';
+function openKitchenManagerModal(order, mode) {
+  kitchenManagerModalMode = mode === 'incomplete' ? 'incomplete' : 'complete';
+  pendingKitchenManagerOrderId = order.orderId;
   document.getElementById('kitchen-manager-modal-ref').textContent = order.sageRef;
   document.getElementById('kitchen-manager-modal-customer').textContent = order.customerName || '';
+  document.getElementById('kitchen-manager-modal-prompt').textContent =
+    kitchenManagerModalMode === 'incomplete' ? "Who's marking this NOT complete?" : "Who's marking this complete?";
+  document.getElementById('kitchen-manager-modal-incomplete-note').classList.toggle('hidden', kitchenManagerModalMode !== 'incomplete');
 
   const grid = document.getElementById('kitchen-manager-modal-grid');
   const note = document.getElementById('kitchen-manager-modal-none');
@@ -2311,20 +2327,35 @@ function openKitchenManagerModal(order) {
     const btn = document.createElement('button');
     btn.className = 'packer-tile';
     btn.textContent = name;
-    btn.onclick = () => completeProductionAs(order.orderId, name, btn);
+    btn.onclick = () => kitchenManagerModalMode === 'incomplete'
+      ? markIncompleteAs(order.orderId, name, btn)
+      : completeProductionAs(order.orderId, name, btn);
     grid.appendChild(btn);
   });
 
   document.getElementById('kitchen-manager-modal').classList.remove('hidden');
 }
 function closeKitchenManagerModal() {
-  pendingProdCompleteOrderId = null;
+  pendingKitchenManagerOrderId = null;
   document.getElementById('kitchen-manager-modal').classList.add('hidden');
 }
 function completeProductionAs(orderId, kitchenManagerName, tileBtn) {
-  if (pendingProdCompleteOrderId !== orderId) return; // modal already closed/changed
+  if (pendingKitchenManagerOrderId !== orderId) return; // modal already closed/changed
   document.querySelectorAll('#kitchen-manager-modal-grid .packer-tile').forEach(b => b.disabled = true);
   apiPost('markProductionComplete', { orderId: orderId, kitchenManagerName: kitchenManagerName }).then(() => {
+    closeKitchenManagerModal();
+    loadBoard(false);
+    if (prodCompletedDate === todayDateStr()) loadProdCompletedHistory(todayDateStr(), { silent: true });
+  }).catch(err => {
+    alert(err.message);
+    loadBoard(false);
+    closeKitchenManagerModal();
+  });
+}
+function markIncompleteAs(orderId, kitchenManagerName, tileBtn) {
+  if (pendingKitchenManagerOrderId !== orderId) return; // modal already closed/changed
+  document.querySelectorAll('#kitchen-manager-modal-grid .packer-tile').forEach(b => b.disabled = true);
+  apiPost('markProductionIncomplete', { orderId: orderId, kitchenManagerName: kitchenManagerName }).then(() => {
     closeKitchenManagerModal();
     loadBoard(false);
     if (prodCompletedDate === todayDateStr()) loadProdCompletedHistory(todayDateStr(), { silent: true });
@@ -2362,7 +2393,12 @@ function openViewModal(order, primaryDept) {
     const labelsRow = order.productionLabelsPrintedAt
       ? `<div class="assigned-strip-row"><span>🏷 Labels printed${order.productionLabelsPrintedBy ? ' by ' + escapeHtml(order.productionLabelsPrintedBy) : ''}</span><span>${fmtTime(order.productionLabelsPrintedAt)}</span></div>`
       : '';
-    assignedHtml = headerRow + slipRow + labelsRow;
+    // Persists even after the order is completed again, as a standing
+    // accountability note - see the ProductionIncompleteAt/By comment in Code.gs.
+    const incompleteRow = order.productionIncompleteAt
+      ? `<div class="assigned-strip-row"><span>↩ Marked not complete${order.productionIncompleteBy ? ' by ' + escapeHtml(order.productionIncompleteBy) : ''}</span><span>${fmtTime(order.productionIncompleteAt)}</span></div>`
+      : '';
+    assignedHtml = headerRow + slipRow + labelsRow + incompleteRow;
   } else if (order.assignedTo) {
     // Assigning a packer marks the order printed in the same server write
     // (see assignOrder_ in Code.gs) - order.assignedTo now always implies
