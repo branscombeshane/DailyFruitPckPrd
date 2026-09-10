@@ -113,6 +113,13 @@
   .tally-family-total{font-size:15px;font-weight:800;color:var(--green-dark);white-space:nowrap;}
   .tally-variant{display:flex;justify-content:space-between;gap:8px;font-size:13.5px;color:var(--muted);padding:4px 0;border-top:1px dashed var(--line);margin-top:6px;}
   .tally-variant:first-of-type{margin-top:8px;}
+  .tally-shift-group{margin-bottom:22px;}
+  .tally-shift-group:last-child{margin-bottom:0;}
+  .tally-shift-heading{
+    display:flex;justify-content:space-between;align-items:baseline;gap:8px;
+    font-size:15px;font-weight:800;color:var(--ink);padding:0 2px 10px;
+  }
+  .tally-shift-count{font-size:12.5px;font-weight:700;color:var(--muted);}
   .prod-actions{display:flex;gap:8px;margin-top:12px;}
   .prod-actions .btn-secondary{flex:1;margin-top:0;}
   .prod-actions .btn-primary{flex:1;margin-top:0;}
@@ -600,7 +607,7 @@
   <div class="empty-board hidden" id="dash-detail-empty">Nothing here right now.</div>
 
   <div class="section-heading">Production totals <span class="count" id="dash-tally-count">0</span></div>
-  <div class="tally-panel" id="dash-production-tally"></div>
+  <div id="dash-production-tally"></div>
   <div class="empty-board hidden" id="dash-tally-empty">Nothing completed in production yet today.</div>
 
   <div class="section-heading">⚠ Needs attention <span class="count" id="dash-flagged-count">0</span></div>
@@ -1617,6 +1624,30 @@ function tallyGroupsHtml(groups) {
   }).join('');
 }
 
+// Splits completed Production orders out by SHIFT for the Dashboard's
+// "Production totals" (Shane's request - shift-level totals, not per-person
+// ones). Resolves each order's productionCompletedBy (a Kitchen Manager
+// name) to a shift via boardData.settings.kitchenManagerShifts, and orders
+// the resulting groups the same way Admin's Shifts list is ordered
+// (boardData.settings.shiftNames) - any shift name that map doesn't
+// recognise (renamed/deleted since) is appended alphabetically after the
+// known ones, and orders with no resolvable shift fall into their own "no
+// shift set" bucket, always last.
+function groupOrdersByShift_(orders) {
+  const shiftMap = (boardData && boardData.settings && boardData.settings.kitchenManagerShifts) || {};
+  const shiftOrder = (boardData && boardData.settings && boardData.settings.shiftNames) || [];
+  const map = {};
+  orders.forEach(o => {
+    const shift = shiftMap[o.productionCompletedBy || ''] || '';
+    (map[shift] = map[shift] || []).push(o);
+  });
+  const known = shiftOrder.filter(name => map[name]);
+  const extra = Object.keys(map).filter(name => name && !shiftOrder.includes(name)).sort();
+  const groups = known.concat(extra).map(name => ({ name: name, orders: map[name] }));
+  if (map['']) groups.push({ name: '', orders: map[''] });
+  return groups;
+}
+
 function renderProductionTally(orders) {
   const groups = computeProductionTally(orders);
   document.getElementById('tally-count').textContent = groups.length;
@@ -2158,12 +2189,23 @@ function renderDashboard() {
   // Production totals - same tally card markup as the Production tab's "Prep totals",
   // but fed the COMPLETED production orders for whichever date is being
   // viewed (today's live ones, or a past date's via loadDashHistory) instead
-  // of the still-to-do queue.
+  // of the still-to-do queue, and split into one sub-section per SHIFT (see
+  // groupOrdersByShift_) so it's clear which shift actually processed what,
+  // rather than one combined total. dash-tally-count still reflects the
+  // overall number of distinct product totals, same meaning as before.
   const completedGroups = computeProductionTally(completedTodayOrders);
   document.getElementById('dash-tally-count').textContent = completedGroups.length;
   document.getElementById('dash-tally-empty').classList.toggle('hidden', completedGroups.length > 0);
   document.getElementById('dash-tally-empty').textContent = isToday ? 'Nothing completed in production yet today.' : 'Nothing was completed in production on this day.';
-  document.getElementById('dash-production-tally').innerHTML = tallyGroupsHtml(completedGroups);
+  const shiftGroups = groupOrdersByShift_(completedTodayOrders);
+  document.getElementById('dash-production-tally').innerHTML = shiftGroups.map(sg => {
+    const groups = computeProductionTally(sg.orders);
+    const label = sg.name || 'No shift set';
+    return `<div class="tally-shift-group">
+      <div class="tally-shift-heading"><span>${escapeHtml(label)}</span><span class="tally-shift-count">${sg.orders.length} order${sg.orders.length === 1 ? '' : 's'} completed</span></div>
+      <div class="tally-panel">${tallyGroupsHtml(groups)}</div>
+    </div>`;
+  }).join('');
 
   renderDashDetail();
 }
