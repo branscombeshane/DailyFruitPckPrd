@@ -1937,11 +1937,17 @@ async function printProductionLabelsForOrder(order) {
   }
 
   const shelfDays = shelfLifeDaysForOrder(order);
-  const now = new Date();
-  const expiry = new Date(now);
-  expiry.setDate(expiry.getDate() + shelfDays);
-  const producedStr = fmtDateLong(dateOnlyStr(now));
-  const expiryStr = fmtDateLong(dateOnlyStr(expiry));
+  // "Produced" shows the order's DELIVERY date, not the actual date/time the
+  // label is printed (Shane's request) - falls back to today for an order
+  // with no delivery date on file, the same fallback computePackDate uses
+  // elsewhere for a missing date. Expires is kept anchored to that same
+  // Produced date (+ shelf life days) rather than to today, so the two
+  // stay in their original relationship regardless of when the label
+  // actually gets printed.
+  const producedDateStr = order.deliveryDate || dateOnlyStr(new Date());
+  const expiryDateStr = addDaysStr(producedDateStr, shelfDays);
+  const producedStr = fmtDateLong(producedDateStr);
+  const expiryStr = fmtDateLong(expiryDateStr);
 
   const labelsHtml = [];
   prodItems.forEach(it => {
@@ -2002,11 +2008,17 @@ async function printPackingLabelsForOrder(order) {
   }
 
   const shelfDays = shelfLifeDaysForOrder(order);
-  const now = new Date();
-  const expiry = new Date(now);
-  expiry.setDate(expiry.getDate() + shelfDays);
-  const producedStr = fmtDateLong(dateOnlyStr(now));
-  const expiryStr = fmtDateLong(dateOnlyStr(expiry));
+  // "Produced" shows the order's DELIVERY date, not the actual date/time the
+  // label is printed (Shane's request) - falls back to today for an order
+  // with no delivery date on file, the same fallback computePackDate uses
+  // elsewhere for a missing date. Expires is kept anchored to that same
+  // Produced date (+ shelf life days) rather than to today, so the two
+  // stay in their original relationship regardless of when the label
+  // actually gets printed.
+  const producedDateStr = order.deliveryDate || dateOnlyStr(new Date());
+  const expiryDateStr = addDaysStr(producedDateStr, shelfDays);
+  const producedStr = fmtDateLong(producedDateStr);
+  const expiryStr = fmtDateLong(expiryDateStr);
 
   const labelsHtml = packItems.map(it => `
         <div class="label-page">
