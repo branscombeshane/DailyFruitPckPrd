@@ -1104,6 +1104,13 @@ function hideConnBanner() { document.getElementById('conn-banner').classList.add
 /* ===================== LOGIN ===================== */
 function logoutUser(message) {
   userName = ''; userPin = ''; userRole = ''; userShift = '';
+  // Cleared so the NEXT login's first loadBoard() correctly treats the board
+  // as empty again (see loadBoard's showFullScreenLoader) - on a shared
+  // tablet where one person logs out and another logs straight back in
+  // without a page reload, this keeps that new login's first fetch showing
+  // the "Loading your board…" overlay instead of silently sitting on the
+  // previous person's stale board until it refreshes.
+  boardData = null;
   sessionStorage.removeItem('df_user_name');
   sessionStorage.removeItem('df_user_pin');
   sessionStorage.removeItem('df_user_role');
@@ -1279,16 +1286,29 @@ function loadBoard(isFirstLoad) {
   const myGeneration = ++boardLoadGeneration;
   // Every background poll after the first stays silent (see apiGet) - it
   // refreshes every few seconds on its own, so a loading cue on every tick
-  // would be constant noise. But the very FIRST load, right after login, has
+  // would be constant noise. The very FIRST load, right after login, has
   // nothing on screen yet - board/production/dashboard all render empty
   // until boardData shows up (renderDashboard in particular just bails out
   // with nothing drawn at all while boardData is null - see its own comment).
   // On a slow connection or a cold Apps Script start that first fetch can
   // take a few seconds, and with no cue at all that looks exactly like the
-  // app being broken rather than just loading. So only the first load shows
-  // the full-screen overlay (which also usefully blocks taps on a
-  // still-empty board while it's in flight).
-  apiGet('getBoard', {}, isFirstLoad ? { loadingLabel: 'Loading your board…' } : { silent: true }).then(data => {
+  // app being broken rather than just loading - so THAT load shows the
+  // full-screen overlay (which also usefully blocks taps on a still-empty
+  // board while it's in flight).
+  //
+  // isFirstLoad=true isn't by itself the right signal for that overlay,
+  // though - the visibilitychange handler below also calls loadBoard(true)
+  // every time a tablet wakes from sleep or the tab regains focus, purely to
+  // force past a possibly-stale in-flight request (see boardLoadGeneration
+  // above), NOT because the board is empty - it's already on screen. Using
+  // isFirstLoad alone used to make that full-screen "Loading your board…"
+  // overlay pop up and block the screen on every single wake, which on a
+  // tablet that sleeps/locks often was constant and disruptive. Gating the
+  // overlay on boardData actually being empty fixes that: the overlay only
+  // ever shows when there's truly nothing on screen yet, while a wake-up
+  // refresh (boardData already populated) stays silent like a normal poll.
+  const showFullScreenLoader = isFirstLoad && !boardData;
+  apiGet('getBoard', {}, showFullScreenLoader ? { loadingLabel: 'Loading your board…' } : { silent: true }).then(data => {
     if (myGeneration !== boardLoadGeneration) return; // superseded by a newer poll (e.g. a wake-from-sleep refresh) - ignore this stale result
     boardFetchInFlight = false;
     boardPollFailCount = 0;
