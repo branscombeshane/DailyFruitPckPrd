@@ -94,11 +94,6 @@
     text-align:center;box-shadow:0 1px 3px rgba(0,0,0,.06);
   }
   .packer-tile:active{background:var(--green);color:#fff;border-color:var(--green);}
-  /* "All Shifts" tile on the post-login shift picker - visually distinct
-     (dashed border) from a specific named shift, since it means "no
-     restriction" rather than "this one shift". */
-  .packer-tile.all-shifts-tile{border-style:dashed;color:var(--muted);}
-  .packer-tile.all-shifts-tile:active{background:var(--info);border-color:var(--info);color:#fff;}
   .empty-note{color:var(--muted);text-align:center;font-size:15px;max-width:420px;}
 
   /* ---------- board ---------- */
@@ -1155,11 +1150,13 @@ function submitLogin() {
     document.getElementById('lock-screen').classList.add('hidden');
     // Shift is picked fresh on every login now, not stored on the account -
     // show the picker (built from whatever's in Admin > Shifts right now) and
-    // let selectLoginShift finish the job (set userShift, then init()). If
-    // there are no shifts defined at all yet, there's nothing to pick from -
-    // skip straight to the app with no restriction, same as before.
+    // let selectLoginShift finish the job (set userShift, then init()). Admin
+    // never sees this screen at all - Shane's request: Admin always sees
+    // every shift unrestricted, same as the old "no shift restriction"
+    // default, so there's nothing for an Admin to pick. Same skip applies
+    // when there are no shifts defined at all yet - nothing to pick from.
     const shiftNames = res.data.shiftNames || [];
-    if (shiftNames.length) {
+    if (userRole !== 'Admin' && shiftNames.length) {
       showShiftSelectScreen(shiftNames);
     } else {
       selectLoginShift('');
@@ -1173,11 +1170,14 @@ function submitLogin() {
 
 /* ===================== SHIFT SELECT (post-login) ===================== */
 // Tap-tile picker shown right after a successful sign-in - one tile per
-// Admin-defined shift, plus "All Shifts" for an account that should see
-// everyone regardless (the same unrestricted meaning '' has always had -
-// see shiftVisible_ in Code.gs). Picking one sets userShift for THIS LOGIN
-// ONLY (sessionStorage, cleared on logout) - it's never written back to the
-// account, so the same person picks again next time they sign in.
+// Admin-defined shift, no "All Shifts"/unrestricted option here at all.
+// submitLogin only ever calls this for a NON-Admin login (Factory Floor,
+// Production Manager) - Admin skips this screen entirely and always gets
+// the unrestricted '' shift straight away (see submitLogin), so every role
+// that DOES reach this screen must pick one of the real shifts - Shane's
+// request. Picking one sets userShift for THIS LOGIN ONLY (sessionStorage,
+// cleared on logout) - it's never written back to the account, so the same
+// person picks again next time they sign in.
 function showShiftSelectScreen(shiftNames) {
   const grid = document.getElementById('shift-select-grid');
   grid.innerHTML = '';
@@ -1188,11 +1188,6 @@ function showShiftSelectScreen(shiftNames) {
     btn.onclick = () => selectLoginShift(name);
     grid.appendChild(btn);
   });
-  const allBtn = document.createElement('button');
-  allBtn.className = 'packer-tile all-shifts-tile';
-  allBtn.textContent = 'All Shifts';
-  allBtn.onclick = () => selectLoginShift('');
-  grid.appendChild(allBtn);
   document.getElementById('shift-select-screen').classList.remove('hidden');
 }
 function selectLoginShift(shift) {
