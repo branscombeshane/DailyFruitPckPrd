@@ -3078,7 +3078,7 @@ function renderNeedsReviewList(needsReview) {
       const category = input.value.trim();
       if (!category) { input.focus(); return; }
       btn.disabled = true;
-      apiPost('classifyProduct', { productCode: code, description: desc, category: category }).then(res => {
+      apiPost('classifyProduct', { productCode: code, description: desc, category: category }, { timeoutMs: 60000 }).then(res => {
         renderNeedsReviewList(res.needsReview);
         renderProductsList(res.products);
         loadBoard(false);
@@ -3157,7 +3157,7 @@ function renderProductsListFiltered() {
       btn.disabled = true;
       const original = btn.textContent;
       btn.textContent = 'Saving…';
-      apiPost('classifyProduct', { productCode: code, description: desc, category: category }).then(res => {
+      apiPost('classifyProduct', { productCode: code, description: desc, category: category }, { timeoutMs: 60000 }).then(res => {
         renderNeedsReviewList(res.needsReview);
         renderProductsList(res.products);
         loadBoard(false);
