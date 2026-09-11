@@ -873,6 +873,7 @@
   </div>
   <div class="slip-ref-line" id="slip-ref"></div>
   <div class="slip-meta" id="slip-created"></div>
+  <div class="slip-meta hidden" id="slip-delivery-row"><strong>Delivery:</strong> <span id="slip-delivery"></span></div>
   <div class="slip-meta"><strong>Customer:</strong> <span id="slip-customer"></span></div>
   <div class="slip-meta hidden" id="slip-notes-row"><strong>Notes:</strong> <span id="slip-notes"></span></div>
   <div class="slip-meta" id="slip-assigned-row"><strong>Assigned to:</strong> <span id="slip-packer"></span> at <span id="slip-assigned-time"></span></div>
@@ -2039,6 +2040,7 @@ function printProductionSlipForOrder(order) {
   document.getElementById('slip-type-label').textContent = 'Production Job Slip';
   document.getElementById('slip-ref').textContent = order.sageRef;
   document.getElementById('slip-created').textContent = 'Order in: ' + fmtTime(order.createdAt);
+  document.getElementById('slip-delivery-row').classList.add('hidden');
   document.getElementById('slip-customer').textContent = order.customerName || '';
   setSlipNotes_(order);
   document.getElementById('slip-assigned-row').classList.add('hidden');
@@ -2686,6 +2688,8 @@ function printSlipForOrder(order) {
   document.body.setAttribute('data-print-target', 'slip');
   document.getElementById('slip-ref').textContent = order.sageRef;
   document.getElementById('slip-created').textContent = 'Order in: ' + fmtTime(order.createdAt);
+  document.getElementById('slip-delivery-row').classList.toggle('hidden', !order.deliveryDate);
+  document.getElementById('slip-delivery').textContent = order.deliveryDate ? fmtDateLong(order.deliveryDate) : '';
   document.getElementById('slip-customer').textContent = order.customerName || '';
   setSlipNotes_(order);
   document.getElementById('slip-packer').textContent = order.assignedTo;
