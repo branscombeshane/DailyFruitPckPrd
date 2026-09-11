@@ -3527,13 +3527,19 @@ function loadDashHistory(dateStr, opts) {
     dashHistoryCompletedOrders = [];
     renderDashboard();
   }
-  Promise.all([
-    apiGet('getOrdersForDate', { date: dateStr }, { silent: silent }),
-    apiGet('getOrdersForDate', { date: dateStr, type: 'productionCompleted' }, { silent: silent })
-  ]).then(([printedRes, completedRes]) => {
+  // One combined call instead of two separate getOrdersForDate requests -
+  // see getDashHistory_ in Code.gs. Reported as the Dashboard's date picker
+  // taking a very long time and then failing with "signal is aborted
+  // without reason" - that was our own 20s client timeout firing (twice,
+  // once per retry) on two full Orders+Items sheet scans running back to
+  // back. Combining them into one backend call halves that scan cost; the
+  // longer timeoutMs here (same reasoning as the heavier Admin operations
+  // use below) gives the remaining single scan real room even on a slow/
+  // cold Apps Script run, instead of racing our own clock.
+  apiGet('getDashHistory', { date: dateStr }, { silent: silent, timeoutMs: 45000 }).then(res => {
     if (dashDate !== dateStr) return; // user picked a different date while this was loading
-    dashHistoryPrintedOrders = printedRes.orders;
-    dashHistoryCompletedOrders = completedRes.orders;
+    dashHistoryPrintedOrders = res.printed.orders;
+    dashHistoryCompletedOrders = res.completed.orders;
     renderDashboard();
   }).catch(err => { if (dateChanged) alert(err.message); else console.error(err); });
 }
