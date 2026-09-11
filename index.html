@@ -569,6 +569,7 @@
       <button class="view-toggle-btn" data-view="packing" id="view-toggle-packing">Packing</button>
       <button class="view-toggle-btn" data-view="production" id="view-toggle-production">Production</button>
       <button class="view-toggle-btn hidden" data-view="dashboard" id="view-toggle-dashboard">Dashboard</button>
+      <button class="view-toggle-btn hidden" data-view="history" id="view-toggle-history">Data History</button>
     </div>
     <span class="pill-btn" id="topbar-user-label"></span>
     <button class="icon-btn" id="logout-btn" title="Log out">⎋</button>
@@ -626,11 +627,10 @@
   <div class="empty-board hidden" id="prod-completed-empty">Nothing completed on this day.</div>
 </div>
 
-<!-- ============ DASHBOARD ============ -->
+<!-- ============ DASHBOARD (today only - see Data History for other days) ============ -->
 <div id="dashboard-view" class="hidden">
   <div class="section-heading">
     <span id="dash-heading-label">Today's snapshot</span>
-    <input type="date" id="dash-date-input" style="margin-left:auto;padding:6px 8px;border:2px solid var(--line);border-radius:8px;font-size:14px;text-transform:none;letter-spacing:normal;font-weight:600;color:var(--ink);">
   </div>
   <div class="dashboard-grid" id="dash-stats"></div>
   <div id="dash-detail-hint">Tap a tile above to see the orders behind it.</div>
@@ -650,6 +650,37 @@
   <div class="section-heading" id="dash-packers-heading-label">Packers today</div>
   <div id="dash-packers-list"></div>
   <div class="empty-board hidden" id="dash-packers-empty">No orders printed yet today.</div>
+</div>
+
+<!-- ============ DATA HISTORY (any past day's Printed/Completed/Production
+     totals/Packers - reads Code.gs's OrdersArchive/OrderItemsArchive once a
+     date is older than the "keep history for" window, so this stays
+     available indefinitely without slowing down the live board/Dashboard) ============ -->
+<div id="history-view" class="hidden">
+  <div class="section-heading">
+    <span>Data History</span>
+    <input type="date" id="history-date-input" style="margin-left:auto;padding:6px 8px;border:2px solid var(--line);border-radius:8px;font-size:14px;text-transform:none;letter-spacing:normal;font-weight:600;color:var(--ink);">
+  </div>
+
+  <div class="section-heading">
+    <span id="history-printed-heading-label">Printed</span> <span class="count" id="history-printed-count">0</span>
+  </div>
+  <div class="order-grid" id="history-printed-grid"></div>
+  <div class="empty-board hidden" id="history-printed-empty">Nothing was printed on this day.</div>
+
+  <div class="section-heading">
+    <span id="history-completed-heading-label">Completed</span> <span class="count" id="history-completed-count">0</span>
+  </div>
+  <div class="order-grid" id="history-completed-grid"></div>
+  <div class="empty-board hidden" id="history-completed-empty">Nothing was completed in production on this day.</div>
+
+  <div class="section-heading">Production totals <span class="count" id="history-tally-count">0</span></div>
+  <div id="history-production-tally"></div>
+  <div class="empty-board hidden" id="history-tally-empty">Nothing was completed in production on this day.</div>
+
+  <div class="section-heading" id="history-packers-heading-label">Packers</div>
+  <div id="history-packers-list"></div>
+  <div class="empty-board hidden" id="history-packers-empty">No orders were printed on this day.</div>
 </div>
 
 <!-- ============ ASSIGN MODAL ============ -->
@@ -849,16 +880,16 @@
       <p style="color:var(--muted);font-size:12.5px;margin:6px 0 0;">Must match the SITE_PASSCODE constant in EmailImport.gs — this is only for that automated inbox watcher, not a personal login. It has no effect on anyone's Users sign-in.</p>
     </div>
     <div class="field">
-      <label>Keep history for (days)</label>
+      <label>Keep on the live board for (days)</label>
       <input type="number" id="set-retention-days">
-      <p style="color:var(--muted);font-size:12.5px;margin:6px 0 0;">Orders older than this are permanently deleted automatically, once a day, to keep the system running fast. An order that isn't fully finished yet (not printed, or a Production line not yet marked complete) is never deleted no matter how old — only genuinely finished orders. This can't be undone from within the app (Google Sheets' own File &gt; Version History is the only way back).</p>
+      <p style="color:var(--muted);font-size:12.5px;margin:6px 0 0;">Orders older than this are automatically moved into long-term history once a day, keeping the live board and Dashboard running fast — they're still fully viewable any time on the Data History page, nothing is deleted. An order that isn't fully finished yet (not printed, or a Production line not yet marked complete) is never moved no matter how old — only genuinely finished orders.</p>
     </div>
     <button class="btn-primary" id="save-settings-btn">Save settings</button>
     <div class="result-box hidden" id="settings-result"></div>
 
     <h3 style="margin-top:26px;">Data cleanup</h3>
-    <p style="color:var(--muted);font-size:12.5px;margin:0 0 10px;">Runs automatically every night. Use this to run it right now instead of waiting — for example, right after lowering the retention setting above.</p>
-    <button class="btn-secondary" id="purge-now-btn">🗑 Purge old data now</button>
+    <p style="color:var(--muted);font-size:12.5px;margin:0 0 10px;">Runs automatically every night. Use this to run it right now instead of waiting — for example, right after lowering the setting above.</p>
+    <button class="btn-secondary" id="purge-now-btn">🗄 Move old orders to history now</button>
     <div class="result-box hidden" id="purge-now-result"></div>
 
     <h3 style="margin-top:26px;color:#a11;">Pre-launch testing</h3>
@@ -946,7 +977,7 @@ let userShift = sessionStorage.getItem('df_user_shift') || ''; // '' = no shift 
 let printedDate = todayDateStr(); // date shown in the "Printed" section - defaults to today
 let printedHistoryOrders = []; // always fetched via getOrdersForDate (today included - see refreshTodayHistories) - the live board payload no longer carries done orders at all
 let printedPackerFilter = ''; // '' = all packers; otherwise only show this packer's printed orders
-let boardView = ['packing', 'production', 'dashboard'].includes(localStorage.getItem('df_board_view')) ? localStorage.getItem('df_board_view') : 'packing';
+let boardView = ['packing', 'production', 'dashboard', 'history'].includes(localStorage.getItem('df_board_view')) ? localStorage.getItem('df_board_view') : 'packing';
 let prodCompletedDate = todayDateStr(); // date shown in Production's "Completed" section
 let prodCompletedHistoryOrders = []; // always fetched via getOrdersForDate (today included - see refreshTodayHistories)
 let dashSelectedStat = null; // key of the currently-selected Dashboard stat tile, or null if none picked
@@ -957,9 +988,29 @@ let dashBuckets = {}; // rebuilt each renderDashboard() call - stat key -> { lab
 // shift has its own three tiles and its own product breakdown below them -
 // picking "Total KG" under Morning shouldn't touch Afternoon's panel.
 let dashSelectedUnitBucket = null; // { shiftKey, bucket: 'KG'|'EACH'|'Other' } or null
-let dashDate = todayDateStr(); // date the Dashboard's Printed/Completed/Production totals/Packers are showing - defaults to today (live)
-let dashHistoryPrintedOrders = []; // always fetched via getOrdersForDate (today included - see refreshTodayHistories)
-let dashHistoryCompletedOrders = []; // always fetched via getOrdersForDate (type: productionCompleted; today included - see refreshTodayHistories)
+
+// The Dashboard is always TODAY's live snapshot now - Shane's request, to
+// keep it as fast as possible no matter how much history piles up (see
+// Code.gs's purgeOldData_/OrdersArchive). There's no date picker on the
+// Dashboard any more; looking at any OTHER day's Printed/Completed/
+// Production totals/Packers is what the separate Data History page (below)
+// is for.
+let dashTodayPrintedOrders = []; // always fetched via getOrdersForDate for TODAY (see refreshTodayHistories) - the live board payload no longer carries a done order at all
+let dashTodayCompletedOrders = []; // same, type: productionCompleted
+
+// ---- Data History page (separate from the Dashboard - see above) ----
+// date the History page's Printed/Completed/Production totals/Packers are
+// showing - defaults to today so opening the page for the first time shows
+// something, but the whole point of this page is picking an older date;
+// getDashHistory_ transparently reads Code.gs's OrdersArchive/
+// OrderItemsArchive for anything older than the retention window.
+let historyDate = todayDateStr();
+let historyPrintedOrders = [];
+let historyCompletedOrders = [];
+// Same idea as dashSelectedUnitBucket above, just a separate variable so
+// picking a tile on the History page never affects the Dashboard's own
+// tally tiles (today) and vice versa.
+let historySelectedUnitBucket = null;
 
 /* ===================== API HELPERS ===================== */
 // Every request gets a hard timeout. Without one, a request that stalls
@@ -1247,25 +1298,32 @@ function wireLoginScreenEvents() {
 function applyRoleUI() {
   const canSeeDashboard = userRole === 'Production Manager' || userRole === 'Admin';
   document.getElementById('view-toggle-dashboard').classList.toggle('hidden', !canSeeDashboard);
+  // Data History carries the same real order/customer detail the Dashboard
+  // used to show for a past date, so it's gated the same way - Factory
+  // Floor never saw that on the Dashboard either.
+  document.getElementById('view-toggle-history').classList.toggle('hidden', !canSeeDashboard);
   document.getElementById('admin-gear-btn').classList.toggle('hidden', userRole !== 'Admin');
   document.getElementById('topbar-user-label').textContent = userName + ' (' + userRole + (userShift ? ' · ' + userShift : '') + ')';
-  if (boardView === 'dashboard' && !canSeeDashboard) setBoardView('packing');
+  if ((boardView === 'dashboard' || boardView === 'history') && !canSeeDashboard) setBoardView('packing');
 }
 
 function applyBoardView() {
   document.getElementById('board-view').classList.toggle('hidden', boardView !== 'packing');
   document.getElementById('production-view').classList.toggle('hidden', boardView !== 'production');
   document.getElementById('dashboard-view').classList.toggle('hidden', boardView !== 'dashboard');
+  document.getElementById('history-view').classList.toggle('hidden', boardView !== 'history');
   document.getElementById('view-toggle-packing').classList.toggle('active', boardView === 'packing');
   document.getElementById('view-toggle-production').classList.toggle('active', boardView === 'production');
   document.getElementById('view-toggle-dashboard').classList.toggle('active', boardView === 'dashboard');
-  document.getElementById('quick-bar').classList.toggle('hidden', boardView === 'dashboard');
+  document.getElementById('view-toggle-history').classList.toggle('active', boardView === 'history');
+  document.getElementById('quick-bar').classList.toggle('hidden', boardView === 'dashboard' || boardView === 'history');
   document.getElementById('quick-pills-packing').classList.toggle('hidden', boardView !== 'packing');
   document.getElementById('quick-pills-production').classList.toggle('hidden', boardView !== 'production');
   const companyName = (boardData && boardData.settings.companyName) || 'Daily Fruit';
-  const viewLabel = boardView === 'production' ? ' — Production' : boardView === 'dashboard' ? ' — Dashboard' : ' — Packing';
+  const viewLabel = boardView === 'production' ? ' — Production' : boardView === 'dashboard' ? ' — Dashboard' : boardView === 'history' ? ' — Data History' : ' — Packing';
   document.getElementById('company-title').textContent = companyName + viewLabel;
   if (boardView === 'dashboard') renderDashboard();
+  if (boardView === 'history') renderHistoryView();
   measureStickyOffset();
 }
 
@@ -2335,50 +2393,36 @@ function renderDashboard() {
   prodNeedsOrders.sort((a, b) => b._age - a._age);
 
   // Printed/Completed (and the packer breakdown they feed) are fetched
-  // separately via getOrdersForDate for whichever date dashDate is currently
-  // showing - today included, same as Packing's and Production's own
-  // Printed/Completed sections (see loadDashHistory/refreshTodayHistories) -
-  // rather than derived from boardData.orders, which no longer carries a
-  // fully-done order at all. Needs a packer/Packing in progress/Needs
-  // processing/Needs review/Needs attention stay tied to the real current
-  // moment no matter what date is being viewed, same as Packing's and
-  // Production's own "Needs..." sections never change when THEIR date
-  // pickers move - there's no stored snapshot of "what was overdue back
-  // then" to show, and showing live backlog numbers under a past-dated
-  // heading would just be confusing.
-  const isToday = dashDate === today;
-  document.getElementById('dash-heading-label').textContent = isToday ? "Today's snapshot" : 'Snapshot for ' + fmtDateLong(dashDate);
-  const printedTodayOrders = (dashHistoryPrintedOrders || []).slice().sort((a, b) => new Date(b.printedAt) - new Date(a.printedAt));
+  // separately via getOrdersForDate for TODAY - see loadDashToday/
+  // refreshTodayHistories - rather than derived from boardData.orders, which
+  // no longer carries a fully-done order at all. The Dashboard is always
+  // today's own snapshot now (Shane's request, to keep it as fast as
+  // possible no matter how much history piles up) - see the Data History
+  // page for any other day.
+  const printedTodayOrders = (dashTodayPrintedOrders || []).slice().sort((a, b) => new Date(b.printedAt) - new Date(a.printedAt));
   const packPrintedToday = printedTodayOrders.length;
   const printedTodayByPacker = {};
   printedTodayOrders.forEach(o => { printedTodayByPacker[o.assignedTo] = (printedTodayByPacker[o.assignedTo] || 0) + 1; });
-  const completedTodayOrders = (dashHistoryCompletedOrders || []).slice().sort((a, b) => new Date(b.productionCompletedAt) - new Date(a.productionCompletedAt));
+  const completedTodayOrders = (dashTodayCompletedOrders || []).slice().sort((a, b) => new Date(b.productionCompletedAt) - new Date(a.productionCompletedAt));
   const prodCompletedToday = completedTodayOrders.length;
 
-  // The %-done sub-labels only make sense against TODAY's own live backlog
-  // (needs-a-packer/needs-processing counts) - once a past date is picked,
-  // packPrintedToday/prodCompletedToday no longer describe today's queue at
-  // all, so that percentage would be comparing two unrelated things.
   const packTotal = packNeeds + packPrintedToday;
   const packPct = packTotal ? Math.round((packPrintedToday / packTotal) * 100) : 100;
   const prodTotal = prodNeeds + prodCompletedToday;
   const prodPct = prodTotal ? Math.round((prodCompletedToday / prodTotal) * 100) : 100;
-  const printedLabel = isToday ? 'Printed today' : 'Printed';
-  const completedLabel = isToday ? 'Completed today' : 'Completed';
-  const dateNote = isToday ? '' : 'on ' + fmtDateLong(dashDate);
 
   dashBuckets = {
     needsPacker: { label: 'Needs a packer', dept: 'Packing', emptyText: 'No orders currently need a packer.', orders: needsPackerOrders },
-    printedToday: { label: printedLabel, dept: 'Packing', emptyText: isToday ? 'Nothing printed yet today.' : 'Nothing was printed on this day.', orders: printedTodayOrders },
+    printedToday: { label: 'Printed today', dept: 'Packing', emptyText: 'Nothing printed yet today.', orders: printedTodayOrders },
     prodNeeds: { label: 'Needs processing', dept: 'Production', emptyText: 'Nothing waiting on production right now.', orders: prodNeedsOrders },
-    completedToday: { label: completedLabel, dept: 'Production', emptyText: isToday ? 'Nothing completed in production yet today.' : 'Nothing was completed in production on this day.', orders: completedTodayOrders },
+    completedToday: { label: 'Completed today', dept: 'Production', emptyText: 'Nothing completed in production yet today.', orders: completedTodayOrders },
     needsReview: { label: 'Needs review', dept: null, emptyText: 'Nothing needs review right now.', orders: needsReviewOrders }
   };
   const stats = [
     { key: 'needsPacker', label: 'Needs a packer', value: packNeeds, cls: packNeeds > 0 ? (packOverdue > 0 ? 'crit' : 'warn') : '', sub: packOverdue ? packOverdue + ' overdue' : '' },
-    { key: 'printedToday', label: printedLabel, value: packPrintedToday, cls: '', sub: isToday ? (packTotal ? packPct + '% of today\'s packing done' : '') : dateNote },
+    { key: 'printedToday', label: 'Printed today', value: packPrintedToday, cls: '', sub: packTotal ? packPct + '% of today\'s packing done' : '' },
     { key: 'prodNeeds', label: 'Needs processing', value: prodNeeds, cls: prodNeeds > 0 ? (prodOverdue > 0 ? 'crit' : 'warn') : '', sub: prodOverdue ? prodOverdue + ' overdue' : '' },
-    { key: 'completedToday', label: completedLabel, value: prodCompletedToday, cls: '', sub: isToday ? (prodTotal ? prodPct + '% of today\'s production done' : '') : dateNote },
+    { key: 'completedToday', label: 'Completed today', value: prodCompletedToday, cls: '', sub: prodTotal ? prodPct + '% of today\'s production done' : '' },
     { key: 'needsReview', label: 'Needs review', value: needsReviewCount, cls: needsReviewCount > 0 ? 'warn' : '', sub: needsReviewCount ? 'Unclassified products — see Admin > Products' : '' }
   ];
 
@@ -2409,48 +2453,60 @@ function renderDashboard() {
       <div class="age-badge" style="background:var(--crit);color:#fff;">${fmtAge(f.age)}</div>
     </div>`).join('');
 
-  document.getElementById('dash-packers-heading-label').textContent = isToday ? 'Packers today' : 'Packers on ' + fmtDateLong(dashDate);
+  document.getElementById('dash-packers-heading-label').textContent = 'Packers today';
   const packerNames = Object.keys(printedTodayByPacker).sort((a, b) => printedTodayByPacker[b] - printedTodayByPacker[a]);
   document.getElementById('dash-packers-empty').classList.toggle('hidden', packerNames.length > 0);
-  document.getElementById('dash-packers-empty').textContent = isToday ? 'No orders printed yet today.' : 'No orders were printed on this day.';
+  document.getElementById('dash-packers-empty').textContent = 'No orders printed yet today.';
   document.getElementById('dash-packers-list').innerHTML = packerNames.map(name => `
     <div class="dash-packer-row"><span>${escapeHtml(name)}</span><span>${printedTodayByPacker[name]} printed</span></div>`).join('');
 
-  // Production totals - same tally card markup as the Production tab's "Prep totals",
-  // but fed the COMPLETED production orders for whichever date is being
-  // viewed (today's live ones, or a past date's via loadDashHistory) instead
-  // of the still-to-do queue, and split into one sub-section per SHIFT (see
-  // groupOrdersByShift_) so it's clear which shift actually processed what,
-  // rather than one combined total. dash-tally-count still reflects the
-  // overall number of distinct product totals, same meaning as before.
+  // Production totals - same tally card markup as the Production tab's "Prep
+  // totals", but fed TODAY's completed production orders instead of the
+  // still-to-do queue, and split into one sub-section per SHIFT (see
+  // groupOrdersByShift_/renderProductionTallyInto_) so it's clear which
+  // shift actually processed what, rather than one combined total.
+  // dash-tally-count still reflects the overall number of distinct product
+  // totals, same meaning as before.
   const completedGroups = computeProductionTally(completedTodayOrders);
   document.getElementById('dash-tally-count').textContent = completedGroups.length;
   document.getElementById('dash-tally-empty').classList.toggle('hidden', completedGroups.length > 0);
-  document.getElementById('dash-tally-empty').textContent = isToday ? 'Nothing completed in production yet today.' : 'Nothing was completed in production on this day.';
-  const shiftGroups = groupOrdersByShift_(completedTodayOrders);
-  document.getElementById('dash-production-tally').innerHTML = shiftGroups.map(sg => {
+  document.getElementById('dash-tally-empty').textContent = 'Nothing completed in production yet today.';
+  renderProductionTallyInto_(document.getElementById('dash-production-tally'), completedTodayOrders,
+    () => dashSelectedUnitBucket,
+    v => { dashSelectedUnitBucket = v; renderDashboard(); });
+
+  renderDashDetail();
+}
+
+// Shared by renderDashboard (today's own Production totals) and
+// renderHistoryView (the Data History page's, for whichever date is
+// picked) - builds the shift-grouped tally markup, including each shift's
+// clickable "Total KG"/"Total EACH"/"Other" grand-total tiles (Shane's
+// request: alongside the full per-product breakdown, a coarser grand total
+// per shift), into containerEl. getSelected()/setSelected() read and write
+// whichever "currently selected tile" variable belongs to the page calling
+// this (dashSelectedUnitBucket or historySelectedUnitBucket) so the two
+// pages' tile selections never interfere with each other. Tapping a tile
+// filters THIS shift's own per-product breakdown down to just that bucket -
+// re-running computeProductionTally with the bucket filter (rather than
+// picking through the already-built unfiltered `groups`) is what keeps this
+// exactly matching the tile's own total - see that function's comment.
+function renderProductionTallyInto_(containerEl, completedOrders, getSelected, setSelected) {
+  const shiftGroups = groupOrdersByShift_(completedOrders);
+  containerEl.innerHTML = shiftGroups.map(sg => {
     const groups = computeProductionTally(sg.orders);
     const label = sg.name || 'No shift set';
-    // Shane's request: alongside the full per-product breakdown, a coarser
-    // grand total per shift - every KG-sold product summed into one number,
-    // every EACH-sold product into another, everything else into "Other".
     const bucketTotals = computeUnitBucketTotals_(sg.orders);
-    // Tapping one of the three tiles below filters THIS shift's own
-    // per-product breakdown down to just that bucket (see
-    // dashSelectedUnitBucket) - shiftKey identifies which shift's tiles are
-    // selected, since every shift has its own set. Re-running
-    // computeProductionTally with the bucket filter (rather than picking
-    // through the already-built unfiltered `groups`) is what keeps this
-    // exactly matching the tile's own total - see that function's comment.
     const shiftKey = sg.name;
-    const isSelected = b => dashSelectedUnitBucket && dashSelectedUnitBucket.shiftKey === shiftKey && dashSelectedUnitBucket.bucket === b;
-    const filteredForThisShift = !!(dashSelectedUnitBucket && dashSelectedUnitBucket.shiftKey === shiftKey);
+    const selected = getSelected();
+    const isSelected = b => selected && selected.shiftKey === shiftKey && selected.bucket === b;
+    const filteredForThisShift = !!(selected && selected.shiftKey === shiftKey);
     const visibleGroups = filteredForThisShift
-      ? computeProductionTally(sg.orders, dashSelectedUnitBucket.bucket)
+      ? computeProductionTally(sg.orders, selected.bucket)
       : groups;
     const tallyPanelHtml = visibleGroups.length
       ? tallyGroupsHtml(visibleGroups)
-      : (filteredForThisShift ? `<div style="color:var(--muted);font-size:14px;padding:8px 2px;">Nothing in this shift's ${escapeHtml(dashSelectedUnitBucket.bucket)} total right now.</div>` : '');
+      : (filteredForThisShift ? `<div style="color:var(--muted);font-size:14px;padding:8px 2px;">Nothing in this shift's ${escapeHtml(selected.bucket)} total right now.</div>` : '');
     return `<div class="tally-shift-group">
       <div class="tally-shift-heading"><span>${escapeHtml(label)}</span><span class="tally-shift-count">${sg.orders.length} order${sg.orders.length === 1 ? '' : 's'} completed</span></div>
       <div class="shift-grand-totals">
@@ -2461,18 +2517,66 @@ function renderDashboard() {
       <div class="tally-panel">${tallyPanelHtml}</div>
     </div>`;
   }).join('');
-  document.querySelectorAll('#dash-production-tally .shift-grand-total').forEach(tile => {
+  containerEl.querySelectorAll('.shift-grand-total').forEach(tile => {
     tile.onclick = () => {
       const shiftKey = tile.getAttribute('data-shift-key');
       const bucket = tile.getAttribute('data-bucket');
-      dashSelectedUnitBucket = (dashSelectedUnitBucket && dashSelectedUnitBucket.shiftKey === shiftKey && dashSelectedUnitBucket.bucket === bucket)
-        ? null
-        : { shiftKey: shiftKey, bucket: bucket };
-      renderDashboard();
+      const cur = getSelected();
+      setSelected((cur && cur.shiftKey === shiftKey && cur.bucket === bucket) ? null : { shiftKey: shiftKey, bucket: bucket });
+    };
+  });
+}
+
+// Renders the Data History page: Printed/Completed order lists, a Packers
+// breakdown, and Production totals (the same per-shift KG/EACH/Other tiles
+// as the Dashboard, via renderProductionTallyInto_ - but scoped to
+// historySelectedUnitBucket, never dashSelectedUnitBucket) - all for
+// whichever date historyDate is currently showing (see loadHistoryDate).
+// Unlike the Dashboard, there's no "Needs a packer"/"Needs processing"/
+// "Needs review"/"Needs attention" here - those are live, right-now queue
+// states with no historical snapshot to show (there's nothing stored for
+// "what was overdue back then", and showing live backlog numbers under a
+// past-dated heading would just be confusing) - so this page only ever
+// shows data that actually has a date tied to it.
+function renderHistoryView() {
+  const printedOrders = (historyPrintedOrders || []).slice().sort((a, b) => new Date(b.printedAt) - new Date(a.printedAt));
+  const completedOrders = (historyCompletedOrders || []).slice().sort((a, b) => new Date(b.productionCompletedAt) - new Date(a.productionCompletedAt));
+
+  document.getElementById('history-printed-count').textContent = printedOrders.length;
+  document.getElementById('history-printed-empty').classList.toggle('hidden', printedOrders.length > 0);
+  const printedGrid = document.getElementById('history-printed-grid');
+  printedGrid.innerHTML = printedOrders.map(o => dashDetailCardHtml(o, 'printedToday')).join('');
+  printedGrid.querySelectorAll('.order-card').forEach(card => {
+    card.onclick = () => {
+      const order = printedOrders.find(x => x.orderId === card.getAttribute('data-order-id'));
+      if (order) openViewModal(order, 'Packing');
     };
   });
 
-  renderDashDetail();
+  document.getElementById('history-completed-count').textContent = completedOrders.length;
+  document.getElementById('history-completed-empty').classList.toggle('hidden', completedOrders.length > 0);
+  const completedGrid = document.getElementById('history-completed-grid');
+  completedGrid.innerHTML = completedOrders.map(o => dashDetailCardHtml(o, 'completedToday')).join('');
+  completedGrid.querySelectorAll('.order-card').forEach(card => {
+    card.onclick = () => {
+      const order = completedOrders.find(x => x.orderId === card.getAttribute('data-order-id'));
+      if (order) openViewModal(order, 'Production');
+    };
+  });
+
+  const printedByPacker = {};
+  printedOrders.forEach(o => { printedByPacker[o.assignedTo] = (printedByPacker[o.assignedTo] || 0) + 1; });
+  const packerNames = Object.keys(printedByPacker).sort((a, b) => printedByPacker[b] - printedByPacker[a]);
+  document.getElementById('history-packers-empty').classList.toggle('hidden', packerNames.length > 0);
+  document.getElementById('history-packers-list').innerHTML = packerNames.map(name => `
+    <div class="dash-packer-row"><span>${escapeHtml(name)}</span><span>${printedByPacker[name]} printed</span></div>`).join('');
+
+  const completedGroups = computeProductionTally(completedOrders);
+  document.getElementById('history-tally-count').textContent = completedGroups.length;
+  document.getElementById('history-tally-empty').classList.toggle('hidden', completedGroups.length > 0);
+  renderProductionTallyInto_(document.getElementById('history-production-tally'), completedOrders,
+    () => historySelectedUnitBucket,
+    v => { historySelectedUnitBucket = v; renderHistoryView(); });
 }
 
 // Renders the order list behind whichever stat tile is currently selected
@@ -2504,10 +2608,10 @@ function renderDashDetail() {
   grid.querySelectorAll('.order-card').forEach(card => {
     card.onclick = () => {
       const orderId = card.getAttribute('data-order-id');
-      // A past-date Printed/Completed order (see loadDashHistory) can easily
-      // sit outside boardData's live 3-day window - the bucket itself
-      // already holds the right order object either way, so just use that
-      // instead of re-looking it up in a list that may not contain it.
+      // A done order (see loadDashToday) doesn't sit in boardData.orders at
+      // all any more once it's done - the bucket itself already holds the
+      // right order object either way, so just use that instead of
+      // re-looking it up in a list that may not contain it.
       const order = bucket.orders.find(x => x.orderId === orderId) || boardData.orders.find(x => x.orderId === orderId);
       if (order) openViewModal(order, bucket.dept || undefined);
     };
@@ -3250,17 +3354,17 @@ function saveSettings() {
 
 function doPurgeNow() {
   const days = document.getElementById('set-retention-days').value || 14;
-  if (!confirm(`Permanently delete every fully-finished order older than ${days} day(s) (plus their items and old import-log rows)? This can't be undone from within the app. Orders that aren't fully finished yet are never touched, no matter how old.`)) return;
+  if (!confirm(`Move every fully-finished order older than ${days} day(s) (plus their items) out of the live board into long-term history? They'll still be fully viewable any time on the Data History page - only old import-log rows are actually deleted, and that can't be undone. Orders that aren't fully finished yet are never touched, no matter how old.`)) return;
   const resultBox = document.getElementById('purge-now-result');
   resultBox.className = 'result-box';
-  resultBox.textContent = 'Purging…';
+  resultBox.textContent = 'Archiving…';
   resultBox.classList.remove('hidden');
   apiPost('purgeOldData', {}, { timeoutMs: 60000 }).then(res => {
     resultBox.className = 'result-box';
-    resultBox.textContent = (res.ordersRemoved || res.itemsRemoved || res.logRemoved)
-      ? `Removed ${res.ordersRemoved} order(s), ${res.itemsRemoved} item(s) and ${res.logRemoved} import-log row(s) older than ${res.retentionDays} day(s) (before ${res.cutoff}).` +
+    resultBox.textContent = (res.ordersArchived || res.itemsArchived || res.logRemoved)
+      ? `Moved ${res.ordersArchived} order(s) and ${res.itemsArchived} item(s) into long-term history (still viewable on the Data History page), and removed ${res.logRemoved} old import-log row(s) - all older than ${res.retentionDays} day(s) (before ${res.cutoff}).` +
         (res.oldIncompleteKept ? ` Kept ${res.oldIncompleteKept} older order(s) that weren't fully finished yet.` : '')
-      : `Nothing to remove — no fully-finished orders older than ${res.retentionDays} day(s) (before ${res.cutoff}).`;
+      : `Nothing to archive — no fully-finished orders older than ${res.retentionDays} day(s) (before ${res.cutoff}).`;
     loadBoard(false);
   }).catch(err => {
     resultBox.className = 'result-box error';
@@ -3460,17 +3564,18 @@ function wireStaticEvents() {
     loadProdCompletedHistory(prodCompletedDateInput.value);
   };
 
-  const dashDateInput = document.getElementById('dash-date-input');
-  dashDateInput.value = dashDate;
-  dashDateInput.max = todayDateStr();
-  dashDateInput.onchange = () => {
-    if (!dashDateInput.value) { dashDateInput.value = dashDate; return; }
-    loadDashHistory(dashDateInput.value);
+  const historyDateInput = document.getElementById('history-date-input');
+  historyDateInput.value = historyDate;
+  historyDateInput.max = todayDateStr();
+  historyDateInput.onchange = () => {
+    if (!historyDateInput.value) { historyDateInput.value = historyDate; return; }
+    loadHistoryDate(historyDateInput.value);
   };
 
   document.getElementById('view-toggle-packing').onclick = () => setBoardView('packing');
   document.getElementById('view-toggle-production').onclick = () => setBoardView('production');
   document.getElementById('view-toggle-dashboard').onclick = () => setBoardView('dashboard');
+  document.getElementById('view-toggle-history').onclick = () => setBoardView('history');
 }
 
 function setBoardView(view) {
@@ -3519,35 +3624,53 @@ function loadProdCompletedHistory(dateStr, opts) {
   }).catch(err => { if (dateChanged) alert(err.message); else console.error(err); });
 }
 
-/* Loads the Dashboard's Printed/Completed/Production totals/Packers for the
-   given day (today included, same reasoning as loadPrintedHistory above) -
-   Needs a packer/Needs processing/Needs review/Needs attention always stay
-   live, see the comment in renderDashboard() for why. */
-function loadDashHistory(dateStr, opts) {
+/* Loads the Dashboard's own TODAY-only Printed/Completed (which also feed
+   Production totals/Packers) via the same combined getDashHistory_ call the
+   Dashboard's old date picker used to make itself - see getDashHistory_ in
+   Code.gs. No date-change bookkeeping needed here any more (unlike
+   loadHistoryDate below) since the Dashboard no longer has a date to
+   change - it's always today. Called at startup and on a slower background
+   cycle by refreshTodayHistories(); opts.silent skips the full-screen
+   loading overlay for that automatic cadence (see apiGet). */
+function loadDashToday(opts) {
   const silent = !!(opts && opts.silent);
-  const dateChanged = dateStr !== dashDate;
-  dashDate = dateStr;
+  apiGet('getDashHistory', { date: todayDateStr() }, { silent: silent, timeoutMs: 45000 }).then(res => {
+    dashTodayPrintedOrders = res.printed.orders;
+    dashTodayCompletedOrders = res.completed.orders;
+    if (boardView === 'dashboard') renderDashboard();
+  }).catch(err => console.error(err));
+}
+
+/* Loads the Data History page's Printed/Completed/Production totals/Packers
+   for whichever day is picked (today included) - the same getDashHistory_
+   call the Dashboard's own date picker used to make before the Dashboard
+   became today-only (see loadDashToday above). */
+function loadHistoryDate(dateStr, opts) {
+  const silent = !!(opts && opts.silent);
+  const dateChanged = dateStr !== historyDate;
+  historyDate = dateStr;
   if (dateChanged) {
-    dashSelectedStat = null; // whatever was selected belonged to the old date's bucket, which may no longer exist
-    dashSelectedUnitBucket = null; // same reasoning - the old date's shift/product breakdown it pointed at may no longer exist
-    dashHistoryPrintedOrders = [];
-    dashHistoryCompletedOrders = [];
-    renderDashboard();
+    historySelectedUnitBucket = null; // belonged to the old date's shift/product breakdown, which may no longer exist
+    historyPrintedOrders = [];
+    historyCompletedOrders = [];
+    renderHistoryView();
   }
   // One combined call instead of two separate getOrdersForDate requests -
-  // see getDashHistory_ in Code.gs. Reported as the Dashboard's date picker
-  // taking a very long time and then failing with "signal is aborted
-  // without reason" - that was our own 20s client timeout firing (twice,
-  // once per retry) on two full Orders+Items sheet scans running back to
-  // back. Combining them into one backend call halves that scan cost; the
-  // longer timeoutMs here (same reasoning as the heavier Admin operations
-  // use below) gives the remaining single scan real room even on a slow/
-  // cold Apps Script run, instead of racing our own clock.
+  // see getDashHistory_ in Code.gs (which also transparently reads
+  // OrdersArchive/OrderItemsArchive once dateStr is older than the "keep
+  // history for" window). Reported as the old Dashboard date picker taking a
+  // very long time and then failing with "signal is aborted without
+  // reason" - that was our own 20s client timeout firing (twice, once per
+  // retry) on two full sheet scans running back to back. Combining them into
+  // one backend call halves that scan cost; the longer timeoutMs here (same
+  // reasoning as the heavier Admin operations use below) gives the
+  // remaining single scan real room even on a slow/cold Apps Script run,
+  // instead of racing our own clock.
   apiGet('getDashHistory', { date: dateStr }, { silent: silent, timeoutMs: 45000 }).then(res => {
-    if (dashDate !== dateStr) return; // user picked a different date while this was loading
-    dashHistoryPrintedOrders = res.printed.orders;
-    dashHistoryCompletedOrders = res.completed.orders;
-    renderDashboard();
+    if (historyDate !== dateStr) return; // user picked a different date while this was loading
+    historyPrintedOrders = res.printed.orders;
+    historyCompletedOrders = res.completed.orders;
+    renderHistoryView();
   }).catch(err => { if (dateChanged) alert(err.message); else console.error(err); });
 }
 
@@ -3556,16 +3679,18 @@ function loadDashHistory(dateStr, opts) {
 // them ride along with the fast (3-5s) live board poll any more - every call
 // here is silent (see loadPrintedHistory), since this runs automatically in
 // the background and has nothing to do with a button press or a deliberate
-// date change. Dashboard's pair of fetches is skipped for a role that can't
-// even see that tab, so a Factory Floor device packing or processing orders
-// all day isn't making two extra requests every cycle for a screen it never
-// opens.
+// date change. The Dashboard/Data History fetches are skipped for a role
+// that can't even see those tabs, so a Factory Floor device packing or
+// processing orders all day isn't making extra requests every cycle for
+// screens it never opens.
 let historyPollTimer = null;
 function refreshTodayHistories() {
   const today = todayDateStr();
   if (printedDate === today) loadPrintedHistory(today, { silent: true });
   if (prodCompletedDate === today) loadProdCompletedHistory(today, { silent: true });
-  if (dashDate === today && (userRole === 'Production Manager' || userRole === 'Admin')) loadDashHistory(today, { silent: true });
+  const canSeeDashboard = userRole === 'Production Manager' || userRole === 'Admin';
+  if (canSeeDashboard) loadDashToday({ silent: true });
+  if (canSeeDashboard && historyDate === today) loadHistoryDate(today, { silent: true });
 }
 
 /* Refresh age badges every second without waiting for a full board reload */
