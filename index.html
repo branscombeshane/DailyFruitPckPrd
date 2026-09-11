@@ -131,11 +131,14 @@
   /* Shift-level grand totals - Total KG / Total EACH / Other - sitting above
      that shift's full per-product breakdown. */
   .shift-grand-totals{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-bottom:16px;}
-  .shift-grand-total{background:var(--ok-bg);border-radius:12px;padding:10px 14px;}
+  .shift-grand-total{background:var(--ok-bg);border-radius:12px;padding:10px 14px;border:2px solid transparent;cursor:pointer;transition:border-color .12s,background .12s;}
+  .shift-grand-total:hover{border-color:var(--green);}
+  .shift-grand-total.selected{border-color:var(--green-dark);}
   .shift-grand-total .sgt-label{font-size:11.5px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;}
   .shift-grand-total .sgt-value{font-size:21px;font-weight:800;color:var(--green-dark);margin-top:2px;}
   .shift-grand-total.other{background:var(--info-bg);}
   .shift-grand-total.other .sgt-value{color:var(--info);}
+  .shift-grand-total.other.selected{border-color:var(--info);}
   .prod-actions{display:flex;gap:8px;margin-top:12px;}
   .prod-actions .btn-secondary{flex:1;margin-top:0;}
   .prod-actions .btn-primary{flex:1;margin-top:0;}
@@ -948,6 +951,12 @@ let prodCompletedDate = todayDateStr(); // date shown in Production's "Completed
 let prodCompletedHistoryOrders = []; // always fetched via getOrdersForDate (today included - see refreshTodayHistories)
 let dashSelectedStat = null; // key of the currently-selected Dashboard stat tile, or null if none picked
 let dashBuckets = {}; // rebuilt each renderDashboard() call - stat key -> { label, emptyText, orders }
+// Currently-selected "Total KG"/"Total EACH"/"Other" grand-total tile in the
+// Production totals section, or null if none picked. Scoped to ONE shift
+// group (shiftKey = that group's sg.name, '' for "No shift set") since each
+// shift has its own three tiles and its own product breakdown below them -
+// picking "Total KG" under Morning shouldn't touch Afternoon's panel.
+let dashSelectedUnitBucket = null; // { shiftKey, bucket: 'KG'|'EACH'|'Other' } or null
 let dashDate = todayDateStr(); // date the Dashboard's Printed/Completed/Production totals/Packers are showing - defaults to today (live)
 let dashHistoryPrintedOrders = []; // always fetched via getOrdersForDate (today included - see refreshTodayHistories)
 let dashHistoryCompletedOrders = []; // always fetched via getOrdersForDate (type: productionCompleted; today included - see refreshTodayHistories)
@@ -1736,6 +1745,17 @@ function productUnitBucket_(description) {
   return 'Other';
 }
 
+// Same KG/EACH/Other classification as productUnitBucket_ above, applied to
+// one of computeProductionTally's family groups instead of a single item -
+// lets the Dashboard's clickable Total KG/Total EACH/Other tiles filter that
+// same tally-panel breakdown down to just the families in the tapped bucket.
+// A family only ever groups variants that share the same raw unit (see
+// computeProductionTally), so its first variant's description-derived bucket
+// speaks for the whole group.
+function tallyGroupUnitBucket_(g) {
+  return productUnitBucket_(g.variants[0] ? g.variants[0].description : '');
+}
+
 // Grand totals for one shift's Production items, split into the three
 // buckets above - sits above that shift's full per-product breakdown on the
 // Dashboard as a coarser, at-a-glance summary.
@@ -2411,16 +2431,39 @@ function renderDashboard() {
     // grand total per shift - every KG-sold product summed into one number,
     // every EACH-sold product into another, everything else into "Other".
     const bucketTotals = computeUnitBucketTotals_(sg.orders);
+    // Tapping one of the three tiles below filters THIS shift's own
+    // per-product breakdown down to just that bucket (see
+    // dashSelectedUnitBucket/tallyGroupUnitBucket_) - shiftKey identifies
+    // which shift's tiles are selected, since every shift has its own set.
+    const shiftKey = sg.name;
+    const isSelected = b => dashSelectedUnitBucket && dashSelectedUnitBucket.shiftKey === shiftKey && dashSelectedUnitBucket.bucket === b;
+    const filteredForThisShift = !!(dashSelectedUnitBucket && dashSelectedUnitBucket.shiftKey === shiftKey);
+    const visibleGroups = filteredForThisShift
+      ? groups.filter(g => tallyGroupUnitBucket_(g) === dashSelectedUnitBucket.bucket)
+      : groups;
+    const tallyPanelHtml = visibleGroups.length
+      ? tallyGroupsHtml(visibleGroups)
+      : (filteredForThisShift ? `<div style="color:var(--muted);font-size:14px;padding:8px 2px;">Nothing in this shift's ${escapeHtml(dashSelectedUnitBucket.bucket)} total right now.</div>` : '');
     return `<div class="tally-shift-group">
       <div class="tally-shift-heading"><span>${escapeHtml(label)}</span><span class="tally-shift-count">${sg.orders.length} order${sg.orders.length === 1 ? '' : 's'} completed</span></div>
       <div class="shift-grand-totals">
-        <div class="shift-grand-total"><div class="sgt-label">Total KG</div><div class="sgt-value">${formatQty(bucketTotals.KG)} KG</div></div>
-        <div class="shift-grand-total"><div class="sgt-label">Total EACH</div><div class="sgt-value">${formatQty(bucketTotals.EACH)} EACH</div></div>
-        <div class="shift-grand-total other"><div class="sgt-label">Other</div><div class="sgt-value">${formatQty(bucketTotals.Other)}</div></div>
+        <div class="shift-grand-total${isSelected('KG') ? ' selected' : ''}" data-shift-key="${escapeHtml(shiftKey)}" data-bucket="KG"><div class="sgt-label">Total KG</div><div class="sgt-value">${formatQty(bucketTotals.KG)} KG</div></div>
+        <div class="shift-grand-total${isSelected('EACH') ? ' selected' : ''}" data-shift-key="${escapeHtml(shiftKey)}" data-bucket="EACH"><div class="sgt-label">Total EACH</div><div class="sgt-value">${formatQty(bucketTotals.EACH)} EACH</div></div>
+        <div class="shift-grand-total other${isSelected('Other') ? ' selected' : ''}" data-shift-key="${escapeHtml(shiftKey)}" data-bucket="Other"><div class="sgt-label">Other</div><div class="sgt-value">${formatQty(bucketTotals.Other)}</div></div>
       </div>
-      <div class="tally-panel">${tallyGroupsHtml(groups)}</div>
+      <div class="tally-panel">${tallyPanelHtml}</div>
     </div>`;
   }).join('');
+  document.querySelectorAll('#dash-production-tally .shift-grand-total').forEach(tile => {
+    tile.onclick = () => {
+      const shiftKey = tile.getAttribute('data-shift-key');
+      const bucket = tile.getAttribute('data-bucket');
+      dashSelectedUnitBucket = (dashSelectedUnitBucket && dashSelectedUnitBucket.shiftKey === shiftKey && dashSelectedUnitBucket.bucket === bucket)
+        ? null
+        : { shiftKey: shiftKey, bucket: bucket };
+      renderDashboard();
+    };
+  });
 
   renderDashDetail();
 }
@@ -3479,6 +3522,7 @@ function loadDashHistory(dateStr, opts) {
   dashDate = dateStr;
   if (dateChanged) {
     dashSelectedStat = null; // whatever was selected belonged to the old date's bucket, which may no longer exist
+    dashSelectedUnitBucket = null; // same reasoning - the old date's shift/product breakdown it pointed at may no longer exist
     dashHistoryPrintedOrders = [];
     dashHistoryCompletedOrders = [];
     renderDashboard();
