@@ -113,13 +113,29 @@
   .tally-family-total{font-size:15px;font-weight:800;color:var(--green-dark);white-space:nowrap;}
   .tally-variant{display:flex;justify-content:space-between;gap:8px;font-size:13.5px;color:var(--muted);padding:4px 0;border-top:1px dashed var(--line);margin-top:6px;}
   .tally-variant:first-of-type{margin-top:8px;}
-  .tally-shift-group{margin-bottom:22px;}
+  /* Each shift's Dashboard "Production totals" block is its own bordered
+     panel (not just a heading + whitespace) so one shift's numbers never
+     get visually mistaken for another's at a glance. */
+  .tally-shift-group{
+    margin-bottom:18px;
+    background:var(--card);border:2px solid var(--line);border-radius:16px;
+    padding:16px;
+  }
   .tally-shift-group:last-child{margin-bottom:0;}
   .tally-shift-heading{
     display:flex;justify-content:space-between;align-items:baseline;gap:8px;
-    font-size:15px;font-weight:800;color:var(--ink);padding:0 2px 10px;
+    font-size:16px;font-weight:800;color:var(--ink);padding:0 2px 12px;
+    border-bottom:2px solid var(--line);margin-bottom:14px;
   }
   .tally-shift-count{font-size:12.5px;font-weight:700;color:var(--muted);}
+  /* Shift-level grand totals - Total KG / Total EACH / Other - sitting above
+     that shift's full per-product breakdown. */
+  .shift-grand-totals{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-bottom:16px;}
+  .shift-grand-total{background:var(--ok-bg);border-radius:12px;padding:10px 14px;}
+  .shift-grand-total .sgt-label{font-size:11.5px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;}
+  .shift-grand-total .sgt-value{font-size:21px;font-weight:800;color:var(--green-dark);margin-top:2px;}
+  .shift-grand-total.other{background:var(--info-bg);}
+  .shift-grand-total.other .sgt-value{color:var(--info);}
   .prod-actions{display:flex;gap:8px;margin-top:12px;}
   .prod-actions .btn-secondary{flex:1;margin-top:0;}
   .prod-actions .btn-primary{flex:1;margin-top:0;}
@@ -1604,6 +1620,40 @@ function formatQty(n) {
   return String(Math.round((n + Number.EPSILON) * 100) / 100);
 }
 
+// Coarser than productFamily() above - buckets a Production item under 'KG',
+// 'EACH', or 'Other' by its own description's trailing unit (Shane's request,
+// for the Dashboard's per-shift grand totals: every KG-sold product summed
+// into one number, every EACH-sold product into another, everything else -
+// 100G packs, PUNNET, BOX, ... - lumped into "Other"). PDF/email-derived
+// orders never carry a separate, reliable it.unit (see parseInvoiceItems_ in
+// EmailImport.gs - it's always '' there), so the description's own "... - KG"
+// / "... - EACH" ending is the only real signal, same as the rest of this
+// codebase relies on. A trailing note in parens the parser appended (e.g.
+// "(PRE-PACK CLASS 1)") is stripped first so it doesn't hide the real unit
+// underneath - "Mushroom Button - KG (PRE-PACK CLASS 1)" still buckets as KG.
+function productUnitBucket_(description) {
+  const bare = String(description || '').replace(/\s*\([^()]*\)\s*$/, '').trim().toUpperCase();
+  if (bare.endsWith('KG')) return 'KG';
+  if (bare.endsWith('EACH')) return 'EACH';
+  return 'Other';
+}
+
+// Grand totals for one shift's Production items, split into the three
+// buckets above - sits above that shift's full per-product breakdown on the
+// Dashboard as a coarser, at-a-glance summary.
+function computeUnitBucketTotals_(orders) {
+  const totals = { KG: 0, EACH: 0, Other: 0 };
+  orders.forEach(o => {
+    (o.items || []).forEach(it => {
+      if (it.department !== 'Production') return;
+      const q = Number(it.qty);
+      if (isNaN(q)) return;
+      totals[productUnitBucket_(it.description)] += q;
+    });
+  });
+  return totals;
+}
+
 // Sums Production-department item quantities across the given (not-yet-completed)
 // orders: first by exact variant (description + unit), then rolled up by product
 // family - each family only combines variants that share the same unit, so two
@@ -2258,8 +2308,17 @@ function renderDashboard() {
   document.getElementById('dash-production-tally').innerHTML = shiftGroups.map(sg => {
     const groups = computeProductionTally(sg.orders);
     const label = sg.name || 'No shift set';
+    // Shane's request: alongside the full per-product breakdown, a coarser
+    // grand total per shift - every KG-sold product summed into one number,
+    // every EACH-sold product into another, everything else into "Other".
+    const bucketTotals = computeUnitBucketTotals_(sg.orders);
     return `<div class="tally-shift-group">
       <div class="tally-shift-heading"><span>${escapeHtml(label)}</span><span class="tally-shift-count">${sg.orders.length} order${sg.orders.length === 1 ? '' : 's'} completed</span></div>
+      <div class="shift-grand-totals">
+        <div class="shift-grand-total"><div class="sgt-label">Total KG</div><div class="sgt-value">${formatQty(bucketTotals.KG)} KG</div></div>
+        <div class="shift-grand-total"><div class="sgt-label">Total EACH</div><div class="sgt-value">${formatQty(bucketTotals.EACH)} EACH</div></div>
+        <div class="shift-grand-total other"><div class="sgt-label">Other</div><div class="sgt-value">${formatQty(bucketTotals.Other)}</div></div>
+      </div>
       <div class="tally-panel">${tallyGroupsHtml(groups)}</div>
     </div>`;
   }).join('');
