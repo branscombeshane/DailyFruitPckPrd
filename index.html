@@ -876,7 +876,7 @@
 <style id="print-page-style">@page{ size:80mm auto; margin:0; }</style>
 
 <div class="conn-banner hidden" id="conn-banner">Can't reach the server — check the connection. Retrying… <span id="conn-banner-detail"></span></div>
-<div id="loading-indicator" aria-hidden="true"><div class="loading-box"><span class="spinner"></span>Working…</div></div>
+<div id="loading-indicator" aria-hidden="true"><div class="loading-box"><span class="spinner"></span><span id="loading-indicator-text">Working…</span></div></div>
 
 <script>
 /* =====================================================================
@@ -959,8 +959,16 @@ function fetchWithTimeout_(url, options, timeoutMs) {
 // delayed, never the actual blocking.
 let apiCallsInFlight = 0;
 let loadingShowTimer = null;
-function beginApiLoading_() {
+const DEFAULT_LOADING_LABEL = 'Working…';
+// `label` overrides the overlay's default "Working…" text (e.g. the first
+// board load uses "Loading your board…" - see loadBoard) - always applied
+// immediately so the most recently started call's label wins even while an
+// earlier one is still in flight, though in practice these essentially never
+// overlap (nothing else can be triggered before the first board load
+// finishes and its full-screen overlay is up blocking taps anyway).
+function beginApiLoading_(label) {
   apiCallsInFlight++;
+  if (label) document.getElementById('loading-indicator-text').textContent = label;
   if (apiCallsInFlight === 1) {
     const el = document.getElementById('loading-indicator');
     el.classList.add('blocking');
@@ -977,6 +985,7 @@ function endApiLoading_() {
   if (apiCallsInFlight === 0) {
     if (loadingShowTimer) { clearTimeout(loadingShowTimer); loadingShowTimer = null; }
     document.getElementById('loading-indicator').classList.remove('visible', 'blocking');
+    document.getElementById('loading-indicator-text').textContent = DEFAULT_LOADING_LABEL;
   }
 }
 // A brief, self-clearing hiccup reaching Google's Apps Script backend - our
@@ -1006,13 +1015,16 @@ function fetchJsonWithRetry_(url, options, timeoutMs, attempt) {
     throw err;
   });
 }
-// `opts.silent` skips the loading indicator - used only by the background
-// board poll (loadBoard), which already refreshes every few seconds on its
-// own; showing a "loading" cue on every single silent poll tick would be
-// constant and meaningless, unlike an actual button press waiting on a reply.
+// `opts.silent` skips the loading indicator - used by the background board
+// poll (loadBoard) and other automatic/background refreshes, which already
+// happen on their own timer; showing a "loading" cue on every single silent
+// poll tick would be constant and meaningless, unlike an actual button press
+// (or the very first board load - see loadBoard) waiting on a reply.
+// `opts.loadingLabel` overrides the overlay's default "Working…" text for
+// this call.
 function apiGet(action, params, opts) {
   const silent = !!(opts && opts.silent);
-  if (!silent) beginApiLoading_();
+  if (!silent) beginApiLoading_(opts && opts.loadingLabel);
   const url = new URL(APP_CONFIG.API_URL);
   url.searchParams.set('action', action);
   url.searchParams.set('userName', userName);
@@ -1187,7 +1199,18 @@ function loadBoard(isFirstLoad) {
   if (boardFetchInFlight && !isFirstLoad) return;
   boardFetchInFlight = true;
   const myGeneration = ++boardLoadGeneration;
-  apiGet('getBoard', {}, { silent: true }).then(data => {
+  // Every background poll after the first stays silent (see apiGet) - it
+  // refreshes every few seconds on its own, so a loading cue on every tick
+  // would be constant noise. But the very FIRST load, right after login, has
+  // nothing on screen yet - board/production/dashboard all render empty
+  // until boardData shows up (renderDashboard in particular just bails out
+  // with nothing drawn at all while boardData is null - see its own comment).
+  // On a slow connection or a cold Apps Script start that first fetch can
+  // take a few seconds, and with no cue at all that looks exactly like the
+  // app being broken rather than just loading. So only the first load shows
+  // the full-screen overlay (which also usefully blocks taps on a
+  // still-empty board while it's in flight).
+  apiGet('getBoard', {}, isFirstLoad ? { loadingLabel: 'Loading your board…' } : { silent: true }).then(data => {
     if (myGeneration !== boardLoadGeneration) return; // superseded by a newer poll (e.g. a wake-from-sleep refresh) - ignore this stale result
     boardFetchInFlight = false;
     boardPollFailCount = 0;
