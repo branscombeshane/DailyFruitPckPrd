@@ -288,6 +288,15 @@
     transition:left .15s;
   }
   .toggle.on .knob{left:23px;}
+  /* Multiple-shift picker for Packers/Kitchen Managers - one toggle chip per
+     defined shift, so someone who works more than one shift can be checked
+     into all of them instead of being forced to pick just one. */
+  .shift-chip{
+    background:var(--bg);border:2px solid var(--line);border-radius:14px;
+    padding:5px 12px;font-size:12.5px;font-weight:700;color:var(--muted);
+  }
+  .shift-chip.on{background:var(--green);border-color:var(--green);color:#fff;}
+  .shift-chip-label{font-size:12px;color:var(--muted);margin-right:2px;}
   .result-box{margin-top:14px;padding:12px 14px;border-radius:9px;background:var(--ok-bg);font-size:14px;}
   .result-box.error{background:var(--crit-bg);color:var(--crit);}
   .log-row{font-size:13px;color:var(--muted);padding:4px 0;border-bottom:1px dashed var(--line);}
@@ -823,7 +832,7 @@
 
   <div class="admin-panel hidden" id="tab-packers">
     <h3>Packers</h3>
-    <p style="color:var(--muted);font-size:14px;">These names appear as tap tiles on the packing screen. Switch a packer off instead of deleting them if they might come back. Set a Shift so they only show up as a tap tile once that shift's account is logged in — leave it blank to keep them visible to every shift.</p>
+    <p style="color:var(--muted);font-size:14px;">These names appear as tap tiles on the packing screen. Switch a packer off instead of deleting them if they might come back. Tap a shift to check them into it as a tap tile on that shift's account — tap more than one if they work multiple shifts. Leave every shift off to keep them visible on every shift.</p>
     <div id="packers-admin-list"></div>
     <div class="field" style="margin-top:16px;">
       <label>Add a packer</label>
@@ -834,7 +843,7 @@
 
   <div class="admin-panel hidden" id="tab-kitchen-managers">
     <h3>Kitchen Managers</h3>
-    <p style="color:var(--muted);font-size:14px;">These names appear as tap tiles when someone taps Complete on a Production order, to select who's actually marking it complete. Switch one off instead of deleting them if they might come back. Set a Shift the same way Packers use them — leave it blank to keep them visible to every shift.</p>
+    <p style="color:var(--muted);font-size:14px;">These names appear as tap tiles when someone taps Complete on a Production order, to select who's actually marking it complete. Switch one off instead of deleting them if they might come back. Shifts work the same way Packers use them — tap as many as they work, or leave them all off to keep them visible on every shift.</p>
     <div id="kitchen-managers-admin-list"></div>
     <div class="field" style="margin-top:16px;">
       <label>Add a Kitchen Manager</label>
@@ -2918,6 +2927,45 @@ function shiftOptionsHtml(selected) {
     allShifts.map(s => `<option value="${escapeHtml(s.name)}" ${s.name === selected ? 'selected' : ''}>${escapeHtml(s.name)}</option>`).join('');
 }
 
+// Multiple-shift picker for Packers/Kitchen Managers (Shane's request -
+// plenty of people work more than one shift) - one toggle chip per shift
+// Admin has ever defined, active or not (same reasoning as shiftOptionsHtml
+// above: someone already checked into a since-deactivated shift should
+// still show that selection, not silently look unassigned). Clicking a chip
+// toggles just that one shift; wireShiftChips_ below sends the WHOLE
+// resulting list to the server each time, since there's no partial
+// add/remove action on that end, just "this is now the full set".
+function shiftChipsHtml(selectedShifts) {
+  const selected = new Set(selectedShifts || []);
+  if (!allShifts.length) return '<span class="shift-chip-label">No shifts defined yet — add one on the Shifts tab.</span>';
+  const chips = allShifts.map(s => `<button type="button" class="shift-chip ${selected.has(s.name) ? 'on' : ''}" data-shift-name="${escapeHtml(s.name)}">${escapeHtml(s.name)}</button>`).join('');
+  const allNote = selected.size ? '' : '<span class="shift-chip-label">(no shift set — visible on every shift)</span>';
+  return chips + allNote;
+}
+
+// Wires up the shift-chip toggle buttons shiftChipsHtml renders, inside each
+// `.shift-row` (one per Packer/Kitchen Manager row) under `list`. `apiAction`
+// is 'setPackerShifts' or 'setKitchenManagerShifts'; `rerender` re-renders
+// this same list from the server's fresh response, same pattern as every
+// other admin control here.
+function wireShiftChips_(list, apiAction, rerender) {
+  list.querySelectorAll('.shift-row').forEach(row => {
+    const name = row.getAttribute('data-name');
+    row.querySelectorAll('.shift-chip').forEach(chip => {
+      chip.onclick = () => {
+        const shiftName = chip.getAttribute('data-shift-name');
+        const current = Array.from(row.querySelectorAll('.shift-chip.on')).map(c => c.getAttribute('data-shift-name'));
+        const next = chip.classList.contains('on') ? current.filter(s => s !== shiftName) : current.concat([shiftName]);
+        row.querySelectorAll('.shift-chip').forEach(c => c.disabled = true);
+        apiPost(apiAction, { name: name, shifts: next }).then(rerender).catch(err => {
+          alert(err.message);
+          row.querySelectorAll('.shift-chip').forEach(c => c.disabled = false);
+        });
+      };
+    });
+  });
+}
+
 function renderShiftsAdmin(shifts) {
   const list = document.getElementById('shifts-admin-list');
   if (!shifts.length) { list.innerHTML = '<div class="log-row">No shifts defined yet - add one below.</div>'; return; }
@@ -2961,8 +3009,8 @@ function renderCustomerShelfLifeAdmin(list) {
       </div>
     </div>`).join('');
   box.querySelectorAll('.cust-shelf-days-input').forEach(input => {
-    // Committed on blur/Enter, not on every keystroke - matches setPackerShift's
-    // pattern of only calling the API once the person's actually done editing.
+    // Committed on blur/Enter, not on every keystroke - the API call only
+    // fires once the person's actually done editing.
     const commit = () => {
       const name = input.getAttribute('data-name');
       const days = Number(input.value);
@@ -2994,12 +3042,17 @@ function renderCustomerShelfLifeAdmin(list) {
 function renderPackersAdmin(packers) {
   const list = document.getElementById('packers-admin-list');
   list.innerHTML = packers.map(p => `
-    <div class="packer-row">
-      <span>${escapeHtml(p.name)}</span>
-      <div style="display:flex;align-items:center;gap:10px;">
-        <select class="packer-shift-select" data-name="${escapeHtml(p.name)}" style="padding:8px 9px;border:2px solid var(--line);border-radius:8px;">${shiftOptionsHtml(p.shift)}</select>
-        <button class="toggle ${p.active ? 'on' : ''}" data-name="${escapeHtml(p.name)}" data-active="${p.active}"><span class="knob"></span></button>
-        <button class="icon-btn" style="background:#f3d6d6;color:#a11;width:32px;height:32px;font-size:14px;" data-delete-name="${escapeHtml(p.name)}" title="Delete packer">✕</button>
+    <div class="packer-row" style="flex-direction:column;align-items:stretch;gap:8px;">
+      <div style="display:flex;align-items:center;justify-content:space-between;">
+        <span>${escapeHtml(p.name)}</span>
+        <div style="display:flex;align-items:center;gap:10px;">
+          <button class="toggle ${p.active ? 'on' : ''}" data-name="${escapeHtml(p.name)}" data-active="${p.active}"><span class="knob"></span></button>
+          <button class="icon-btn" style="background:#f3d6d6;color:#a11;width:32px;height:32px;font-size:14px;" data-delete-name="${escapeHtml(p.name)}" title="Delete packer">✕</button>
+        </div>
+      </div>
+      <div class="shift-row" data-name="${escapeHtml(p.name)}" style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;">
+        <span class="shift-chip-label">Shifts:</span>
+        ${shiftChipsHtml(p.shifts)}
       </div>
     </div>`).join('');
   list.querySelectorAll('.toggle').forEach(btn => {
@@ -3010,13 +3063,7 @@ function renderPackersAdmin(packers) {
       apiPost('setPackerActive', { name: name, active: nowActive }).then(packers => renderPackersAdmin(packers)).catch(err => { alert(err.message); btn.disabled = false; });
     };
   });
-  list.querySelectorAll('.packer-shift-select').forEach(sel => {
-    sel.onchange = () => {
-      const name = sel.getAttribute('data-name');
-      sel.disabled = true;
-      apiPost('setPackerShift', { name: name, shift: sel.value }).then(packers => renderPackersAdmin(packers)).catch(err => { alert(err.message); sel.disabled = false; });
-    };
-  });
+  wireShiftChips_(list, 'setPackerShifts', packers => renderPackersAdmin(packers));
   list.querySelectorAll('[data-delete-name]').forEach(btn => {
     btn.onclick = () => {
       const name = btn.getAttribute('data-delete-name');
@@ -3033,12 +3080,17 @@ function renderPackersAdmin(packers) {
 function renderKitchenManagersAdmin(kitchenManagers) {
   const list = document.getElementById('kitchen-managers-admin-list');
   list.innerHTML = kitchenManagers.map(k => `
-    <div class="packer-row">
-      <span>${escapeHtml(k.name)}</span>
-      <div style="display:flex;align-items:center;gap:10px;">
-        <select class="km-shift-select" data-name="${escapeHtml(k.name)}" style="padding:8px 9px;border:2px solid var(--line);border-radius:8px;">${shiftOptionsHtml(k.shift)}</select>
-        <button class="toggle ${k.active ? 'on' : ''}" data-name="${escapeHtml(k.name)}" data-active="${k.active}"><span class="knob"></span></button>
-        <button class="icon-btn" style="background:#f3d6d6;color:#a11;width:32px;height:32px;font-size:14px;" data-delete-name="${escapeHtml(k.name)}" title="Delete Kitchen Manager">✕</button>
+    <div class="packer-row" style="flex-direction:column;align-items:stretch;gap:8px;">
+      <div style="display:flex;align-items:center;justify-content:space-between;">
+        <span>${escapeHtml(k.name)}</span>
+        <div style="display:flex;align-items:center;gap:10px;">
+          <button class="toggle ${k.active ? 'on' : ''}" data-name="${escapeHtml(k.name)}" data-active="${k.active}"><span class="knob"></span></button>
+          <button class="icon-btn" style="background:#f3d6d6;color:#a11;width:32px;height:32px;font-size:14px;" data-delete-name="${escapeHtml(k.name)}" title="Delete Kitchen Manager">✕</button>
+        </div>
+      </div>
+      <div class="shift-row" data-name="${escapeHtml(k.name)}" style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;">
+        <span class="shift-chip-label">Shifts:</span>
+        ${shiftChipsHtml(k.shifts)}
       </div>
     </div>`).join('');
   list.querySelectorAll('.toggle').forEach(btn => {
@@ -3049,13 +3101,7 @@ function renderKitchenManagersAdmin(kitchenManagers) {
       apiPost('setKitchenManagerActive', { name: name, active: nowActive }).then(kms => renderKitchenManagersAdmin(kms)).catch(err => { alert(err.message); btn.disabled = false; });
     };
   });
-  list.querySelectorAll('.km-shift-select').forEach(sel => {
-    sel.onchange = () => {
-      const name = sel.getAttribute('data-name');
-      sel.disabled = true;
-      apiPost('setKitchenManagerShift', { name: name, shift: sel.value }).then(kms => renderKitchenManagersAdmin(kms)).catch(err => { alert(err.message); sel.disabled = false; });
-    };
-  });
+  wireShiftChips_(list, 'setKitchenManagerShifts', kms => renderKitchenManagersAdmin(kms));
   list.querySelectorAll('[data-delete-name]').forEach(btn => {
     btn.onclick = () => {
       const name = btn.getAttribute('data-delete-name');
