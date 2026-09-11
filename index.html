@@ -94,6 +94,11 @@
     text-align:center;box-shadow:0 1px 3px rgba(0,0,0,.06);
   }
   .packer-tile:active{background:var(--green);color:#fff;border-color:var(--green);}
+  /* "All Shifts" tile on the post-login shift picker - visually distinct
+     (dashed border) from a specific named shift, since it means "no
+     restriction" rather than "this one shift". */
+  .packer-tile.all-shifts-tile{border-style:dashed;color:var(--muted);}
+  .packer-tile.all-shifts-tile:active{background:var(--info);border-color:var(--info);color:#fff;}
   .empty-note{color:var(--muted);text-align:center;font-size:15px;max-width:420px;}
 
   /* ---------- board ---------- */
@@ -467,6 +472,10 @@
     position:fixed;inset:0;background:var(--green-dark);z-index:300;
     display:flex;align-items:center;justify-content:center;padding:20px;
   }
+  #shift-select-screen{
+    position:fixed;inset:0;background:var(--green-dark);z-index:301;
+    display:flex;align-items:center;justify-content:center;padding:20px;
+  }
   .lock-box{
     background:#fff;border-radius:18px;padding:36px 30px;max-width:360px;width:100%;text-align:center;
   }
@@ -539,6 +548,16 @@
     </div>
     <div class="result-box error hidden" id="login-error"></div>
     <button class="btn-confirm" id="login-btn" style="width:100%;padding:15px;font-size:17px;">Sign in</button>
+  </div>
+</div>
+
+<!-- ============ SHIFT SELECT (shown right after a successful sign-in) ============ -->
+<div id="shift-select-screen" class="hidden">
+  <div class="lock-box" style="max-width:480px;">
+    <div class="lock-badge">🕒</div>
+    <h1 id="shift-select-heading">Which shift are you on?</h1>
+    <p>This picks which Packers/Kitchen Managers you'll see as tap-tiles for this login — it's asked every time, not saved to your account.</p>
+    <div class="tile-grid" id="shift-select-grid" style="grid-template-columns:repeat(auto-fill,minmax(140px,1fr));margin:0 auto;"></div>
   </div>
 </div>
 
@@ -797,7 +816,7 @@
 
   <div class="admin-panel hidden" id="tab-users">
     <h3>Users</h3>
-    <p style="color:var(--muted);font-size:14px;">Everyone who can sign into this app, and what they see once they're in. <strong>Factory Floor</strong> gets Packing + Production only. <strong>Production Manager</strong> also gets the Dashboard. <strong>Admin</strong> gets everything, including this screen. There must always be at least one active Admin — the last one can't be demoted, deactivated, or deleted. Set a Shift on an account (Factory Floor accounts, typically — one per shift) to limit which Packers/Kitchen Managers show up as tap tiles once that account is logged in; leave it blank for an account that should see everyone regardless of shift.</p>
+    <p style="color:var(--muted);font-size:14px;">Everyone who can sign into this app, and what they see once they're in. <strong>Factory Floor</strong> gets Packing + Production only. <strong>Production Manager</strong> also gets the Dashboard. <strong>Admin</strong> gets everything, including this screen. There must always be at least one active Admin — the last one can't be demoted, deactivated, or deleted. Shift is no longer set here — everyone picks their shift right after signing in instead, so it can change login to login.</p>
     <div id="users-admin-list"></div>
     <h3 style="margin-top:26px;">Add a user</h3>
     <div class="field"><label>Full name</label><input type="text" id="new-user-name" placeholder="Full name"></div>
@@ -808,12 +827,6 @@
         <option>Factory Floor</option>
         <option>Production Manager</option>
         <option>Admin</option>
-      </select>
-    </div>
-    <div class="field">
-      <label>Shift (optional)</label>
-      <select id="new-user-shift">
-        <option value="">No shift restriction</option>
       </select>
     </div>
     <button class="btn-primary" id="add-user-btn">Add user</button>
@@ -1038,6 +1051,14 @@ function fetchJsonWithRetry_(url, options, timeoutMs, attempt) {
 // (or the very first board load - see loadBoard) waiting on a reply.
 // `opts.loadingLabel` overrides the overlay's default "Working…" text for
 // this call.
+// userShift rides along on every request exactly like userName/userPin do -
+// it's the shift picked on the post-login shift-select screen (see
+// selectLoginShift), which the server needs on getBoard (to filter which
+// Packers/Kitchen Managers come back as tap tiles) and on the batch-number
+// actions (to letter-code the batch number) now that shift isn't stored on
+// the account any more and can't be looked up server-side from just
+// userName/userPin. Harmless to send on every other action too - they
+// simply ignore it.
 function apiGet(action, params, opts) {
   const silent = !!(opts && opts.silent);
   if (!silent) beginApiLoading_(opts && opts.loadingLabel);
@@ -1045,6 +1066,7 @@ function apiGet(action, params, opts) {
   url.searchParams.set('action', action);
   url.searchParams.set('userName', userName);
   url.searchParams.set('userPin', userPin);
+  url.searchParams.set('userShift', userShift);
   Object.keys(params || {}).forEach(k => url.searchParams.set(k, params[k]));
   const req = fetchJsonWithRetry_(url.toString(), undefined, opts && opts.timeoutMs).then(handleApiResponse);
   return silent ? req : req.finally(endApiLoading_);
@@ -1054,7 +1076,7 @@ function apiPost(action, payload, opts) {
   return fetchJsonWithRetry_(APP_CONFIG.API_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-    body: JSON.stringify(Object.assign({ action: action, userName: userName, userPin: userPin }, payload || {}))
+    body: JSON.stringify(Object.assign({ action: action, userName: userName, userPin: userPin, userShift: userShift }, payload || {}))
   }, opts && opts.timeoutMs).then(handleApiResponse).finally(endApiLoading_);
 }
 // These three exact messages are the only ones authenticateUser_ (Code.gs)
@@ -1091,6 +1113,7 @@ function logoutUser(message) {
   document.getElementById('production-view').classList.add('hidden');
   document.getElementById('dashboard-view').classList.add('hidden');
   document.getElementById('admin-overlay').classList.add('hidden');
+  document.getElementById('shift-select-screen').classList.add('hidden');
   document.getElementById('login-error').textContent = message || '';
   document.getElementById('login-error').classList.toggle('hidden', !message);
   document.getElementById('login-name').value = '';
@@ -1119,18 +1142,57 @@ function submitLogin() {
     userName = res.data.name;
     userPin = pin;
     userRole = res.data.role;
-    userShift = res.data.shift || '';
     sessionStorage.setItem('df_user_name', userName);
     sessionStorage.setItem('df_user_pin', userPin);
     sessionStorage.setItem('df_user_role', userRole);
-    sessionStorage.setItem('df_user_shift', userShift);
     document.getElementById('lock-screen').classList.add('hidden');
-    init();
+    // Shift is picked fresh on every login now, not stored on the account -
+    // show the picker (built from whatever's in Admin > Shifts right now) and
+    // let selectLoginShift finish the job (set userShift, then init()). If
+    // there are no shifts defined at all yet, there's nothing to pick from -
+    // skip straight to the app with no restriction, same as before.
+    const shiftNames = res.data.shiftNames || [];
+    if (shiftNames.length) {
+      showShiftSelectScreen(shiftNames);
+    } else {
+      selectLoginShift('');
+    }
   }).catch(() => {
     btn.disabled = false;
     document.getElementById('login-error').textContent = 'Could not reach the server — check the connection.';
     document.getElementById('login-error').classList.remove('hidden');
   });
+}
+
+/* ===================== SHIFT SELECT (post-login) ===================== */
+// Tap-tile picker shown right after a successful sign-in - one tile per
+// Admin-defined shift, plus "All Shifts" for an account that should see
+// everyone regardless (the same unrestricted meaning '' has always had -
+// see shiftVisible_ in Code.gs). Picking one sets userShift for THIS LOGIN
+// ONLY (sessionStorage, cleared on logout) - it's never written back to the
+// account, so the same person picks again next time they sign in.
+function showShiftSelectScreen(shiftNames) {
+  const grid = document.getElementById('shift-select-grid');
+  grid.innerHTML = '';
+  shiftNames.forEach(name => {
+    const btn = document.createElement('button');
+    btn.className = 'packer-tile';
+    btn.textContent = name;
+    btn.onclick = () => selectLoginShift(name);
+    grid.appendChild(btn);
+  });
+  const allBtn = document.createElement('button');
+  allBtn.className = 'packer-tile all-shifts-tile';
+  allBtn.textContent = 'All Shifts';
+  allBtn.onclick = () => selectLoginShift('');
+  grid.appendChild(allBtn);
+  document.getElementById('shift-select-screen').classList.remove('hidden');
+}
+function selectLoginShift(shift) {
+  userShift = shift || '';
+  sessionStorage.setItem('df_user_shift', userShift);
+  document.getElementById('shift-select-screen').classList.add('hidden');
+  init();
 }
 
 /* ===================== INIT ===================== */
@@ -2637,7 +2699,6 @@ function loadAdminData() {
     renderNeedsReviewList(data.needsReview);
     renderProductsList(data.products);
     renderUsersAdmin(data.users);
-    document.getElementById('new-user-shift').innerHTML = shiftOptionsHtml('');
     document.getElementById('set-company').value = data.settings.CompanyName || '';
     document.getElementById('set-warn').value = data.settings.FlagWarningMinutes || 10;
     document.getElementById('set-crit').value = data.settings.FlagCriticalMinutes || 20;
@@ -2820,7 +2881,6 @@ function renderUsersAdmin(users) {
       <select class="user-role-select">
         ${['Factory Floor', 'Production Manager', 'Admin'].map(r => `<option ${r === u.role ? 'selected' : ''}>${r}</option>`).join('')}
       </select>
-      <select class="user-shift-select">${shiftOptionsHtml(u.shift)}</select>
       <div class="user-row-actions">
         <button class="toggle ${u.active ? 'on' : ''}" data-active="${u.active}" title="Active"><span class="knob"></span></button>
         <button class="icon-btn" style="background:#f3d6d6;color:#a11;width:32px;height:32px;font-size:14px;flex-shrink:0;" data-delete-user title="Delete user">✕</button>
@@ -2832,7 +2892,6 @@ function renderUsersAdmin(users) {
     const nameInput = row.querySelector('.user-name-input');
     const pinInput = row.querySelector('.user-pin-input');
     const roleSelect = row.querySelector('.user-role-select');
-    const shiftSelect = row.querySelector('.user-shift-select');
     const toggleBtn = row.querySelector('.toggle');
     const deleteBtn = row.querySelector('[data-delete-user]');
 
@@ -2841,20 +2900,19 @@ function renderUsersAdmin(users) {
       const newName = nameInput.value.trim();
       const newPin = pinInput.value.trim();
       const newRole = roleSelect.value;
-      const newShift = shiftSelect.value;
-      apiPost('saveUser', { originalName: originalName, name: newName, pin: newPin, role: newRole, active: active, shift: newShift })
+      apiPost('saveUser', { originalName: originalName, name: newName, pin: newPin, role: newRole, active: active })
         .then(users => {
           // Editing your OWN account (renaming yourself, changing your own PIN,
-          // role, or shift) would otherwise sign this device out - or leave it
-          // showing the wrong shift's packers - on its very next request, since
-          // it's still sending the old name/PIN/shift - keep this session's own
-          // stored credentials in sync instead.
+          // or role) would otherwise sign this device out on its very next
+          // request, since it's still sending the old name/PIN - keep this
+          // session's own stored credentials in sync instead. Shift isn't part
+          // of the account any more (picked fresh at login), so there's
+          // nothing shift-related to keep in sync here.
           if (originalName.toLowerCase() === userName.toLowerCase()) {
-            userName = newName; userPin = newPin; userRole = newRole; userShift = newShift;
+            userName = newName; userPin = newPin; userRole = newRole;
             sessionStorage.setItem('df_user_name', userName);
             sessionStorage.setItem('df_user_pin', userPin);
             sessionStorage.setItem('df_user_role', userRole);
-            sessionStorage.setItem('df_user_shift', userShift);
             applyRoleUI();
           }
           renderUsersAdmin(users);
@@ -2864,7 +2922,6 @@ function renderUsersAdmin(users) {
     nameInput.addEventListener('change', doSave);
     pinInput.addEventListener('change', doSave);
     roleSelect.addEventListener('change', doSave);
-    shiftSelect.addEventListener('change', doSave);
     toggleBtn.onclick = () => {
       toggleBtn.setAttribute('data-active', toggleBtn.getAttribute('data-active') !== 'true');
       toggleBtn.classList.toggle('on');
@@ -3275,12 +3332,11 @@ function wireStaticEvents() {
     const name = document.getElementById('new-user-name').value.trim();
     const pin = document.getElementById('new-user-pin').value.trim();
     const role = document.getElementById('new-user-role').value;
-    const shift = document.getElementById('new-user-shift').value;
     const resultBox = document.getElementById('users-result');
     if (!name || !pin) return;
     const btn = document.getElementById('add-user-btn');
     btn.disabled = true;
-    apiPost('saveUser', { originalName: null, name: name, pin: pin, role: role, active: true, shift: shift }).then(users => {
+    apiPost('saveUser', { originalName: null, name: name, pin: pin, role: role, active: true }).then(users => {
       document.getElementById('new-user-name').value = '';
       document.getElementById('new-user-pin').value = '';
       resultBox.className = 'result-box';
