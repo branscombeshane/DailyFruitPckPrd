@@ -1745,17 +1745,6 @@ function productUnitBucket_(description) {
   return 'Other';
 }
 
-// Same KG/EACH/Other classification as productUnitBucket_ above, applied to
-// one of computeProductionTally's family groups instead of a single item -
-// lets the Dashboard's clickable Total KG/Total EACH/Other tiles filter that
-// same tally-panel breakdown down to just the families in the tapped bucket.
-// A family only ever groups variants that share the same raw unit (see
-// computeProductionTally), so its first variant's description-derived bucket
-// speaks for the whole group.
-function tallyGroupUnitBucket_(g) {
-  return productUnitBucket_(g.variants[0] ? g.variants[0].description : '');
-}
-
 // Grand totals for one shift's Production items, split into the three
 // buckets above - sits above that shift's full per-product breakdown on the
 // Dashboard as a coarser, at-a-glance summary.
@@ -1776,11 +1765,26 @@ function computeUnitBucketTotals_(orders) {
 // orders: first by exact variant (description + unit), then rolled up by product
 // family - each family only combines variants that share the same unit, so two
 // different units (say kg and each) are never added together.
-function computeProductionTally(orders) {
+//
+// Optional unitBucket ('KG'/'EACH'/'Other') restricts this to just the items
+// in that productUnitBucket_ bucket, filtered BEFORE any grouping happens -
+// used by the Dashboard's clickable Total KG/Total EACH/Other tiles (see
+// renderDashboard) to filter the per-product breakdown down to what a tile
+// actually counts. This has to filter at the individual-item level, not by
+// picking one representative variant per family: a family (see
+// productFamily) can genuinely mix a "... - KG" variant with a same-named
+// "... - 300G" variant under one family once PDF-derived items (whose own
+// raw unit field is always blank - see productUnitBucket_'s comment) group
+// together by name alone, so filtering by only one variant's bucket per
+// family silently dropped other-bucket variants of that same family and
+// made the filtered panel's total stop matching the tile above it - fixed
+// by classifying every item individually up front, before grouping.
+function computeProductionTally(orders, unitBucket) {
   const variantMap = {};
   orders.forEach(o => {
     (o.items || []).forEach(it => {
       if (it.department !== 'Production') return;
+      if (unitBucket && productUnitBucket_(it.description) !== unitBucket) return;
       const unit = (it.unit || '').trim();
       const key = String(it.description || '').trim().toLowerCase() + '|' + unit.toLowerCase();
       if (!variantMap[key]) variantMap[key] = { description: it.description, unit: unit, qty: 0 };
@@ -2433,13 +2437,16 @@ function renderDashboard() {
     const bucketTotals = computeUnitBucketTotals_(sg.orders);
     // Tapping one of the three tiles below filters THIS shift's own
     // per-product breakdown down to just that bucket (see
-    // dashSelectedUnitBucket/tallyGroupUnitBucket_) - shiftKey identifies
-    // which shift's tiles are selected, since every shift has its own set.
+    // dashSelectedUnitBucket) - shiftKey identifies which shift's tiles are
+    // selected, since every shift has its own set. Re-running
+    // computeProductionTally with the bucket filter (rather than picking
+    // through the already-built unfiltered `groups`) is what keeps this
+    // exactly matching the tile's own total - see that function's comment.
     const shiftKey = sg.name;
     const isSelected = b => dashSelectedUnitBucket && dashSelectedUnitBucket.shiftKey === shiftKey && dashSelectedUnitBucket.bucket === b;
     const filteredForThisShift = !!(dashSelectedUnitBucket && dashSelectedUnitBucket.shiftKey === shiftKey);
     const visibleGroups = filteredForThisShift
-      ? groups.filter(g => tallyGroupUnitBucket_(g) === dashSelectedUnitBucket.bucket)
+      ? computeProductionTally(sg.orders, dashSelectedUnitBucket.bucket)
       : groups;
     const tallyPanelHtml = visibleGroups.length
       ? tallyGroupsHtml(visibleGroups)
