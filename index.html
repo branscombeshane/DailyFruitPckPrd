@@ -1412,7 +1412,13 @@ function renderBoard() {
   const isToday = printedDate === todayDateStr();
   const today = todayDateStr();
 
-  boardData.orders.forEach(o => {
+  // Only orders that actually have something for Packing to do belong here -
+  // same principle as Production's own prodOrders filter (see
+  // renderProductionBoard below). An order made up entirely of Production
+  // items never needs a packer, so it shouldn't sit on this board at all.
+  const packOrders = boardData.orders.filter(o => (o.items || []).some(it => it.department === 'Packing'));
+
+  packOrders.forEach(o => {
     if (!o.assignedTo) {
       const packDate = computePackDate(o);
       if (packDate <= today) needsPacker.push(Object.assign({ _packDate: packDate }, o));
@@ -2090,14 +2096,18 @@ function renderDashboard() {
     needsReviewCount += orderReviewCount;
     if (orderReviewCount > 0) needsReviewOrders.push(o);
     const hasProdItems = items.some(it => it.department === 'Production');
+    const hasPackItems = items.some(it => it.department === 'Packing');
 
-    // Packing side - same buckets renderBoard() uses. "Printed" isn't derived
-    // here any more - see printedTodayOrders below - because a fully-done
-    // order drops off boardData.orders the instant it's done. There's no
-    // "Packing in progress" bucket any more either - assigning a packer marks
-    // an order printed in the same server write (see assignOrder_ in
-    // Code.gs), so it's never sitting assigned-without-printed to count.
-    if (!o.assignedTo) {
+    // Packing side - same buckets renderBoard() uses (including its
+    // packOrders filter: an order made up entirely of Production items never
+    // needs a packer, so it shouldn't count here either). "Printed" isn't
+    // derived here any more - see printedTodayOrders below - because a
+    // fully-done order drops off boardData.orders the instant it's done.
+    // There's no "Packing in progress" bucket any more either - assigning a
+    // packer marks an order printed in the same server write (see
+    // assignOrder_ in Code.gs), so it's never sitting assigned-without-printed
+    // to count.
+    if (hasPackItems && !o.assignedTo) {
       const packDate = computePackDate(o);
       if (packDate <= today) {
         packNeeds++;
