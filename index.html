@@ -911,6 +911,14 @@ const APP_CONFIG = {
 };
 
 /* ===================== STATE ===================== */
+// The last board successfully fetched, stashed in localStorage (NOT
+// sessionStorage - see hydrateBoardFromLocalCache_ below for why that
+// distinction matters here) purely so a resumed session can redraw
+// instantly instead of sitting on a blank "Loading your board…" screen.
+// It's a rendering convenience only - never touches login/credentials or
+// which shift someone's on, so it doesn't relax the sessionStorage-only
+// choice for those just above.
+const BOARD_LOCAL_CACHE_KEY = 'df_board_local_cache_v1';
 let boardData = null;
 let pollTimer = null;
 let pendingAssignOrderId = null;
@@ -1106,6 +1114,12 @@ function logoutUser(message) {
   // the "Loading your board…" overlay instead of silently sitting on the
   // previous person's stale board until it refreshes.
   boardData = null;
+  // Also drop the locally-cached board snapshot (see hydrateBoardFromLocalCache_)
+  // so it can never be redrawn for the next person on a shared device - that
+  // guard already checks the cached snapshot's userName before using it, but
+  // there's no reason to leave a signed-out person's board sitting in
+  // localStorage at all.
+  try { localStorage.removeItem(BOARD_LOCAL_CACHE_KEY); } catch (e) { /* ignore */ }
   sessionStorage.removeItem('df_user_name');
   sessionStorage.removeItem('df_user_pin');
   sessionStorage.removeItem('df_user_role');
@@ -1308,6 +1322,12 @@ function loadBoard(isFirstLoad) {
     boardFetchInFlight = false;
     boardPollFailCount = 0;
     boardData = data;
+    try {
+      // Best-effort - private browsing/full storage can throw, and this is
+      // purely a "redraw instantly on the next resume" convenience (see
+      // hydrateBoardFromLocalCache_), never load-bearing for the board itself.
+      localStorage.setItem(BOARD_LOCAL_CACHE_KEY, JSON.stringify({ userName: userName, data: data }));
+    } catch (e) { /* ignore */ }
     document.getElementById('slip-company').textContent = data.settings.companyName || 'Daily Fruit';
     if (data.settings.boardRefreshSeconds && pollTimer) {
       clearInterval(pollTimer);
@@ -3501,7 +3521,46 @@ if ('serviceWorker' in navigator) {
   });
 }
 
-window.addEventListener('load', () => { wireLoginScreenEvents(); init(); });
+// If this page load is resuming an already-signed-in session (sessionStorage
+// still has userName/userPin - see the comment on those above) rather than
+// someone about to type into the login form, try to instantly redraw the
+// LAST board this browser successfully loaded before anything else runs.
+// This specifically targets Chrome's Memory Saver/tab discarding: an
+// inactive background tab can get its whole page fully unloaded and then
+// reloaded from scratch the instant someone switches back to it - from this
+// script's point of view that's indistinguishable from opening the app for
+// the first time (boardData is null again, nothing on screen), even though
+// the person was just looking at a populated board moments earlier. Without
+// this, that reload always hit loadBoard's full-screen "Loading your
+// board…" blocking overlay - which is exactly what made switching back to
+// the tab feel like it disrupted whatever was on screen every single time.
+// Restoring the cached snapshot first means boardData is no longer null by
+// the time init()'s loadBoard(true) call runs, so THAT call naturally takes
+// the silent background-refresh path instead (see loadBoard's
+// showFullScreenLoader) - the person's board reappears immediately, then
+// quietly refreshes a moment later, rather than blocking on a reload they
+// never asked for.
+function hydrateBoardFromLocalCache_() {
+  if (!userName || !userPin) return; // no session to resume - the login form is about to show anyway
+  try {
+    const raw = localStorage.getItem(BOARD_LOCAL_CACHE_KEY);
+    if (!raw) return;
+    const cached = JSON.parse(raw);
+    // Only ever restore THIS signed-in person's own last board - never show
+    // a stale snapshot left behind by whoever used this device/browser
+    // before them.
+    if (!cached || !cached.data || cached.userName !== userName) return;
+    boardData = cached.data;
+    document.getElementById('slip-company').textContent = boardData.settings.companyName || 'Daily Fruit';
+    applyBoardView();
+    renderBoard();
+    renderProductionBoard();
+  } catch (e) {
+    // best-effort - a corrupt/unavailable cache just means a normal loading
+    // screen this one time, same as before this existed
+  }
+}
+window.addEventListener('load', () => { wireLoginScreenEvents(); hydrateBoardFromLocalCache_(); init(); });
 </script>
 </body>
 </html>
