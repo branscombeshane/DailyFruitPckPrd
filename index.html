@@ -1725,6 +1725,8 @@ function renderBoard() {
           <div class="order-ref">${escapeHtml(o.sageRef)}</div>
           <div class="order-customer">${escapeHtml(o.customerName || '')}</div>
           ${orderNotesLine(o)}
+          <div class="order-arrived">Arrived ${fmtTime(o.createdAt)}</div>
+          ${o.deliveryDate ? `<div class="order-deliver">Deliver ${fmtDateLong(o.deliveryDate)}</div>` : ''}
         </div>
       </div>
       <div class="assigned-strip"><span>✅ ${escapeHtml(o.assignedTo)}</span><span>printed ${fmtTime(o.printedAt)}</span></div>
@@ -2025,6 +2027,8 @@ function renderProductionBoard() {
           <div class="order-ref">${escapeHtml(o.sageRef)}</div>
           <div class="order-customer">${escapeHtml(o.customerName || '')}</div>
           ${orderNotesLine(o)}
+          <div class="order-arrived">Arrived ${fmtTime(o.createdAt)}</div>
+          ${o.deliveryDate ? `<div class="order-deliver">Deliver ${fmtDateLong(o.deliveryDate)}</div>` : ''}
         </div>
       </div>
       ${itemSummaryHtml(o.items, 'Production')}
@@ -2640,16 +2644,17 @@ function dashDetailCardHtml(o, statKey) {
       ${statKey === 'prodNeeds' ? productionPrintNotesHtml(o) : ''}
     </div>`;
   }
+  const arrivedDeliverLines = `<div class="order-arrived">Arrived ${fmtTime(o.createdAt)}</div>${o.deliveryDate ? `<div class="order-deliver">Deliver ${fmtDateLong(o.deliveryDate)}</div>` : ''}`;
   if (statKey === 'printedToday') {
     return `<div class="order-card" data-order-id="${o.orderId}">
-      <div class="order-card-head"><div>${head}</div></div>
+      <div class="order-card-head"><div>${head}${arrivedDeliverLines}</div></div>
       ${itemSummaryHtml(o.items, 'Packing')}
       <div class="assigned-strip"><span>✅ ${escapeHtml(o.assignedTo)}</span><span>printed ${fmtTime(o.printedAt)}</span></div>
     </div>`;
   }
   if (statKey === 'completedToday') {
     return `<div class="order-card" data-order-id="${o.orderId}">
-      <div class="order-card-head"><div>${head}</div></div>
+      <div class="order-card-head"><div>${head}${arrivedDeliverLines}</div></div>
       ${itemSummaryHtml(o.items, 'Production')}
       ${productionPrintNotesHtml(o)}
       <div class="assigned-strip"><span>✅ Completed${o.productionCompletedBy ? ' by ' + escapeHtml(o.productionCompletedBy) : ''}</span><span>${fmtTime(o.productionCompletedAt)}</span></div>
