@@ -2903,7 +2903,18 @@ function closeAdmin() { document.getElementById('admin-overlay').classList.add('
 // it's always in sync with whatever Shifts currently exist.
 let allShifts = [];
 
-function loadAdminData() {
+// `silent` skips the alert() on failure (logs to console instead) - used
+// when this is an automatic follow-up refresh after some OTHER action
+// already reported its own success/failure (see doImport below), so a
+// transient hiccup here (Google occasionally returning an HTML error page
+// instead of JSON - the same class of blip apiGet/apiPost already retry
+// once on their own) doesn't pop up a raw, technical-looking error that
+// makes it look like the thing they just did failed, when it didn't - this
+// refresh is just picking up its side effects (a new ImportLog entry, any
+// newly-unclassified products) a little late. Opening Admin itself (the
+// only other caller) keeps the alert, since that IS the primary action and
+// a failure there genuinely means Admin has nothing to show yet.
+function loadAdminData(silent) {
   apiGet('getAdminData', {}, { timeoutMs: 60000 }).then(data => {
     allShifts = data.shifts;
     renderShiftsAdmin(data.shifts);
@@ -2922,7 +2933,7 @@ function loadAdminData() {
     document.getElementById('set-label-shelf-days').value = data.settings.LabelShelfLifeDays || 5;
     document.getElementById('set-import-passcode').value = data.settings.ImportPasscode || '';
     document.getElementById('set-retention-days').value = data.settings.HistoryRetentionDays || 14;
-  }).catch(err => alert(err.message));
+  }).catch(err => { if (silent) console.error(err); else alert(err.message); });
 }
 
 // Options for a Shift <select> - shared by the Packers/Kitchen Managers/Users
@@ -3203,7 +3214,7 @@ function doImport() {
     let msg = `Imported ${res.ordersImported} order(s), ${res.itemsImported} item(s). Skipped ${res.ordersSkipped} already-imported order(s).`;
     if (res.itemsNeedingReview) msg += ` ${res.itemsNeedingReview} item(s) had an unrecognised product code and defaulted to Packing — see the Products tab.`;
     resultBox.textContent = msg;
-    loadAdminData();
+    loadAdminData(true); // silent - the result box above already reported the outcome
     loadBoard(false);
   }).catch(err => {
     resultBox.className = 'result-box error';
