@@ -1214,11 +1214,19 @@ function submitLogin() {
   const btn = document.getElementById('login-btn');
   btn.disabled = true;
   beginApiLoading_();
-  fetchWithTimeout_(APP_CONFIG.API_URL, {
+  // Uses fetchJsonWithRetry_ (same as every other call via apiGet/apiPost),
+  // not a bare fetchWithTimeout_ - login used to skip straight past that
+  // shared one-automatic-retry safety net for a dropped connection or a
+  // slow/cold Apps Script response, so a transient hiccup here (unlike
+  // anywhere else in the app) went straight to "Could not reach the server"
+  // with no retry at all. That's why this screen hit it far more often than
+  // it should have, especially as the very first request after the page
+  // loads, before Apps Script has had a chance to warm up.
+  fetchJsonWithRetry_(APP_CONFIG.API_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'text/plain;charset=utf-8' },
     body: JSON.stringify({ action: 'login', userName: name, userPin: pin })
-  }).then(r => r.json()).finally(endApiLoading_).then(res => {
+  }).finally(endApiLoading_).then(res => {
     btn.disabled = false;
     if (!res.ok) {
       document.getElementById('login-error').textContent = res.error;
