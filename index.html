@@ -199,10 +199,14 @@
     padding:10px 18px;display:flex;align-items:center;gap:14px;flex-wrap:wrap;
     border-bottom:1px solid var(--line);max-width:1400px;margin:0 auto;
   }
-  #order-search{
+  /* Shared by the Packing/Production quick bar's #order-search AND Data
+     History's own #history-search below - same look, same "order # or
+     customer" filtering behavior, just scoped to different cards. */
+  .order-search-input{
     padding:9px 14px;border:2px solid var(--line);border-radius:20px;font-size:14px;
     min-width:220px;flex:0 1 260px;background:var(--card);color:var(--ink);
   }
+  .history-search-bar{margin:0 0 18px;}
   .quick-pills{display:flex;gap:8px;flex-wrap:wrap;}
   .quick-pill{
     background:var(--card);border:2px solid var(--line);border-radius:20px;
@@ -595,7 +599,7 @@
 
 <!-- ============ QUICK BAR: search + jump-to-section counts ============ -->
 <div id="quick-bar">
-  <input type="search" id="order-search" placeholder="Search order # or customer…">
+  <input type="search" id="order-search" class="order-search-input" placeholder="Search order # or customer…">
   <div class="quick-pills" id="quick-pills-packing"></div>
   <div class="quick-pills hidden" id="quick-pills-production"></div>
 </div>
@@ -682,7 +686,15 @@
     <input type="date" id="history-date-input" style="padding:6px 8px;border:2px solid var(--line);border-radius:8px;font-size:14px;text-transform:none;letter-spacing:normal;font-weight:600;color:var(--ink);">
   </div>
 
+  <div class="history-search-bar">
+    <input type="search" id="history-search" class="order-search-input" placeholder="Search order # or customer…">
+  </div>
+
   <div id="history-completed-mode-sections">
+    <div class="section-heading">Production totals <span class="count" id="history-tally-count">0</span></div>
+    <div id="history-production-tally"></div>
+    <div class="empty-board hidden" id="history-tally-empty">Nothing was completed in production on this day.</div>
+
     <div class="section-heading">
       <span id="history-printed-heading-label">Printed</span> <span class="count" id="history-printed-count">0</span>
     </div>
@@ -694,10 +706,6 @@
     </div>
     <div class="order-grid" id="history-completed-grid"></div>
     <div class="empty-board hidden" id="history-completed-empty">Nothing was completed in production on this day.</div>
-
-    <div class="section-heading">Production totals <span class="count" id="history-tally-count">0</span></div>
-    <div id="history-production-tally"></div>
-    <div class="empty-board hidden" id="history-tally-empty">Nothing was completed in production on this day.</div>
 
     <div class="section-heading" id="history-packers-heading-label">Packers</div>
     <div id="history-packers-list"></div>
@@ -1051,6 +1059,19 @@ let historySelectedUnitBucket = null;
 // re-fetch anything already in hand.
 let historyDateMode = 'completed';
 let historyDueOrders = [];
+// A separate search box from the Packing/Production one (#order-search/
+// orderSearchQuery above) - own state, own input, own filter - rather than
+// sharing that global query, so switching to Data History never surprises
+// Shane with a leftover filter from whatever he was searching for on the
+// board, and vice versa.
+let historySearchQuery = '';
+function applyHistorySearchFilter() {
+  const q = historySearchQuery.trim().toLowerCase();
+  document.querySelectorAll('#history-view .order-card[data-search]').forEach(card => {
+    const match = !q || card.getAttribute('data-search').includes(q);
+    card.classList.toggle('search-hidden', !match);
+  });
+}
 
 /* ===================== API HELPERS ===================== */
 // Every request gets a hard timeout. Without one, a request that stalls
@@ -2607,6 +2628,7 @@ function renderHistoryView() {
         if (order) openViewModal(order, (order.productionCompletedAt || order.productionPrintedAt || order.productionLabelsPrintedAt) ? 'Production' : 'Packing');
       };
     });
+    applyHistorySearchFilter();
     return;
   }
 
@@ -2648,6 +2670,7 @@ function renderHistoryView() {
   renderProductionTallyInto_(document.getElementById('history-production-tally'), completedOrders,
     () => historySelectedUnitBucket,
     v => { historySelectedUnitBucket = v; renderHistoryView(); });
+  applyHistorySearchFilter();
 }
 
 // Renders the order list behind whichever stat tile is currently selected
@@ -2702,7 +2725,7 @@ function dashDetailCardHtml(o, statKey) {
     const deliverLine = o._overdue
       ? `<div class="order-overdue">⚠ Should've been packed ${fmtDateLong(o._packDate)}</div>`
       : (o.deliveryDate ? `<div class="order-deliver">Deliver ${fmtDateLong(o.deliveryDate)}</div>` : '');
-    return `<div class="order-card" data-order-id="${o.orderId}">
+    return `<div class="order-card" data-order-id="${o.orderId}" data-search="${searchBlob(o)}">
       <div class="order-card-head">
         <div>${head}<div class="order-arrived">Arrived ${fmtTime(o.createdAt)}</div>${deliverLine}</div>
         <div class="age-badge">${fmtAge(o._age)}</div>
@@ -2713,14 +2736,14 @@ function dashDetailCardHtml(o, statKey) {
   }
   const arrivedDeliverLines = `<div class="order-arrived">Arrived ${fmtTime(o.createdAt)}</div>${o.deliveryDate ? `<div class="order-deliver">Deliver ${fmtDateLong(o.deliveryDate)}</div>` : ''}`;
   if (statKey === 'printedToday') {
-    return `<div class="order-card" data-order-id="${o.orderId}">
+    return `<div class="order-card" data-order-id="${o.orderId}" data-search="${searchBlob(o)}">
       <div class="order-card-head"><div>${head}${arrivedDeliverLines}</div></div>
       ${itemSummaryHtml(o.items, 'Packing')}
       <div class="assigned-strip"><span>✅ ${escapeHtml(o.assignedTo)}</span><span>printed ${fmtTime(o.printedAt)}</span></div>
     </div>`;
   }
   if (statKey === 'completedToday') {
-    return `<div class="order-card" data-order-id="${o.orderId}">
+    return `<div class="order-card" data-order-id="${o.orderId}" data-search="${searchBlob(o)}">
       <div class="order-card-head"><div>${head}${arrivedDeliverLines}</div></div>
       ${itemSummaryHtml(o.items, 'Production')}
       ${productionPrintNotesHtml(o)}
@@ -2743,7 +2766,7 @@ function dashDetailCardHtml(o, statKey) {
     } else {
       statusLine = `<div class="assigned-strip"><span>🆕 Not started yet</span><span></span></div>`;
     }
-    return `<div class="order-card" data-order-id="${o.orderId}">
+    return `<div class="order-card" data-order-id="${o.orderId}" data-search="${searchBlob(o)}">
       <div class="order-card-head"><div>${head}<div class="order-arrived">Arrived ${fmtTime(o.createdAt)}</div></div></div>
       ${itemSummaryHtml(o.items, o.productionCompletedAt || inProduction ? 'Production' : 'Packing')}
       ${statusLine}
@@ -2751,7 +2774,7 @@ function dashDetailCardHtml(o, statKey) {
   }
   // needsReview - list the specific items flagged, not just a summary count.
   const reviewItems = (o.items || []).filter(it => it.needsReview);
-  return `<div class="order-card" data-order-id="${o.orderId}">
+  return `<div class="order-card" data-order-id="${o.orderId}" data-search="${searchBlob(o)}">
     <div class="order-card-head"><div>${head}</div></div>
     <div class="item-summary"><span class="dept-tag unclassified">${reviewItems.length} need review</span></div>
     <ul class="item-list">${reviewItems.map(it => `<li><span>${escapeHtml(it.description)}</span><span class="item-qty">${escapeHtml(String(it.qty))} ${escapeHtml(it.unit || '')}</span></li>`).join('')}</ul>
@@ -3723,6 +3746,11 @@ function wireStaticEvents() {
       applyHistoryDateInputConstraint_();
       loadHistoryDate(historyDate, { modeChanged: true });
     };
+  });
+
+  document.getElementById('history-search').addEventListener('input', (e) => {
+    historySearchQuery = e.target.value;
+    applyHistorySearchFilter();
   });
 
   document.getElementById('view-toggle-packing').onclick = () => setBoardView('packing');
