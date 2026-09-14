@@ -297,6 +297,13 @@
   }
   .shift-chip.on{background:var(--green);border-color:var(--green);color:#fff;}
   .shift-chip-label{font-size:12px;color:var(--muted);margin-right:2px;}
+  /* Data History's Completed-on/Delivery-date search toggle - a plain
+     exclusive two-option switch (unlike the multi-select .shift-chip above,
+     only one of these is ever "on" at a time). */
+  .history-heading{flex-wrap:wrap;row-gap:8px;}
+  .mode-toggle{display:flex;background:var(--bg);border:2px solid var(--line);border-radius:12px;padding:2px;gap:2px;margin-left:auto;}
+  .mode-toggle-btn{background:transparent;border:none;color:var(--muted);padding:7px 13px;border-radius:9px;font-size:12.5px;font-weight:700;}
+  .mode-toggle-btn.on{background:var(--green);color:#fff;}
   .result-box{margin-top:14px;padding:12px 14px;border-radius:9px;background:var(--ok-bg);font-size:14px;}
   .result-box.error{background:var(--crit-bg);color:var(--crit);}
   .log-row{font-size:13px;color:var(--muted);padding:4px 0;border-bottom:1px dashed var(--line);}
@@ -666,30 +673,44 @@
      date is older than the "keep history for" window, so this stays
      available indefinitely without slowing down the live board/Dashboard) ============ -->
 <div id="history-view" class="hidden">
-  <div class="section-heading">
+  <div class="section-heading history-heading">
     <span>Data History</span>
-    <input type="date" id="history-date-input" style="margin-left:auto;padding:6px 8px;border:2px solid var(--line);border-radius:8px;font-size:14px;text-transform:none;letter-spacing:normal;font-weight:600;color:var(--ink);">
+    <div class="mode-toggle" id="history-mode-toggle">
+      <button type="button" class="mode-toggle-btn on" data-mode="completed">Completed on</button>
+      <button type="button" class="mode-toggle-btn" data-mode="delivery">Delivery date</button>
+    </div>
+    <input type="date" id="history-date-input" style="padding:6px 8px;border:2px solid var(--line);border-radius:8px;font-size:14px;text-transform:none;letter-spacing:normal;font-weight:600;color:var(--ink);">
   </div>
 
-  <div class="section-heading">
-    <span id="history-printed-heading-label">Printed</span> <span class="count" id="history-printed-count">0</span>
+  <div id="history-completed-mode-sections">
+    <div class="section-heading">
+      <span id="history-printed-heading-label">Printed</span> <span class="count" id="history-printed-count">0</span>
+    </div>
+    <div class="order-grid" id="history-printed-grid"></div>
+    <div class="empty-board hidden" id="history-printed-empty">Nothing was printed on this day.</div>
+
+    <div class="section-heading">
+      <span id="history-completed-heading-label">Completed</span> <span class="count" id="history-completed-count">0</span>
+    </div>
+    <div class="order-grid" id="history-completed-grid"></div>
+    <div class="empty-board hidden" id="history-completed-empty">Nothing was completed in production on this day.</div>
+
+    <div class="section-heading">Production totals <span class="count" id="history-tally-count">0</span></div>
+    <div id="history-production-tally"></div>
+    <div class="empty-board hidden" id="history-tally-empty">Nothing was completed in production on this day.</div>
+
+    <div class="section-heading" id="history-packers-heading-label">Packers</div>
+    <div id="history-packers-list"></div>
+    <div class="empty-board hidden" id="history-packers-empty">No orders were printed on this day.</div>
   </div>
-  <div class="order-grid" id="history-printed-grid"></div>
-  <div class="empty-board hidden" id="history-printed-empty">Nothing was printed on this day.</div>
 
-  <div class="section-heading">
-    <span id="history-completed-heading-label">Completed</span> <span class="count" id="history-completed-count">0</span>
+  <div id="history-due-section" class="hidden">
+    <div class="section-heading">
+      <span>Due for delivery</span> <span class="count" id="history-due-count">0</span>
+    </div>
+    <div class="order-grid" id="history-due-grid"></div>
+    <div class="empty-board hidden" id="history-due-empty">No orders are scheduled for delivery on this day.</div>
   </div>
-  <div class="order-grid" id="history-completed-grid"></div>
-  <div class="empty-board hidden" id="history-completed-empty">Nothing was completed in production on this day.</div>
-
-  <div class="section-heading">Production totals <span class="count" id="history-tally-count">0</span></div>
-  <div id="history-production-tally"></div>
-  <div class="empty-board hidden" id="history-tally-empty">Nothing was completed in production on this day.</div>
-
-  <div class="section-heading" id="history-packers-heading-label">Packers</div>
-  <div id="history-packers-list"></div>
-  <div class="empty-board hidden" id="history-packers-empty">No orders were printed on this day.</div>
 </div>
 
 <!-- ============ ASSIGN MODAL ============ -->
@@ -1020,6 +1041,16 @@ let historyCompletedOrders = [];
 // picking a tile on the History page never affects the Dashboard's own
 // tally tiles (today) and vice versa.
 let historySelectedUnitBucket = null;
+// Shane's request: toggle the Data History search between "orders
+// completed on this date" (the original Printed/Completed view above) and
+// "orders scheduled for delivery on this date" (any status at all, since a
+// delivery-date search is a planning question, not a status one) - see
+// getDashHistory_'s mode param in Code.gs. historyDueOrders holds the
+// results for that second mode; kept separate from historyPrinted/
+// CompletedOrders so switching modes and switching back doesn't need to
+// re-fetch anything already in hand.
+let historyDateMode = 'completed';
+let historyDueOrders = [];
 
 /* ===================== API HELPERS ===================== */
 // Every request gets a hard timeout. Without one, a request that stalls
@@ -2560,6 +2591,25 @@ function renderProductionTallyInto_(containerEl, completedOrders, getSelected, s
 // past-dated heading would just be confusing) - so this page only ever
 // shows data that actually has a date tied to it.
 function renderHistoryView() {
+  const showCompletedMode = historyDateMode !== 'delivery';
+  document.getElementById('history-completed-mode-sections').classList.toggle('hidden', !showCompletedMode);
+  document.getElementById('history-due-section').classList.toggle('hidden', showCompletedMode);
+
+  if (!showCompletedMode) {
+    const dueOrders = (historyDueOrders || []).slice().sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
+    document.getElementById('history-due-count').textContent = dueOrders.length;
+    document.getElementById('history-due-empty').classList.toggle('hidden', dueOrders.length > 0);
+    const dueGrid = document.getElementById('history-due-grid');
+    dueGrid.innerHTML = dueOrders.map(o => dashDetailCardHtml(o, 'dueForDelivery')).join('');
+    dueGrid.querySelectorAll('.order-card').forEach(card => {
+      card.onclick = () => {
+        const order = dueOrders.find(x => x.orderId === card.getAttribute('data-order-id'));
+        if (order) openViewModal(order, (order.productionCompletedAt || order.productionPrintedAt || order.productionLabelsPrintedAt) ? 'Production' : 'Packing');
+      };
+    });
+    return;
+  }
+
   const printedOrders = (historyPrintedOrders || []).slice().sort((a, b) => new Date(b.printedAt) - new Date(a.printedAt));
   const completedOrders = (historyCompletedOrders || []).slice().sort((a, b) => new Date(b.productionCompletedAt) - new Date(a.productionCompletedAt));
 
@@ -2675,6 +2725,28 @@ function dashDetailCardHtml(o, statKey) {
       ${itemSummaryHtml(o.items, 'Production')}
       ${productionPrintNotesHtml(o)}
       <div class="assigned-strip"><span>✅ Completed${o.productionCompletedBy ? ' by ' + escapeHtml(o.productionCompletedBy) : ''}</span><span>${fmtTime(o.productionCompletedAt)}</span></div>
+    </div>`;
+  }
+  if (statKey === 'dueForDelivery') {
+    // Data History's delivery-date search: unlike printedToday/completedToday
+    // above, an order here can be in ANY state (not even packed yet), so the
+    // status line has to be worked out from whichever timestamps are set
+    // rather than assumed.
+    const inProduction = o.productionPrintedAt || o.productionLabelsPrintedAt;
+    let statusLine;
+    if (o.productionCompletedAt) {
+      statusLine = `<div class="assigned-strip"><span>✅ Completed${o.productionCompletedBy ? ' by ' + escapeHtml(o.productionCompletedBy) : ''}</span><span>${fmtTime(o.productionCompletedAt)}</span></div>`;
+    } else if (inProduction) {
+      statusLine = `<div class="assigned-strip"><span>🏭 In production</span><span>${fmtTime(inProduction)}</span></div>`;
+    } else if (o.printedAt) {
+      statusLine = `<div class="assigned-strip"><span>📦 Packed${o.assignedTo ? ' — ' + escapeHtml(o.assignedTo) : ''}</span><span>${fmtTime(o.printedAt)}</span></div>`;
+    } else {
+      statusLine = `<div class="assigned-strip"><span>🆕 Not started yet</span><span></span></div>`;
+    }
+    return `<div class="order-card" data-order-id="${o.orderId}">
+      <div class="order-card-head"><div>${head}<div class="order-arrived">Arrived ${fmtTime(o.createdAt)}</div></div></div>
+      ${itemSummaryHtml(o.items, o.productionCompletedAt || inProduction ? 'Production' : 'Packing')}
+      ${statusLine}
     </div>`;
   }
   // needsReview - list the specific items flagged, not just a summary count.
@@ -3636,11 +3708,22 @@ function wireStaticEvents() {
 
   const historyDateInput = document.getElementById('history-date-input');
   historyDateInput.value = historyDate;
-  historyDateInput.max = todayDateStr();
+  applyHistoryDateInputConstraint_();
   historyDateInput.onchange = () => {
     if (!historyDateInput.value) { historyDateInput.value = historyDate; return; }
     loadHistoryDate(historyDateInput.value);
   };
+
+  document.querySelectorAll('#history-mode-toggle .mode-toggle-btn').forEach(btn => {
+    btn.onclick = () => {
+      const mode = btn.getAttribute('data-mode');
+      if (mode === historyDateMode) return;
+      historyDateMode = mode;
+      document.querySelectorAll('#history-mode-toggle .mode-toggle-btn').forEach(b => b.classList.toggle('on', b.getAttribute('data-mode') === mode));
+      applyHistoryDateInputConstraint_();
+      loadHistoryDate(historyDate, { modeChanged: true });
+    };
+  });
 
   document.getElementById('view-toggle-packing').onclick = () => setBoardView('packing');
   document.getElementById('view-toggle-production').onclick = () => setBoardView('production');
@@ -3711,18 +3794,34 @@ function loadDashToday(opts) {
   }).catch(err => console.error(err));
 }
 
+// 'Completed on' mode can only ever look at days up to today (an order can't
+// be printed/completed in the future), so the date picker caps out there -
+// but 'delivery' mode is a genuine schedule lookup ("what's due out
+// tomorrow, next week"), so that cap has to come off while it's selected.
+function applyHistoryDateInputConstraint_() {
+  const input = document.getElementById('history-date-input');
+  if (historyDateMode === 'delivery') {
+    input.removeAttribute('max');
+  } else {
+    input.max = todayDateStr();
+  }
+}
+
 /* Loads the Data History page's Printed/Completed/Production totals/Packers
    for whichever day is picked (today included) - the same getDashHistory_
    call the Dashboard's own date picker used to make before the Dashboard
    became today-only (see loadDashToday above). */
 function loadHistoryDate(dateStr, opts) {
   const silent = !!(opts && opts.silent);
-  const dateChanged = dateStr !== historyDate;
+  const modeChanged = !!(opts && opts.modeChanged);
+  const dateChanged = dateStr !== historyDate || modeChanged;
+  const mode = historyDateMode;
   historyDate = dateStr;
   if (dateChanged) {
     historySelectedUnitBucket = null; // belonged to the old date's shift/product breakdown, which may no longer exist
     historyPrintedOrders = [];
     historyCompletedOrders = [];
+    historyDueOrders = [];
     renderHistoryView();
   }
   // One combined call instead of two separate getOrdersForDate requests -
@@ -3736,10 +3835,18 @@ function loadHistoryDate(dateStr, opts) {
   // reasoning as the heavier Admin operations use below) gives the
   // remaining single scan real room even on a slow/cold Apps Script run,
   // instead of racing our own clock.
-  apiGet('getDashHistory', { date: dateStr }, { silent: silent, timeoutMs: 45000 }).then(res => {
-    if (historyDate !== dateStr) return; // user picked a different date while this was loading
-    historyPrintedOrders = res.printed.orders;
-    historyCompletedOrders = res.completed.orders;
+  // mode is passed through to getDashHistory_ (see Code.gs) so the same
+  // date+search-toggle combination Shane picked is what's actually fetched -
+  // 'completed' (the original Printed/Completed-today view) or 'delivery'
+  // (any-status orders scheduled to deliver on this date).
+  apiGet('getDashHistory', { date: dateStr, mode: mode }, { silent: silent, timeoutMs: 45000 }).then(res => {
+    if (historyDate !== dateStr || historyDateMode !== mode) return; // user picked a different date or toggled mode while this was loading
+    if (mode === 'delivery') {
+      historyDueOrders = res.due.orders;
+    } else {
+      historyPrintedOrders = res.printed.orders;
+      historyCompletedOrders = res.completed.orders;
+    }
     renderHistoryView();
   }).catch(err => { if (dateChanged) alert(err.message); else console.error(err); });
 }
