@@ -2855,6 +2855,15 @@ function assignOrderTo(orderId, packerName, tileBtn) {
   }).catch(err => {
     alert(err.message);
     loadBoard(false);
+    // Belt-and-suspenders alongside the same-packer no-op fix in Code.gs's
+    // assignOrder_: an assign call can still fail here for a real reason
+    // (e.g. someone else genuinely assigned it to a different packer first),
+    // but it can also fail on a request that actually landed successfully on
+    // an earlier, slower attempt (see assignOrder_'s comment on the
+    // already-assigned guard) - either way, refresh Printed-today so a
+    // successful-but-errored-looking assign doesn't look like it silently
+    // vanished instead of showing up where it actually is.
+    if (printedDate === todayDateStr()) loadPrintedHistory(todayDateStr(), { silent: true });
     closeAssignModal();
   });
 }
