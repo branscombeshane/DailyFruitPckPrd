@@ -2225,7 +2225,15 @@ function printProductionSlipForOrder(order) {
   document.getElementById('slip-type-label').textContent = 'Production Job Slip';
   document.getElementById('slip-ref').textContent = order.sageRef;
   document.getElementById('slip-created').textContent = 'Order in: ' + fmtTime(order.createdAt);
-  document.getElementById('slip-delivery-row').classList.add('hidden');
+  // Shane reported the Production Job Slip never showing a delivery date -
+  // this row was unconditionally hidden here and never populated at all,
+  // unlike the Packing slip's identical row just below (printSlipForOrder),
+  // which correctly shows/hides based on whether the order actually has one.
+  // Production needs to know the delivery date just as much as Packing does
+  // (it's what "Scheduled to process X - Deliver Y" in the order-detail
+  // modal is built from too), so match that same behaviour here.
+  document.getElementById('slip-delivery-row').classList.toggle('hidden', !order.deliveryDate);
+  document.getElementById('slip-delivery').textContent = order.deliveryDate ? fmtDateLong(order.deliveryDate) : '';
   document.getElementById('slip-customer').textContent = order.customerName || '';
   setSlipNotes_(order);
   document.getElementById('slip-assigned-row').classList.add('hidden');
