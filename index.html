@@ -1160,14 +1160,44 @@ function isTransientFetchError_(err) {
   if (err instanceof SyntaxError) return true; // Google sent back an HTML error page instead of JSON
   return false;
 }
+// Shane reported Admin > Packers as "glitchy" - timeouts and errors while
+// setting packers up. Two real, separate problems in here once traced
+// through: (1) only ONE automatic retry meant a single flaky Apps Script
+// response (this backend's latency is genuinely variable - see the Cloud
+// Run discussion) was enough to surface an error even though trying again
+// moments later would very likely have just worked, same as the board's own
+// poll already proves. Bumped to two retries (three attempts total) - still
+// only on the transient failure types below, never on a real application
+// error, and each retry is cheap (1s delay) next to how long the failing
+// attempt itself already took. (2) When every attempt did fail, the raw
+// browser-level error text leaked straight through to whatever `alert(...)`
+// call site was waiting on the promise - e.g. Chrome's own wording for our
+// client-side timeout literally reads "signal is aborted without reason",
+// which is exactly what Shane saw and had no way to interpret. See
+// rethrowFriendly_ below, which every apiGet_/apiPost caller now goes
+// through, for the fix to that half.
 function fetchJsonWithRetry_(url, options, timeoutMs, attempt) {
   attempt = attempt || 1;
   return fetchWithTimeout_(url, options, timeoutMs).then(r => r.json()).catch(err => {
-    if (attempt < 2 && isTransientFetchError_(err)) {
+    if (attempt < 3 && isTransientFetchError_(err)) {
       return new Promise(resolve => setTimeout(resolve, 1000)).then(() => fetchJsonWithRetry_(url, options, timeoutMs, attempt + 1));
     }
     throw err;
   });
+}
+// Runs after every retry attempt in fetchJsonWithRetry_ is exhausted - a
+// transient failure (client-side timeout, dropped connection, Google
+// returning an HTML error page instead of JSON) gets reworded into
+// something a non-technical person setting up packers on the factory floor
+// can actually act on, instead of a raw browser/JS error string. A
+// well-formed application error (wrong PIN, "Packer not found", etc - a
+// plain Error thrown by handleApiResponse from a real ok:false response) is
+// NOT transient, so it passes through completely untouched.
+function rethrowFriendly_(err) {
+  if (isTransientFetchError_(err)) {
+    throw new Error('Could not reach the server - please check your connection and try again.');
+  }
+  throw err;
 }
 // `opts.silent` skips the loading indicator - used by the background board
 // poll (loadBoard) and other automatic/background refreshes, which already
@@ -1193,7 +1223,7 @@ function apiGet(action, params, opts) {
   url.searchParams.set('userPin', userPin);
   url.searchParams.set('userShift', userShift);
   Object.keys(params || {}).forEach(k => url.searchParams.set(k, params[k]));
-  const req = fetchJsonWithRetry_(url.toString(), undefined, opts && opts.timeoutMs).then(handleApiResponse);
+  const req = fetchJsonWithRetry_(url.toString(), undefined, opts && opts.timeoutMs).then(handleApiResponse).catch(rethrowFriendly_);
   return silent ? req : req.finally(endApiLoading_);
 }
 function apiPost(action, payload, opts) {
@@ -1202,7 +1232,7 @@ function apiPost(action, payload, opts) {
     method: 'POST',
     headers: { 'Content-Type': 'text/plain;charset=utf-8' },
     body: JSON.stringify(Object.assign({ action: action, userName: userName, userPin: userPin, userShift: userShift }, payload || {}))
-  }, opts && opts.timeoutMs).then(handleApiResponse).finally(endApiLoading_);
+  }, opts && opts.timeoutMs).then(handleApiResponse).catch(rethrowFriendly_).finally(endApiLoading_);
 }
 // These three exact messages are the only ones authenticateUser_ (Code.gs)
 // throws for a bad login - if a normal (already-logged-in) request comes
