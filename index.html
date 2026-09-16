@@ -183,6 +183,10 @@
   .item-desc{font-weight:600;}
   .item-desc.is-production{color:var(--muted);font-weight:500;}
   .item-qty{white-space:nowrap;color:var(--muted);font-variant-numeric:tabular-nums;}
+  .item-qty-done{color:var(--ink);font-weight:600;}
+  .partial-qty-input{width:70px;padding:6px 8px;border:2px solid var(--line);border-radius:8px;font-size:14px;text-align:right;}
+  .partial-remaining-note{color:var(--muted);font-size:12px;white-space:nowrap;}
+  .prod-progress-note{font-size:12px;color:var(--warn);font-weight:600;margin-top:2px;}
   .dept-tag{
     font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;
     padding:1px 6px;border-radius:4px;margin-left:6px;vertical-align:middle;
@@ -751,6 +755,20 @@
     </div>
     <div class="modal-actions">
       <button class="btn-cancel" id="kitchen-manager-cancel-btn" style="flex:1;">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============ PARTIAL PROGRESS MODAL (production - log part of a line done) ============ -->
+<div class="modal-overlay hidden" id="partial-progress-modal">
+  <div class="modal-box">
+    <h2 id="partial-progress-modal-ref"></h2>
+    <div class="modal-sub" id="partial-progress-modal-customer"></div>
+    <div class="modal-sub" style="margin:12px 0 4px;">Enter how much of each line was just finished - the rest carries over for the next shift.</div>
+    <ul class="item-list" id="partial-progress-modal-items"></ul>
+    <div class="modal-actions">
+      <button class="btn-cancel" id="partial-progress-cancel-btn" style="flex:1;">Cancel</button>
+      <button class="btn-primary" id="partial-progress-submit-btn" style="flex:1;">Log progress</button>
     </div>
   </div>
 </div>
@@ -1599,11 +1617,34 @@ function itemListHtml(items, primaryDept) {
     const tagLabel = it.needsReview ? (it.department + '?') : it.department;
     const tagClass = it.needsReview ? 'unclassified' : deptClass;
     const tagTitle = it.needsReview ? 'title="Unrecognised product code — defaulted, needs classifying in Admin > Products"' : '';
+    // A Production line with SOME (but not all) of its qty logged so far -
+    // see logProductionPartial_ in Code.gs - shows "200 / 400 kg" instead of
+    // just "400 kg" so the remaining amount is obvious at a glance.
+    const done = Number(it.qtyCompleted) || 0;
+    const isPartial = it.department === 'Production' && done > 0 && done < Number(it.qty);
+    const qtyHtml = isPartial
+      ? `<span class="item-qty-done">${escapeHtml(String(done))}</span> / ${escapeHtml(String(it.qty))} ${escapeHtml(it.unit || '')}`
+      : `${escapeHtml(String(it.qty))} ${escapeHtml(it.unit || '')}`;
     return `<li>
       <span class="item-desc ${descClass}">${escapeHtml(it.description)}<span class="dept-tag ${tagClass}" ${tagTitle}>${tagLabel}</span></span>
-      <span class="item-qty">${escapeHtml(String(it.qty))} ${escapeHtml(it.unit || '')}</span>
+      <span class="item-qty">${qtyHtml}</span>
     </li>`;
   }).join('');
+}
+
+// Shared by Production's needs-processing cards - a compact "X of Y line(s)
+// have progress logged" style note when any Production item on the order has
+// SOME (but not all) of its qty done - see logProductionPartial_ in Code.gs.
+// Returns '' when nothing's partially done, so it costs nothing on the (much
+// more common) order that hasn't had any progress logged yet.
+function productionProgressHtml(o) {
+  const partials = (o.items || []).filter(it => {
+    const done = Number(it.qtyCompleted) || 0;
+    return it.department === 'Production' && done > 0 && done < Number(it.qty);
+  });
+  if (!partials.length) return '';
+  const detail = partials.map(it => `${escapeHtml(it.description)}: ${escapeHtml(String(it.qtyCompleted))}/${escapeHtml(String(it.qty))}${it.unit ? ' ' + escapeHtml(it.unit) : ''}`).join(', ');
+  return `<div class="prod-progress-note">🔄 In progress — ${detail}</div>`;
 }
 
 // A one-line stand-in for the full item list, used on board cards (tap the
@@ -2094,11 +2135,15 @@ function renderProductionBoard() {
         <div class="age-badge">${fmtAge(age)}</div>
       </div>
       ${itemSummaryHtml(o.items, 'Production')}
+      ${productionProgressHtml(o)}
       <div class="prod-actions">
         <button class="btn-secondary" data-prod-print-slip="${o.orderId}">🖨 Slip</button>
         <button class="btn-secondary" data-prod-print-labels="${o.orderId}">🏷 Labels</button>
       </div>
-      <button class="btn-primary" style="width:100%;margin-top:8px;" data-prod-complete="${o.orderId}">Complete</button>
+      <div class="prod-actions" style="margin-top:8px;">
+        <button class="btn-secondary" data-prod-partial="${o.orderId}">📝 Log progress</button>
+        <button class="btn-primary" data-prod-complete="${o.orderId}">Complete</button>
+      </div>
     </div>`;
   }).join('');
 
@@ -2176,6 +2221,15 @@ function attachProductionCardHandlers() {
       const order = findProductionOrder(orderId);
       if (!order) return;
       openKitchenManagerModal(order);
+    };
+  });
+  document.querySelectorAll('[data-prod-partial]').forEach(btn => {
+    btn.onclick = (e) => {
+      e.stopPropagation();
+      const orderId = btn.getAttribute('data-prod-partial');
+      const order = findProductionOrder(orderId);
+      if (!order) return;
+      openPartialProgressModal(order);
     };
   });
   document.querySelectorAll('[data-prod-incomplete]').forEach(btn => {
@@ -2769,6 +2823,7 @@ function dashDetailCardHtml(o, statKey) {
         <div class="age-badge">${fmtAge(o._age)}</div>
       </div>
       ${itemSummaryHtml(o.items, statKey === 'prodNeeds' ? 'Production' : 'Packing')}
+      ${statKey === 'prodNeeds' ? productionProgressHtml(o) : ''}
       ${statKey === 'prodNeeds' ? productionPrintNotesHtml(o) : ''}
     </div>`;
   }
@@ -2877,20 +2932,23 @@ function assignOrderTo(orderId, packerName, tileBtn) {
 }
 
 /* ===================== KITCHEN MANAGER MODAL ===================== */
-// Shared by both "Complete" and "↩ Not complete" on the Production board -
-// same tap-tile picker either way, since a shared device/shift login can't
-// say who actually tapped it, and Shane wants to know who reverts an order,
-// not just who completes it. `mode` ('complete' or 'incomplete') only
-// changes the prompt text and which action fires on a tile tap.
+// Shared by "Complete", "↩ Not complete" AND (see openPartialProgressModal
+// below) "📝 Log progress" on the Production board - same tap-tile picker
+// every time, since a shared device/shift login can't say who actually
+// tapped it, and Shane wants to know who reverts (or partially advances) an
+// order, not just who completes it. `mode` ('complete', 'incomplete' or
+// 'partial') only changes the prompt text and which action fires on a tile tap.
 let pendingKitchenManagerOrderId = null;
 let kitchenManagerModalMode = 'complete';
 function openKitchenManagerModal(order, mode) {
-  kitchenManagerModalMode = mode === 'incomplete' ? 'incomplete' : 'complete';
+  kitchenManagerModalMode = mode === 'incomplete' || mode === 'partial' ? mode : 'complete';
   pendingKitchenManagerOrderId = order.orderId;
   document.getElementById('kitchen-manager-modal-ref').textContent = order.sageRef;
   document.getElementById('kitchen-manager-modal-customer').textContent = order.customerName || '';
   document.getElementById('kitchen-manager-modal-prompt').textContent =
-    kitchenManagerModalMode === 'incomplete' ? "Who's marking this NOT complete?" : "Who's marking this complete?";
+    kitchenManagerModalMode === 'incomplete' ? "Who's marking this NOT complete?"
+      : kitchenManagerModalMode === 'partial' ? "Who's logging this progress?"
+      : "Who's marking this complete?";
   document.getElementById('kitchen-manager-modal-incomplete-note').classList.toggle('hidden', kitchenManagerModalMode !== 'incomplete');
 
   const grid = document.getElementById('kitchen-manager-modal-grid');
@@ -2904,7 +2962,9 @@ function openKitchenManagerModal(order, mode) {
     btn.textContent = name;
     btn.onclick = () => kitchenManagerModalMode === 'incomplete'
       ? markIncompleteAs(order.orderId, name, btn)
-      : completeProductionAs(order.orderId, name, btn);
+      : kitchenManagerModalMode === 'partial'
+        ? logProductionPartialAs(order.orderId, name, btn)
+        : completeProductionAs(order.orderId, name, btn);
     grid.appendChild(btn);
   });
 
@@ -2939,6 +2999,90 @@ function markIncompleteAs(orderId, kitchenManagerName, tileBtn) {
     loadBoard(false);
     closeKitchenManagerModal();
   });
+}
+function logProductionPartialAs(orderId, kitchenManagerName, tileBtn) {
+  if (pendingKitchenManagerOrderId !== orderId) return; // modal already closed/changed
+  if (!pendingPartialItemUpdates.length) { closeKitchenManagerModal(); return; } // shouldn't happen - submit already guards this
+  document.querySelectorAll('#kitchen-manager-modal-grid .packer-tile').forEach(b => b.disabled = true);
+  apiPost('logProductionPartial', { orderId: orderId, itemUpdates: pendingPartialItemUpdates, kitchenManagerName: kitchenManagerName }).then(() => {
+    closeKitchenManagerModal();
+    loadBoard(false);
+    // Same follow-up refresh completeProductionAs does - if this submission
+    // happened to finish the LAST outstanding Production line, the order is
+    // now fully complete (see logProductionPartial_ in Code.gs) and needs to
+    // show up in "Completed today" right away rather than waiting for that
+    // list's own slower poll.
+    if (prodCompletedDate === todayDateStr()) loadProdCompletedHistory(todayDateStr(), { silent: true });
+  }).catch(err => {
+    alert(err.message);
+    loadBoard(false);
+    closeKitchenManagerModal();
+  });
+}
+
+/* ===================== PARTIAL PROGRESS MODAL ===================== */
+// Lets a shift log how much of an order's Production line(s) they actually
+// got through, for the case where it's less than the full amount - see
+// logProductionPartial_ in Code.gs ("night shift did 200 of 400kg, day shift
+// finishes the rest"). Two-step flow: this modal collects the quantities,
+// then on submit reuses the Kitchen Manager tap-tile picker above
+// (openKitchenManagerModal(order, 'partial')) to attribute who logged it -
+// same accountability model as Complete/Not complete, just carrying this
+// modal's quantities through to the actual API call once a name's picked.
+let pendingPartialOrderId = null;
+let pendingPartialItemUpdates = [];
+function openPartialProgressModal(order) {
+  pendingPartialOrderId = order.orderId;
+  document.getElementById('partial-progress-modal-ref').textContent = order.sageRef;
+  document.getElementById('partial-progress-modal-customer').textContent = order.customerName || '';
+
+  // Only lines that aren't already fully done have anything left to log -
+  // an order sitting in "Needs processing" should always have at least one
+  // (logProductionPartial_ auto-completes the order, dropping it out of this
+  // list entirely, the moment every Production line reaches its full qty).
+  const notDone = (order.items || []).filter(it => it.department === 'Production' && (Number(it.qtyCompleted) || 0) < Number(it.qty));
+  const itemsEl = document.getElementById('partial-progress-modal-items');
+  if (!notDone.length) {
+    itemsEl.innerHTML = '<li style="border-bottom:none;">Nothing left to log - every Production line on this order is already fully done.</li>';
+  } else {
+    itemsEl.innerHTML = notDone.map(it => {
+      const done = Number(it.qtyCompleted) || 0;
+      const remaining = Number(it.qty) - done;
+      const doneNote = done > 0 ? `${escapeHtml(String(done))} of ${escapeHtml(String(it.qty))} done — ` : '';
+      return `<li style="align-items:flex-start;">
+        <span class="item-desc">${escapeHtml(it.description)}<br><span class="partial-remaining-note">${doneNote}${escapeHtml(String(remaining))} ${escapeHtml(it.unit || '')} remaining</span></span>
+        <input type="number" class="partial-qty-input" data-partial-line="${escapeHtml(String(it.lineNo))}" min="0" max="${remaining}" step="any" placeholder="0">
+      </li>`;
+    }).join('');
+  }
+
+  document.getElementById('partial-progress-modal').classList.remove('hidden');
+}
+function closePartialProgressModal() {
+  pendingPartialOrderId = null;
+  pendingPartialItemUpdates = [];
+  document.getElementById('partial-progress-modal').classList.add('hidden');
+}
+function submitPartialProgress() {
+  const orderId = pendingPartialOrderId;
+  const order = findProductionOrder(orderId);
+  if (!order) { closePartialProgressModal(); return; }
+
+  const updates = [];
+  document.querySelectorAll('#partial-progress-modal-items [data-partial-line]').forEach(input => {
+    const qty = Number(input.value);
+    if (qty > 0) updates.push({ lineNo: input.getAttribute('data-partial-line'), qty: qty });
+  });
+  if (!updates.length) { alert('Enter at least one quantity completed.'); return; }
+
+  // Hand off to the Kitchen Manager picker - pendingPartialOrderId stays set
+  // (not cleared) so logProductionPartialAs can still find it via the same
+  // findProductionOrder(orderId) lookup if needed, and so a stray re-open of
+  // this modal for the SAME order before the picker resolves doesn't lose
+  // track of which order these quantities belong to.
+  pendingPartialItemUpdates = updates;
+  document.getElementById('partial-progress-modal').classList.add('hidden');
+  openKitchenManagerModal(order, 'partial');
 }
 
 /* ===================== VIEW MODAL ===================== */
@@ -3609,6 +3753,8 @@ function wireStaticEvents() {
   document.getElementById('assign-cancel-btn').onclick = closeAssignModal;
   document.getElementById('kitchen-manager-cancel-btn').onclick = closeKitchenManagerModal;
   document.getElementById('view-close-btn').onclick = closeViewModal;
+  document.getElementById('partial-progress-cancel-btn').onclick = closePartialProgressModal;
+  document.getElementById('partial-progress-submit-btn').onclick = submitPartialProgress;
 
   document.getElementById('order-search').addEventListener('input', (e) => {
     orderSearchQuery = e.target.value;
