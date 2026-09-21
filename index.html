@@ -798,6 +798,7 @@
     <button class="admin-tab" data-tab="products">Products</button>
     <button class="admin-tab" data-tab="shifts">Shifts</button>
     <button class="admin-tab" data-tab="customer-shelf-life">Customer Shelf Life</button>
+    <button class="admin-tab" data-tab="label-batch-size">Label Batch Size</button>
     <button class="admin-tab" data-tab="packers">Packers</button>
     <button class="admin-tab" data-tab="kitchen-managers">Kitchen Managers</button>
     <button class="admin-tab" data-tab="users">Users</button>
@@ -875,6 +876,34 @@
       <input type="number" id="new-customer-shelf-life-days" min="1" step="1" placeholder="e.g. 3">
     </div>
     <button class="btn-primary" id="add-customer-shelf-life-btn">Add override</button>
+  </div>
+
+  <!-- Shane's request (2026-09-18): a specific customer can want a specific
+       product packed onto labels in smaller batches than the usual multiples
+       of 10 (e.g. batches of 1 or 5) - this is a per-customer-AND-product
+       rule, so unlike Customer Shelf Life above the key here is a PAIR
+       (customer + product), not just the customer. Everything not listed
+       here still prints in the normal batches of 10, automatically - no
+       change to the order tiles themselves, per Shane's own worry about
+       tile clutter. -->
+  <div class="admin-panel hidden" id="tab-label-batch-size">
+    <h3>Label Batch Size</h3>
+    <p style="color:var(--muted);font-size:14px;">Every Production label normally batches a line item in multiples of 10 (e.g. a 95kg line prints nine 10kg labels plus one 5kg remainder label). Add an override here only for a customer + product combination that's specifically asked for a different batch size - everything else keeps using the normal batches of 10.</p>
+    <div id="label-batch-size-admin-list"></div>
+    <div class="field" style="margin-top:16px;">
+      <label>Add an override</label>
+      <input type="text" id="new-label-batch-size-customer" placeholder="Customer name, exactly as it appears on Sage orders">
+    </div>
+    <div class="field">
+      <label>Product</label>
+      <input type="text" id="new-label-batch-size-product" list="label-batch-size-product-options" placeholder="Start typing a product description">
+      <datalist id="label-batch-size-product-options"></datalist>
+    </div>
+    <div class="field">
+      <label>Batch size</label>
+      <input type="number" id="new-label-batch-size-size" min="1" step="1" placeholder="e.g. 1 or 5">
+    </div>
+    <button class="btn-primary" id="add-label-batch-size-btn">Add override</button>
   </div>
 
   <div class="admin-panel hidden" id="tab-packers">
@@ -1698,9 +1727,24 @@ function orderNotesLine(o) {
 }
 
 let orderSearchQuery = '';
+// BUG FIX 2026-09-21 (Shane: typing a search in Data History gets wiped out
+// a few seconds later by "the full batch of orders" reappearing): this used
+// to query .order-card[data-search] with NO scoping, i.e. every order card
+// on the ENTIRE page, not just the Packing/Production board this search box
+// belongs to. renderBoard()/renderProductionBoard() call this after EVERY
+// poll (loadBoard() runs on a 3-5s timer regardless of which tab is on
+// screen), so even while Shane was sitting on the Data History tab with a
+// search typed into ITS OWN box (#history-search/historySearchQuery/
+// applyHistorySearchFilter, correctly scoped to #history-view), the
+// Packing/Production board kept quietly polling in the background every few
+// seconds - and each time, this function ran with orderSearchQuery empty
+// (nothing typed into the BOARD's search box) and cleared search-hidden off
+// EVERY card it could see, including History's, undoing his filter almost
+// as soon as he typed it. Scoped to just the two board views it's actually
+// meant for so it can never touch History's (or Dashboard's) cards again.
 function applySearchFilter() {
   const q = orderSearchQuery.trim().toLowerCase();
-  document.querySelectorAll('.order-card[data-search]').forEach(card => {
+  document.querySelectorAll('#board-view .order-card[data-search], #production-view .order-card[data-search]').forEach(card => {
     const match = !q || card.getAttribute('data-search').includes(q);
     card.classList.toggle('search-hidden', !match);
   });
@@ -2325,14 +2369,32 @@ const LABEL_LOGO_HTML = '<img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgA
 // business rule Shane gave, not (yet) something Settings exposes - easy to
 // promote to a Setting later if it needs to change or vary.
 const LABEL_BATCH_SIZE = 10;
-function computeLabelChunks(qty) {
+// batchSize defaults to the normal LABEL_BATCH_SIZE (10) but can be overridden
+// per customer+product (Shane's request, 2026-09-18 - Admin > Label Batch
+// Size) - see labelBatchSizeForItem below, which is what actually resolves
+// the override before calling this.
+function computeLabelChunks(qty, batchSize) {
   const q = Number(qty) || 0;
+  const b = Number(batchSize) || LABEL_BATCH_SIZE;
   const chunks = [];
-  const fullCount = Math.floor(q / LABEL_BATCH_SIZE + 1e-9); // tolerate float rounding (e.g. 29.999999)
-  for (let i = 0; i < fullCount; i++) chunks.push(LABEL_BATCH_SIZE);
-  const remainder = Math.round((q - fullCount * LABEL_BATCH_SIZE) * 100) / 100;
+  const fullCount = Math.floor(q / b + 1e-9); // tolerate float rounding (e.g. 29.999999)
+  for (let i = 0; i < fullCount; i++) chunks.push(b);
+  const remainder = Math.round((q - fullCount * b) * 100) / 100;
   if (remainder > 0) chunks.push(remainder);
   return chunks;
+}
+
+// Per-customer-AND-product override of how many units go on one Production
+// label (Admin > Label Batch Size) - matched the same way as
+// shelfLifeDaysForOrder above: case-insensitively/trimmed, since Sage export
+// text is the only source of both the customer name and the item
+// description. Falls back to the normal LABEL_BATCH_SIZE (10) when no
+// override matches this exact customer+product pair.
+function labelBatchSizeForItem(order, item) {
+  const overrides = (boardData && boardData.settings.labelBatchSizeOverrides) || {};
+  const customerKey = String((order && order.customerName) || '').trim().toLowerCase();
+  const productKey = String((item && item.description) || '').trim().toLowerCase();
+  return Number(overrides[customerKey + '||' + productKey]) || LABEL_BATCH_SIZE;
 }
 
 // Fixed compliance text printed on every Production label, unchanged from
@@ -2388,7 +2450,7 @@ async function printProductionLabelsForOrder(order) {
 
   const labelsHtml = [];
   prodItems.forEach(it => {
-    computeLabelChunks(it.qty).forEach(chunkQty => {
+    computeLabelChunks(it.qty, labelBatchSizeForItem(order, it)).forEach(chunkQty => {
       labelsHtml.push(`
         <div class="label-page">
           <div class="label-logo-row">${LABEL_LOGO_HTML}</div>
@@ -3205,6 +3267,7 @@ function loadAdminData(silent) {
     allShifts = data.shifts;
     renderShiftsAdmin(data.shifts);
     renderCustomerShelfLifeAdmin(data.customerShelfLife);
+    renderLabelBatchSizeAdmin(data.labelBatchSize);
     renderPackersAdmin(data.packers);
     renderKitchenManagersAdmin(data.kitchenManagers);
     renderImportLog(data.importLog);
@@ -3340,6 +3403,56 @@ function renderCustomerShelfLifeAdmin(list) {
       if (!confirm(`Delete the shelf life override for "${name}"? They'll go back to the default shelf life. This can't be undone.`)) return;
       btn.disabled = true;
       apiPost('deleteCustomerShelfLife', { customerName: name }).then(list => renderCustomerShelfLifeAdmin(list)).catch(err => { alert(err.message); btn.disabled = false; });
+    };
+  });
+}
+
+// Same override-list pattern as renderCustomerShelfLifeAdmin above, but the
+// identity is a (customer, product) PAIR - see LABEL_BATCH_SIZE_HEADERS'
+// comment in Code.gs for why. Every API call below sends both
+// customerName and productDescription so the backend can find the right row.
+function renderLabelBatchSizeAdmin(list) {
+  const box = document.getElementById('label-batch-size-admin-list');
+  if (!list.length) { box.innerHTML = '<div class="log-row">No overrides yet — every Production label prints in the normal batches of 10.</div>'; return; }
+  box.innerHTML = list.map((r, i) => `
+    <div class="packer-row" data-idx="${i}">
+      <span>${escapeHtml(r.customerName)} <span style="color:var(--muted);">— ${escapeHtml(r.productDescription)}</span></span>
+      <div style="display:flex;align-items:center;gap:10px;">
+        <input type="number" class="label-batch-size-input" data-idx="${i}" value="${r.batchSize}" min="1" step="1" style="width:60px;">
+        <span style="color:var(--muted);font-size:13px;">per label</span>
+        <button class="toggle ${r.active ? 'on' : ''}" data-idx="${i}" data-active="${r.active}"><span class="knob"></span></button>
+        <button class="icon-btn" style="background:#f3d6d6;color:#a11;width:32px;height:32px;font-size:14px;" data-delete-idx="${i}" title="Delete override">✕</button>
+      </div>
+    </div>`).join('');
+  // The customer/product pair for a row can contain characters that don't
+  // round-trip cleanly through an HTML data-attribute, so look each row's
+  // identity up from the same `list` array by index rather than encoding it
+  // into the DOM.
+  box.querySelectorAll('.label-batch-size-input').forEach(input => {
+    const commit = () => {
+      const r = list[Number(input.getAttribute('data-idx'))];
+      const batchSize = Number(input.value);
+      if (!batchSize || batchSize < 1) { alert('Batch size must be a positive number.'); return; }
+      input.disabled = true;
+      apiPost('setLabelBatchSizeSize', { customerName: r.customerName, productDescription: r.productDescription, batchSize: batchSize }).then(list => renderLabelBatchSizeAdmin(list)).catch(err => { alert(err.message); input.disabled = false; });
+    };
+    input.addEventListener('blur', commit);
+    input.addEventListener('keydown', e => { if (e.key === 'Enter') input.blur(); });
+  });
+  box.querySelectorAll('.toggle').forEach(btn => {
+    btn.onclick = () => {
+      const r = list[Number(btn.getAttribute('data-idx'))];
+      const nowActive = btn.getAttribute('data-active') !== 'true';
+      btn.disabled = true;
+      apiPost('setLabelBatchSizeActive', { customerName: r.customerName, productDescription: r.productDescription, active: nowActive }).then(list => renderLabelBatchSizeAdmin(list)).catch(err => { alert(err.message); btn.disabled = false; });
+    };
+  });
+  box.querySelectorAll('[data-delete-idx]').forEach(btn => {
+    btn.onclick = () => {
+      const r = list[Number(btn.getAttribute('data-delete-idx'))];
+      if (!confirm(`Delete the label batch size override for "${r.customerName}" / "${r.productDescription}"? Its labels will go back to the normal batches of 10. This can't be undone.`)) return;
+      btn.disabled = true;
+      apiPost('deleteLabelBatchSize', { customerName: r.customerName, productDescription: r.productDescription }).then(list => renderLabelBatchSizeAdmin(list)).catch(err => { alert(err.message); btn.disabled = false; });
     };
   });
 }
@@ -3572,6 +3685,19 @@ function renderProductsList(products) {
   allProducts = products;
   document.getElementById('products-count').textContent = products.length;
   renderProductsListFiltered();
+  // Feed the Label Batch Size admin tab's product datalist (index.html,
+  // #tab-label-batch-size) - lets Shane pick from real product descriptions
+  // instead of free-typing one that has to match exactly (matching is
+  // case-insensitive/trimmed but not fuzzy). Duplicate descriptions across
+  // products are harmless in a <datalist>.
+  const labelBatchProductOptions = document.getElementById('label-batch-size-product-options');
+  if (labelBatchProductOptions) {
+    labelBatchProductOptions.innerHTML = allProducts
+      .map(p => p.description)
+      .filter(Boolean)
+      .map(d => '<option value="' + escapeHtml(d) + '"></option>')
+      .join('');
+  }
 }
 
 function renderProductsListFiltered() {
@@ -3782,7 +3908,7 @@ function wireStaticEvents() {
     tab.onclick = () => {
       document.querySelectorAll('.admin-tab').forEach(t => t.classList.remove('active'));
       tab.classList.add('active');
-      ['import', 'products', 'shifts', 'customer-shelf-life', 'packers', 'kitchen-managers', 'users', 'settings'].forEach(name => {
+      ['import', 'products', 'shifts', 'customer-shelf-life', 'label-batch-size', 'packers', 'kitchen-managers', 'users', 'settings'].forEach(name => {
         document.getElementById('tab-' + name).classList.toggle('hidden', name !== tab.getAttribute('data-tab'));
       });
     };
@@ -3854,6 +3980,29 @@ function wireStaticEvents() {
       nameInput.value = '';
       daysInput.value = '';
       renderCustomerShelfLifeAdmin(list);
+    }).catch(err => alert(err.message)).finally(() => {
+      btn.disabled = false;
+      btn.textContent = 'Add override';
+    });
+  };
+
+  document.getElementById('add-label-batch-size-btn').onclick = () => {
+    const customerInput = document.getElementById('new-label-batch-size-customer');
+    const productInput = document.getElementById('new-label-batch-size-product');
+    const sizeInput = document.getElementById('new-label-batch-size-size');
+    const customerName = customerInput.value.trim();
+    const productDescription = productInput.value.trim();
+    const batchSize = Number(sizeInput.value);
+    if (!customerName || !productDescription) return;
+    if (!batchSize || batchSize < 1) { alert('Batch size must be a positive number.'); return; }
+    const btn = document.getElementById('add-label-batch-size-btn');
+    btn.disabled = true;
+    btn.textContent = 'Adding…';
+    apiPost('addLabelBatchSize', { customerName: customerName, productDescription: productDescription, batchSize: batchSize }).then(list => {
+      customerInput.value = '';
+      productInput.value = '';
+      sizeInput.value = '';
+      renderLabelBatchSizeAdmin(list);
     }).catch(err => alert(err.message)).finally(() => {
       btn.disabled = false;
       btn.textContent = 'Add override';
