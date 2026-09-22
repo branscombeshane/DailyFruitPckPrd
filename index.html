@@ -3267,7 +3267,26 @@ function loadAdminData(silent) {
     allShifts = data.shifts;
     renderShiftsAdmin(data.shifts);
     renderCustomerShelfLifeAdmin(data.customerShelfLife);
-    renderLabelBatchSizeAdmin(data.labelBatchSize);
+    // BUG FIX 2026-09-22 (Shane: "Cannot read properties of undefined
+    // (reading 'length')" popping up the instant Admin opens): this used to
+    // pass data.labelBatchSize straight through. That's undefined whenever
+    // the LIVE Apps Script deployment is still running an older Code.gs that
+    // predates the Label Batch Size feature (index.html on GitHub Pages
+    // updates the moment it's pushed, but Code.gs only takes effect on the
+    // live Web App once a NEW deployment VERSION is pushed from the Apps
+    // Script editor - the classic mismatched-deploy gotcha elsewhere in this
+    // codebase's own comments) - the old getAdminData_ response simply has
+    // no labelBatchSize key at all. renderLabelBatchSizeAdmin(undefined)
+    // then threw immediately on list.length, which stopped this whole
+    // .then() callback dead - EVERY render call after this line (Packers,
+    // Kitchen Managers, Import Log, Needs Review, Products, Users, and every
+    // Settings field) silently never ran, since a thrown error mid-callback
+    // skips everything after it. Falling back to [] here matches how
+    // sheetToObjects_ already degrades a missing SHEET to an empty list on
+    // the backend - this does the same for a missing RESPONSE FIELD on the
+    // frontend, so an old-deployment mismatch just shows "no overrides yet"
+    // instead of breaking the entire Admin panel.
+    renderLabelBatchSizeAdmin(data.labelBatchSize || []);
     renderPackersAdmin(data.packers);
     renderKitchenManagersAdmin(data.kitchenManagers);
     renderImportLog(data.importLog);
