@@ -3353,7 +3353,19 @@ function wireShiftChips_(list, apiAction, rerender) {
   });
 }
 
+// BUG FIX 2026-09-25 (Shane: "packers.map is not a function" crashing the
+// whole Admin panel): every render*Admin(list) function below used to
+// assume its argument was always an array - true for every NORMAL response,
+// but a malformed/rate-limited response from Apps Script (still valid JSON,
+// just not the shape this call expected) would throw immediately on
+// .length/.map and, because these calls chain inside one callback
+// (loadAdminData, or a shift-chip/toggle/delete handler), take down every
+// render call after it too - not just its own tab. Falling back to []
+// mirrors how sheetToObjects_ already degrades a missing SHEET to an empty
+// list on the backend; this does the same here for a malformed RESPONSE, so
+// a bad round-trip shows "nothing here yet" instead of crashing the panel.
 function renderShiftsAdmin(shifts) {
+  shifts = Array.isArray(shifts) ? shifts : [];
   const list = document.getElementById('shifts-admin-list');
   if (!shifts.length) { list.innerHTML = '<div class="log-row">No shifts defined yet - add one below.</div>'; return; }
   list.innerHTML = shifts.map(s => `
@@ -3383,6 +3395,7 @@ function renderShiftsAdmin(shifts) {
 }
 
 function renderCustomerShelfLifeAdmin(list) {
+  list = Array.isArray(list) ? list : []; // see the BUG FIX comment on renderShiftsAdmin above
   const box = document.getElementById('customer-shelf-life-admin-list');
   if (!list.length) { box.innerHTML = '<div class="log-row">No customer overrides yet — everyone uses the default shelf life below.</div>'; return; }
   box.innerHTML = list.map(c => `
@@ -3431,6 +3444,7 @@ function renderCustomerShelfLifeAdmin(list) {
 // comment in Code.gs for why. Every API call below sends both
 // customerName and productDescription so the backend can find the right row.
 function renderLabelBatchSizeAdmin(list) {
+  list = Array.isArray(list) ? list : []; // see the BUG FIX comment on renderShiftsAdmin above
   const box = document.getElementById('label-batch-size-admin-list');
   if (!list.length) { box.innerHTML = '<div class="log-row">No overrides yet — every Production label prints in the normal batches of 10.</div>'; return; }
   box.innerHTML = list.map((r, i) => `
@@ -3477,6 +3491,7 @@ function renderLabelBatchSizeAdmin(list) {
 }
 
 function renderPackersAdmin(packers) {
+  packers = Array.isArray(packers) ? packers : []; // see the BUG FIX comment on renderShiftsAdmin above - this was the exact function Shane's screenshot crashed in
   const list = document.getElementById('packers-admin-list');
   list.innerHTML = packers.map(p => `
     <div class="packer-row" style="flex-direction:column;align-items:stretch;gap:8px;">
@@ -3515,6 +3530,7 @@ function renderPackersAdmin(packers) {
 // a separate tap-tile roster (see markProductionComplete_ in Code.gs) but
 // managed the exact same way.
 function renderKitchenManagersAdmin(kitchenManagers) {
+  kitchenManagers = Array.isArray(kitchenManagers) ? kitchenManagers : []; // see the BUG FIX comment on renderShiftsAdmin above
   const list = document.getElementById('kitchen-managers-admin-list');
   list.innerHTML = kitchenManagers.map(k => `
     <div class="packer-row" style="flex-direction:column;align-items:stretch;gap:8px;">
@@ -3554,6 +3570,7 @@ function renderKitchenManagersAdmin(kitchenManagers) {
 // app at all and what they see once in - a completely separate concept, kept
 // on its own sheet/tab even though both happen to be "name lists".
 function renderUsersAdmin(users) {
+  users = Array.isArray(users) ? users : []; // see the BUG FIX comment on renderShiftsAdmin above
   const list = document.getElementById('users-admin-list');
   list.innerHTML = users.map(u => `
     <div class="user-row" data-user-row="${escapeHtml(u.name)}">
@@ -3616,6 +3633,7 @@ function renderUsersAdmin(users) {
 }
 
 function renderImportLog(log) {
+  log = Array.isArray(log) ? log : []; // see the BUG FIX comment on renderShiftsAdmin above
   const el = document.getElementById('import-log-list');
   if (!log.length) { el.innerHTML = '<div class="log-row">No imports yet.</div>'; return; }
   el.innerHTML = log.map(r => `<div class="log-row">${fmtTime(r.importedAt)} — ${r.rowCount} item(s) imported</div>`).join('');
@@ -3642,6 +3660,7 @@ function doImport() {
 
 /* ===================== PRODUCTS ===================== */
 function renderNeedsReviewList(needsReview) {
+  needsReview = Array.isArray(needsReview) ? needsReview : []; // see the BUG FIX comment on renderShiftsAdmin above
   const el = document.getElementById('needs-review-list');
   const empty = document.getElementById('needs-review-empty');
   empty.classList.toggle('hidden', needsReview.length > 0);
@@ -3701,6 +3720,7 @@ function renderNeedsReviewList(needsReview) {
 let allProducts = [];
 
 function renderProductsList(products) {
+  products = Array.isArray(products) ? products : []; // see the BUG FIX comment on renderShiftsAdmin above
   allProducts = products;
   document.getElementById('products-count').textContent = products.length;
   renderProductsListFiltered();
