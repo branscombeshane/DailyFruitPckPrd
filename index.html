@@ -2078,9 +2078,20 @@ function tallyGroupsHtml(groups) {
 
 // Splits completed Production orders out by SHIFT for the Dashboard's
 // "Production totals" (Shane's request - shift-level totals, not per-person
-// ones). Resolves each order's productionCompletedBy (a Kitchen Manager
-// name) to a shift via boardData.settings.kitchenManagerShifts, and orders
-// the resulting groups the same way Admin's Shifts list is ordered
+// ones). Prefers each order's own productionCompletedShift - the shift the
+// completing device was actually logged into at the moment (see
+// ProductionCompletedShift on ORDERS_HEADERS in Code.gs) - since that's a
+// real recorded fact, not a guess. Only falls back to resolving
+// productionCompletedBy (a Kitchen Manager name) via
+// boardData.settings.kitchenManagerShifts for orders completed before this
+// column existed, or by an unrestricted/Admin login that has no shift to
+// record - Shane's report (2026-09-28): a Kitchen Manager who works Day,
+// Night AND Sunday Day used to always land in one combined "Day, Night,
+// Sunday Day" group instead of 3 separate ones, because the old fallback
+// (deliberately combining a multi-shift person's possible shifts, since
+// which ONE they were on for any given order was unknowable) was the ONLY
+// thing this used - now it's only used when there's truly nothing better.
+// Orders the resulting groups the same way Admin's Shifts list is ordered
 // (boardData.settings.shiftNames) - any shift name that map doesn't
 // recognise (renamed/deleted since) is appended alphabetically after the
 // known ones, and orders with no resolvable shift fall into their own "no
@@ -2090,7 +2101,7 @@ function groupOrdersByShift_(orders) {
   const shiftOrder = (boardData && boardData.settings && boardData.settings.shiftNames) || [];
   const map = {};
   orders.forEach(o => {
-    const shift = shiftMap[o.productionCompletedBy || ''] || '';
+    const shift = o.productionCompletedShift || shiftMap[o.productionCompletedBy || ''] || '';
     (map[shift] = map[shift] || []).push(o);
   });
   const known = shiftOrder.filter(name => map[name]);
