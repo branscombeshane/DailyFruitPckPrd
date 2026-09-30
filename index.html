@@ -972,6 +972,11 @@
       <p style="color:var(--muted);font-size:12.5px;margin:6px 0 0;">Must match the SITE_PASSCODE constant in EmailImport.gs — this is only for that automated inbox watcher, not a personal login. It has no effect on anyone's Users sign-in.</p>
     </div>
     <div class="field">
+      <label>Import alert email</label>
+      <input type="email" id="set-import-alert-email">
+      <p style="color:var(--muted);font-size:12.5px;margin:6px 0 0;">Where EmailImport.gs's automated inbox watcher sends its heads-up emails — an order needing review, a re-imported/replaced order, one requiring a COA, or an import that failed outright. Takes effect on its next 5-minute check, no redeploy needed.</p>
+    </div>
+    <div class="field">
       <label>Keep on the live board for (days)</label>
       <input type="number" id="set-retention-days">
       <p style="color:var(--muted);font-size:12.5px;margin:6px 0 0;">Orders older than this are automatically moved into long-term history once a day, keeping the live board and Dashboard running fast — they're still fully viewable any time on the Data History page, nothing is deleted. An order that isn't fully finished yet (not printed, or a Production line not yet marked complete) is never moved no matter how old — only genuinely finished orders.</p>
@@ -3318,6 +3323,7 @@ function loadAdminData(silent) {
     document.getElementById('set-refresh').value = data.settings.BoardRefreshSeconds || 5;
     document.getElementById('set-label-shelf-days').value = data.settings.LabelShelfLifeDays || 5;
     document.getElementById('set-import-passcode').value = data.settings.ImportPasscode || '';
+    document.getElementById('set-import-alert-email').value = data.settings.ImportAlertEmail || '';
     document.getElementById('set-retention-days').value = data.settings.HistoryRetentionDays || 14;
   }).catch(err => { if (silent) console.error(err); else alert(err.message); });
 }
@@ -3876,6 +3882,7 @@ function saveSettings() {
     BoardRefreshSeconds: document.getElementById('set-refresh').value,
     LabelShelfLifeDays: document.getElementById('set-label-shelf-days').value,
     ImportPasscode: document.getElementById('set-import-passcode').value,
+    ImportAlertEmail: document.getElementById('set-import-alert-email').value,
     HistoryRetentionDays: document.getElementById('set-retention-days').value
   };
   const resultBox = document.getElementById('settings-result');
