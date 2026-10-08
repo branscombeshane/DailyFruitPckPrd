@@ -3714,8 +3714,7 @@ function renderNeedsReviewList(needsReview) {
       if (!category) { input.focus(); return; }
       btn.disabled = true;
       apiPost('classifyProduct', { productCode: code, description: desc, category: category }, { timeoutMs: 60000 }).then(res => {
-        renderNeedsReviewList(res.needsReview);
-        renderProductsList(res.products);
+        applyAdminWriteResult_(res);
         loadBoard(false);
       }).catch(err => { alert(err.message); btn.disabled = false; });
     };
@@ -3739,6 +3738,20 @@ function renderNeedsReviewList(needsReview) {
       }).catch(err => { alert(err.message); btn.disabled = false; });
     };
   });
+}
+
+// Every Admin write (classify / delete / import products / resync) answers with
+// the fresh Needs Review + Products lists, and the screen redraws from that
+// reply. If a reply ever arrives WITHOUT a products list (e.g. the live Web App
+// is still on an older Code.gs deployment than this page), redrawing from it
+// used to wipe the whole Products tab to "No products imported yet" even though
+// nothing was lost in the Sheet. A missing list now leaves what's on screen
+// alone and quietly re-fetches the real one instead.
+function applyAdminWriteResult_(res) {
+  res = res || {};
+  if (Array.isArray(res.needsReview)) renderNeedsReviewList(res.needsReview);
+  if (Array.isArray(res.products)) renderProductsList(res.products);
+  if (!Array.isArray(res.products) || !Array.isArray(res.needsReview)) loadAdminData(true);
 }
 
 let allProducts = [];
@@ -3807,8 +3820,7 @@ function renderProductsListFiltered() {
       const original = btn.textContent;
       btn.textContent = 'Saving…';
       apiPost('classifyProduct', { productCode: code, description: desc, category: category }, { timeoutMs: 60000 }).then(res => {
-        renderNeedsReviewList(res.needsReview);
-        renderProductsList(res.products);
+        applyAdminWriteResult_(res);
         loadBoard(false);
       }).catch(err => {
         alert(err.message);
@@ -3826,8 +3838,7 @@ function renderProductsListFiltered() {
       if (!confirm(`Delete "${label}" from the product list? This only removes the classification - past orders aren't affected, but the next order carrying this product will need reclassifying.`)) return;
       btn.disabled = true;
       apiPost('deleteProduct', { productCode: code, description: desc }).then(res => {
-        renderNeedsReviewList(res.needsReview);
-        renderProductsList(res.products);
+        applyAdminWriteResult_(res);
       }).catch(err => {
         alert(err.message);
         btn.disabled = false;
@@ -3845,8 +3856,7 @@ function doImportProducts() {
   apiPost('importProductsCsv', { csvText: text }, { timeoutMs: 60000 }).then(res => {
     resultBox.className = 'result-box';
     resultBox.textContent = `Added ${res.productsAdded} new product(s). ${res.productsUnchanged} already on the list were left as-is (their category wasn't touched). ${res.itemsBackfilled} order line(s) that were waiting on classification just got corrected.`;
-    renderNeedsReviewList(res.needsReview);
-    renderProductsList(res.products);
+    applyAdminWriteResult_(res);
     loadBoard(false);
   }).catch(err => {
     resultBox.className = 'result-box error';
@@ -3864,8 +3874,7 @@ function doResyncItems() {
     resultBox.textContent = res.itemsBackfilled
       ? `Fixed ${res.itemsBackfilled} order line(s) that were stuck unclassified despite already having a matching product.`
       : 'Nothing to fix — every order line already matches its product correctly.';
-    renderNeedsReviewList(res.needsReview);
-    renderProductsList(res.products);
+    applyAdminWriteResult_(res);
     loadBoard(false);
   }).catch(err => {
     resultBox.className = 'result-box error';
