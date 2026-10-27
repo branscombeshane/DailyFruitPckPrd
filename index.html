@@ -977,7 +977,7 @@
     </div>
     <div class="field">
       <label>Product</label>
-      <input type="text" id="new-label-batch-size-product" list="label-batch-size-product-options" placeholder="Start typing a product description">
+      <input type="text" id="new-label-batch-size-product" list="label-batch-size-product-options" placeholder="e.g. Potato Large - *   (or pick one product below)">
       <datalist id="label-batch-size-product-options"></datalist>
     </div>
     <div class="field">
@@ -1007,6 +1007,7 @@
 
     <h3 style="margin-top:26px;">2. Products that use a prep item</h3>
     <p style="color:var(--muted);font-size:14px;">Yield = how much of the prepped item one unit of the finished product needs. Example: 1 kg of Potato Chips needs 1.25 kg of Peeled Potato, so the yield is 1.25 (it covers peeling waste). Only Production lines on orders are counted.</p>
+    <p style="color:var(--muted);font-size:14px;"><strong>Cover a whole family at once:</strong> end the product with a <strong>*</strong>. For example <strong>Potato Large - *</strong> links every product whose name starts with "Potato Large - " (chips, cubes, wedges, even when a customer's note or a spelling difference is tacked on). A more specific link always beats a family one, so you can give chips their own yield. You can also type a Sage product code. Names are not case-sensitive.</p>
     <div id="prep-map-admin-list"></div>
     <div class="field" style="margin-top:14px;">
       <label>Finished product</label>
@@ -3690,7 +3691,15 @@ function wirePrepUi() {
 function refreshPrepProductOptions_() {
   const dl = document.getElementById('prep-map-product-options');
   if (dl && Array.isArray(allProducts)) {
-    dl.innerHTML = allProducts.map(p => p.description).filter(Boolean).map(d => '<option value="' + escapeHtml(d) + '"></option>').join('');
+    // family shortcuts first ("Potato Large - *"), then every individual product
+    const fam = {};
+    allProducts.forEach(p => {
+      if (String(p.category || '').trim().toLowerCase() !== 'prepped' || !p.description) return;
+      const i = p.description.indexOf(' - ');
+      if (i > 0) fam[p.description.slice(0, i).trim() + ' - *'] = true;
+    });
+    const opts = Object.keys(fam).sort().concat(allProducts.map(p => p.description).filter(Boolean));
+    dl.innerHTML = opts.map(d => '<option value="' + escapeHtml(d) + '"></option>').join('');
   }
 }
 function renderPrepAdmin(prep) {
