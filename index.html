@@ -999,7 +999,6 @@
       <label>Add a prep item</label>
       <input type="text" id="new-prep-item-name" placeholder="e.g. Peeled Potato">
     </div>
-    <div class="field"><label>Unit</label><input type="text" id="new-prep-item-unit" value="kg"></div>
     <div class="field">
       <label>Fixed quantity per shift (optional)</label>
       <input type="number" id="new-prep-item-per" min="0" step="any" placeholder="Leave blank to calculate from orders + history">
@@ -3659,7 +3658,7 @@ function wirePrepUi() {
   document.getElementById('add-prep-item-btn').onclick = () => {
     const name = document.getElementById('new-prep-item-name').value.trim();
     if (!name) { alert('Enter a prep item name.'); return; }
-    apiPost('addPrepItem', { name: name, unit: document.getElementById('new-prep-item-unit').value.trim() || 'kg', perShiftQty: document.getElementById('new-prep-item-per').value })
+    apiPost('addPrepItem', { name: name, perShiftQty: document.getElementById('new-prep-item-per').value })
       .then(prep => { document.getElementById('new-prep-item-name').value = ''; document.getElementById('new-prep-item-per').value = ''; renderPrepAdmin(prep); })
       .catch(err => alert(err.message));
   };
