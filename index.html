@@ -152,6 +152,24 @@
   .prod-done-note{font-size:12px;color:var(--green-dark);font-weight:600;margin-top:2px;}
   .card-actions{display:flex;gap:8px;margin-top:12px;}
   .card-actions .btn-secondary{flex:1;margin-top:0;padding:9px 12px;font-size:13px;}
+  /* ---------- production PREP tiles (PrepPlan.gs) ---------- */
+  .prep-stats{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:14px;margin-bottom:16px;}
+  .prep-shift-heading{grid-column:1/-1;font-size:13px;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin:6px 0 0;}
+  .prep-card{background:var(--card);border-radius:14px;border:2px solid var(--line);border-left:8px solid #e0a030;padding:16px;box-shadow:0 1px 3px rgba(0,0,0,.06);}
+  .prep-card.done{opacity:.72;border-left-color:#3d9a55;}
+  .prep-card.skipped{opacity:.6;border-left-color:#bbb;}
+  .prep-card-head{display:flex;justify-content:space-between;align-items:flex-start;gap:8px;}
+  .prep-item-name{font-size:19px;font-weight:800;}
+  .prep-shift-badge{font-size:11.5px;font-weight:800;text-transform:uppercase;background:var(--ok-bg);color:var(--green-dark);padding:2px 9px;border-radius:10px;white-space:nowrap;}
+  .prep-target{font-size:28px;font-weight:800;color:var(--green-dark);margin-top:6px;}
+  .prep-target small{font-size:14px;color:var(--muted);font-weight:700;}
+  .prep-bar{height:12px;background:var(--line);border-radius:7px;overflow:hidden;margin:8px 0 6px;}
+  .prep-bar > span{display:block;height:100%;background:var(--green);}
+  .prep-meta{font-size:12.5px;color:var(--muted);font-weight:600;margin-top:4px;}
+  .prep-table{width:100%;border-collapse:collapse;font-size:14px;}
+  .prep-table th{text-align:left;font-size:11.5px;text-transform:uppercase;letter-spacing:.4px;color:var(--muted);padding:6px 6px;border-bottom:2px solid var(--line);}
+  .prep-table td{padding:8px 6px;border-bottom:1px solid var(--line);vertical-align:top;}
+  .prep-table td.num,.prep-table th.num{text-align:right;white-space:nowrap;}
   .order-card{
     background:var(--card);border-radius:14px;border:2px solid var(--line);
     padding:16px;box-shadow:0 1px 3px rgba(0,0,0,.06);position:relative;overflow:hidden;
@@ -449,6 +467,17 @@
        address ever needs to change. */
     .label-notice{font-size:7.5px;font-weight:800;text-align:center;line-height:1.15;}
     .label-address{font-size:6px;color:#333;text-align:center;line-height:1.15;}
+    /* PREP STOCK label (prepared stock handed to the next shift) - deliberately
+       looks nothing like an order label: no logo, no customer/batch/address
+       lines, just a heavy boxed PREP STOCK banner, the product name and the
+       date. The banner is a thick BORDER rather than a black fill so it never
+       depends on the browser's "print backgrounds" setting. */
+    .label-page.prep-label{justify-content:center;gap:2.2mm;text-align:center;}
+    .prep-label-banner{border:1.1mm solid #000;font-size:24px;font-weight:900;letter-spacing:.5px;line-height:1;padding:1.6mm 0 1.4mm;text-align:center;}
+    .prep-label-product{font-size:18px;font-weight:800;line-height:1.1;word-break:break-word;}
+    .prep-label-product.long{font-size:14px;}
+    .prep-label-product.xlong{font-size:11.5px;}
+    .prep-label-date{font-size:15px;font-weight:800;}
   }
 
   .conn-banner{
@@ -638,6 +667,22 @@
 
 <!-- ============ PRODUCTION BOARD ============ -->
 <div id="production-view" class="hidden">
+  <!-- Prep for the next shift: tiles created by PrepPlan.gs (no Sage involved) so each shift
+       leaves peeled/prepared stock behind for the next one. -->
+  <div id="prep-section" class="hidden">
+    <div class="section-heading" style="flex-wrap:wrap;">
+      <span>Prep for the next shift</span> <span class="count" id="prep-count">0</span>
+      <span id="prep-manager-actions" class="hidden" style="margin-left:auto;display:flex;gap:8px;flex-wrap:wrap;text-transform:none;letter-spacing:normal;">
+        <button class="btn-secondary" id="prep-why-btn" style="padding:7px 12px;font-size:13px;">ℹ️ How it's calculated</button>
+        <button class="btn-secondary" id="prep-generate-btn" style="padding:7px 12px;font-size:13px;">🔄 Generate / recalculate</button>
+        <button class="btn-secondary" id="prep-add-btn" style="padding:7px 12px;font-size:13px;">＋ Add a tile</button>
+      </span>
+    </div>
+    <div class="prep-stats" id="prep-stats"></div>
+    <div class="order-grid" id="prep-grid"></div>
+    <div class="empty-board hidden" id="prep-empty" style="padding:24px 20px;">No prep tiles for today yet. They are created automatically each morning - or tap Generate / recalculate. (Prep items and the products that use them are set up in Admin &gt; Prep.)</div>
+  </div>
+
   <div class="section-heading">Prep totals <span class="count" id="tally-count">0</span></div>
   <div class="tally-panel" id="production-tally"></div>
   <div class="empty-board hidden" id="tally-empty">Nothing to prep right now.</div>
@@ -780,6 +825,34 @@
   </div>
 </div>
 
+<!-- ============ PREP: quantity / adjust / skip / add modal ============ -->
+<div class="modal-overlay hidden" id="prep-edit-modal">
+  <div class="modal-box">
+    <h2 id="prep-edit-title"></h2>
+    <div class="modal-sub" id="prep-edit-sub"></div>
+    <div class="field hidden" id="prep-edit-shift-field"><label>Shift</label><select id="prep-edit-shift"></select></div>
+    <div class="field hidden" id="prep-edit-item-field"><label>Prep item</label><select id="prep-edit-item"></select></div>
+    <div class="field hidden" id="prep-edit-qty-field"><label id="prep-edit-qty-label">Quantity</label><input type="number" id="prep-edit-qty" min="0" step="any" inputmode="decimal"></div>
+    <div class="field hidden" id="prep-edit-note-field"><label>Reason / note (optional)</label><input type="text" id="prep-edit-note" maxlength="120"></div>
+    <div class="modal-actions">
+      <button class="btn-cancel" id="prep-edit-cancel-btn" style="flex:1;">Cancel</button>
+      <button class="btn-primary" id="prep-edit-submit-btn" style="flex:1;">OK</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============ PREP: tile detail / "how it's calculated" ============ -->
+<div class="modal-overlay hidden" id="prep-info-modal">
+  <div class="modal-box" style="max-width:600px;">
+    <h2 id="prep-info-title"></h2>
+    <div class="modal-sub" id="prep-info-sub"></div>
+    <div id="prep-info-body"></div>
+    <div class="modal-actions">
+      <button class="btn-cancel" id="prep-info-close-btn" style="flex:1;">Close</button>
+    </div>
+  </div>
+</div>
+
 <!-- ============ VIEW (already assigned) MODAL ============ -->
 <div class="modal-overlay hidden" id="view-modal">
   <div class="modal-box">
@@ -806,6 +879,7 @@
     <button class="admin-tab" data-tab="shifts">Shifts</button>
     <button class="admin-tab" data-tab="customer-shelf-life">Customer Shelf Life</button>
     <button class="admin-tab" data-tab="label-batch-size">Label Batch Size</button>
+    <button class="admin-tab" data-tab="prep">Prep</button>
     <button class="admin-tab" data-tab="packers">Packers</button>
     <button class="admin-tab" data-tab="kitchen-managers">Kitchen Managers</button>
     <button class="admin-tab" data-tab="users">Users</button>
@@ -911,6 +985,63 @@
       <input type="number" id="new-label-batch-size-size" min="1" step="1" placeholder="e.g. 1 or 5">
     </div>
     <button class="btn-primary" id="add-label-batch-size-btn">Add override</button>
+  </div>
+
+  <!-- Production PREP planning (PrepPlan.gs): which prepared items exist, which finished products
+       use them (and how much prepped item each unit needs), and the rules for the daily tiles. -->
+  <div class="admin-panel hidden" id="tab-prep">
+    <h3>Prep planning</h3>
+    <p style="color:var(--muted);font-size:14px;">Each shift gets prep tiles (e.g. "Peeled Potato - 85 kg") so the next shift starts with prepared stock. The quantity comes from the orders already in the system for that day plus the average of the same weekday over recent weeks (whichever is larger), split equally across the shifts that run that day. Nothing here touches Sage.</p>
+
+    <h3 style="margin-top:22px;">1. Prep items</h3>
+    <div id="prep-items-admin-list"></div>
+    <div class="field" style="margin-top:14px;">
+      <label>Add a prep item</label>
+      <input type="text" id="new-prep-item-name" placeholder="e.g. Peeled Potato">
+    </div>
+    <div class="field"><label>Unit</label><input type="text" id="new-prep-item-unit" value="kg"></div>
+    <div class="field">
+      <label>Fixed quantity per shift (optional)</label>
+      <input type="number" id="new-prep-item-per" min="0" step="any" placeholder="Leave blank to calculate from orders + history">
+    </div>
+    <button class="btn-primary" id="add-prep-item-btn">Add prep item</button>
+
+    <h3 style="margin-top:26px;">2. Products that use a prep item</h3>
+    <p style="color:var(--muted);font-size:14px;">Yield = how much of the prepped item one unit of the finished product needs. Example: 1 kg of Potato Chips needs 1.25 kg of Peeled Potato, so the yield is 1.25 (it covers peeling waste). Only Production lines on orders are counted.</p>
+    <div id="prep-map-admin-list"></div>
+    <div class="field" style="margin-top:14px;">
+      <label>Finished product</label>
+      <input type="text" id="new-prep-map-product" list="prep-map-product-options" placeholder="Start typing a product description">
+      <datalist id="prep-map-product-options"></datalist>
+    </div>
+    <div class="field"><label>Uses this prep item</label><select id="new-prep-map-item"></select></div>
+    <div class="field"><label>Yield (prep item per 1 unit)</label><input type="number" id="new-prep-map-yield" min="0" step="any" placeholder="e.g. 1.25"></div>
+    <button class="btn-primary" id="add-prep-map-btn">Link product</button>
+
+    <h3 style="margin-top:26px;">3. Rules</h3>
+    <div class="field">
+      <label>History: how many past weeks of the same weekday to average</label>
+      <input type="number" id="prep-set-weeks" min="1" max="12" step="1">
+    </div>
+    <div class="field">
+      <label>Days ahead (0 = tiles cover that same day, 1 = tiles prepare for tomorrow)</label>
+      <input type="number" id="prep-set-lead" min="0" max="7" step="1">
+    </div>
+    <div class="field">
+      <label>Round each tile up to a multiple of (kg, 0 = exact)</label>
+      <input type="number" id="prep-set-round" min="0" step="any">
+    </div>
+    <div class="field">
+      <label>Shifts that get tiles (optional, comma-separated)</label>
+      <input type="text" id="prep-set-shifts" placeholder="Leave blank to use the shifts that actually ran that weekday">
+      <p style="color:var(--muted);font-size:12.5px;margin:6px 0 0;">Blank = the system looks at which shifts completed Production orders on that weekday over the history weeks, so a Sunday-only shift doesn't get Monday tiles. Names must match the Shifts tab exactly.</p>
+    </div>
+    <button class="btn-primary" id="save-prep-settings-btn">Save rules</button>
+    <div class="result-box hidden" id="prep-settings-result"></div>
+
+    <h3 style="margin-top:26px;">Check the numbers</h3>
+    <p style="color:var(--muted);font-size:13px;">Shows what today's tiles would be and why, without creating anything.</p>
+    <button class="btn-secondary" id="prep-preview-btn">🔍 Show today's plan</button>
   </div>
 
   <div class="admin-panel hidden" id="tab-packers">
@@ -2125,6 +2256,7 @@ function renderProductionTally(orders) {
 
 function renderProductionBoard() {
   if (!boardData) return;
+  renderPrepSection();
   const warnMin = boardData.settings.flagWarningMinutes;
   const critMin = boardData.settings.flagCriticalMinutes;
   const today = todayDateStr();
@@ -3026,13 +3158,15 @@ function assignOrderTo(orderId, packerName, tileBtn) {
 let pendingKitchenManagerOrderId = null;
 let kitchenManagerModalMode = 'complete';
 function openKitchenManagerModal(order, mode) {
-  kitchenManagerModalMode = mode === 'incomplete' || mode === 'partial' ? mode : 'complete';
+  kitchenManagerModalMode = (mode === 'incomplete' || mode === 'partial' || mode === 'prepLog' || mode === 'prepComplete') ? mode : 'complete';
   pendingKitchenManagerOrderId = order.orderId;
   document.getElementById('kitchen-manager-modal-ref').textContent = order.sageRef;
   document.getElementById('kitchen-manager-modal-customer').textContent = order.customerName || '';
   document.getElementById('kitchen-manager-modal-prompt').textContent =
     kitchenManagerModalMode === 'incomplete' ? "Who's marking this NOT complete?"
       : kitchenManagerModalMode === 'partial' ? "Who's logging this progress?"
+      : kitchenManagerModalMode === 'prepLog' ? "Who's logging this prep?"
+      : kitchenManagerModalMode === 'prepComplete' ? "Who's marking this prep complete?"
       : "Who's marking this complete?";
   document.getElementById('kitchen-manager-modal-incomplete-note').classList.toggle('hidden', kitchenManagerModalMode !== 'incomplete');
 
@@ -3049,7 +3183,11 @@ function openKitchenManagerModal(order, mode) {
       ? markIncompleteAs(order.orderId, name, btn)
       : kitchenManagerModalMode === 'partial'
         ? logProductionPartialAs(order.orderId, name, btn)
-        : completeProductionAs(order.orderId, name, btn);
+        : kitchenManagerModalMode === 'prepLog'
+          ? logPrepAs(order.orderId, name)
+          : kitchenManagerModalMode === 'prepComplete'
+            ? completePrepAs(order.orderId, name)
+            : completeProductionAs(order.orderId, name, btn);
     grid.appendChild(btn);
   });
 
@@ -3168,6 +3306,486 @@ function submitPartialProgress() {
   pendingPartialItemUpdates = updates;
   document.getElementById('partial-progress-modal').classList.add('hidden');
   openKitchenManagerModal(order, 'partial');
+}
+
+/* ===================== PRODUCTION PREP TILES ===================== */
+// Prep tiles are created by PrepPlan.gs (daily trigger, or "Generate / recalculate" below) - one
+// tile per shift per prep item, e.g. "Night - Peeled Potato - 85 kg" - so each shift leaves
+// prepared stock for the next. Floor staff log what they prepped (same Kitchen Manager name picker
+// as an order) or tap Complete; Production Managers/Admins can also adjust, skip, re-open or add.
+let prepPending = null;      // what the name picker acts on once a name is tapped: {prepId, qty}
+let prepEditMode = null;     // 'log' | 'adjust' | 'skip' | 'add'
+let prepEditTaskId = null;
+
+function prepQty_(n) { return String(Math.round((Number(n) || 0) * 100) / 100); }
+function prepCanManage_() { return userRole === 'Production Manager' || userRole === 'Admin'; }
+function prepTaskById_(id) { return ((boardData && boardData.prepTasks) || []).find(t => t.prepId === id) || null; }
+
+// Today's tiles, plus yesterday's still-open ones (a night shift runs past midnight). Floor logins
+// see only their own shift's tiles; managers/admins (and shiftless logins) see every shift.
+function prepVisibleTasks_() {
+  const all = (boardData && boardData.prepTasks) || [];
+  const today = todayDateStr();
+  const yesterday = addDaysStr(today, -1);
+  const seeAll = prepCanManage_() || !userShift;
+  const order = (boardData && boardData.settings && boardData.settings.shiftNames) || [];
+  return all
+    .filter(t => (t.date === today || (t.date === yesterday && t.status === 'Open')) && (seeAll || t.shift === userShift))
+    .sort((a, b) => {
+      const ia = order.indexOf(a.shift), ib = order.indexOf(b.shift);
+      const rank = t => (t.status === 'Open' ? 0 : t.status === 'Done' ? 1 : 2);
+      return (ia < 0 ? 999 : ia) - (ib < 0 ? 999 : ib) || rank(a) - rank(b) || a.prepItem.localeCompare(b.prepItem);
+    });
+}
+
+function prepCardHtml_(t, canManage) {
+  const unit = escapeHtml(t.unit || 'kg');
+  const pct = t.targetQty > 0 ? Math.min(100, Math.round((t.qtyCompleted / t.targetQty) * 100)) : 0;
+  const today = todayDateStr();
+  const carry = t.date !== today ? `<div class="prep-meta">⏮ From ${escapeHtml(fmtDateLong(t.date))} - still open</div>` : '';
+  let notes = '';
+  if (t.source === 'Manual') notes += `<div class="prep-meta">➕ Added by ${escapeHtml(t.adjustedBy || 'a manager')}</div>`;
+  else if (t.adjustedBy && t.status !== 'Skipped') notes += `<div class="prep-meta">✏️ Adjusted by ${escapeHtml(t.adjustedBy)} (calculated ${prepQty_(t.calcQty)} ${unit})</div>`;
+  if (t.note && t.status !== 'Skipped') notes += `<div class="prep-meta">${escapeHtml(t.note)}</div>`;
+  const id = escapeHtml(t.prepId);
+  const labelBtn = `<button class="btn-secondary" data-prep-action="label" data-prep-id="${id}">🏷 Labels</button>`;
+  let cls = 'prep-card', status = '', actions = '';
+  if (t.status === 'Done') {
+    cls += ' done';
+    status = `<div class="assigned-strip"><span>✅ Done${t.completedBy ? ' by ' + escapeHtml(t.completedBy) : ''}</span><span>${t.completedAt ? fmtTime(t.completedAt) : ''}</span></div>`;
+    actions = `<div class="card-actions">${labelBtn}${canManage ? `<button class="btn-secondary" data-prep-action="reopen" data-prep-id="${id}">↩ Re-open</button>` : ''}</div>`;
+  } else if (t.status === 'Skipped') {
+    cls += ' skipped';
+    status = `<div class="prep-meta">⏭ Skipped${t.adjustedBy ? ' by ' + escapeHtml(t.adjustedBy) : ''}${t.note ? ' - ' + escapeHtml(t.note) : ''}</div>`;
+    actions = canManage ? `<div class="card-actions"><button class="btn-secondary" data-prep-action="restore" data-prep-id="${id}">Restore</button></div>` : '';
+  } else {
+    if (t.lastLoggedBy) status = `<div class="prep-meta">Last logged by ${escapeHtml(t.lastLoggedBy)}${t.lastLoggedAt ? ' at ' + fmtTime(t.lastLoggedAt) : ''}</div>`;
+    actions = `<div class="prod-actions">
+        <button class="btn-secondary" data-prep-action="log" data-prep-id="${id}">📝 Log progress</button>
+        <button class="btn-primary" data-prep-action="complete" data-prep-id="${id}">Complete</button>
+      </div>` + `<div class="card-actions" style="margin-top:8px;">
+        ${labelBtn}${canManage ? `<button class="btn-secondary" data-prep-action="adjust" data-prep-id="${id}">✏️ Adjust</button>
+        <button class="btn-secondary" data-prep-action="skip" data-prep-id="${id}">⏭ Skip</button>` : ''}
+      </div>`;
+  }
+  return `<div class="${cls}" data-prep-card="${id}">
+    <div class="prep-card-head">
+      <div class="prep-item-name">${escapeHtml(t.prepItem)}</div>
+      <span class="prep-shift-badge">${escapeHtml(t.shift || 'Any shift')}</span>
+    </div>
+    <div class="prep-target">${prepQty_(t.targetQty)} <small>${unit}</small></div>
+    <div class="prep-bar"><span style="width:${pct}%;"></span></div>
+    <div class="prep-meta">${prepQty_(t.qtyCompleted)} of ${prepQty_(t.targetQty)} ${unit} done (${pct}%)</div>
+    ${notes}${carry}${status}${actions}
+  </div>`;
+}
+
+function renderPrepSection() {
+  const section = document.getElementById('prep-section');
+  if (!section) return;
+  const canManage = prepCanManage_();
+  const tasks = prepVisibleTasks_();
+  section.classList.toggle('hidden', !canManage && !tasks.length);
+  document.getElementById('prep-manager-actions').classList.toggle('hidden', !canManage);
+  document.getElementById('prep-count').textContent = tasks.filter(t => t.status === 'Open').length;
+  document.getElementById('prep-empty').classList.toggle('hidden', tasks.length > 0);
+
+  // One stat tile per prep item (done / target across the visible tiles); tapping it opens the
+  // tiles and who logged what behind that number.
+  const byItem = {};
+  tasks.filter(t => t.status !== 'Skipped').forEach(t => {
+    const g = byItem[t.prepItem] || (byItem[t.prepItem] = { unit: t.unit, target: 0, done: 0, tiles: 0, open: 0 });
+    g.target += t.targetQty; g.done += t.qtyCompleted; g.tiles++; if (t.status === 'Open') g.open++;
+  });
+  document.getElementById('prep-stats').innerHTML = Object.keys(byItem).sort().map(name => {
+    const g = byItem[name];
+    return `<div class="stat-card ${g.open === 0 ? '' : 'warn'}" data-prep-stat="${escapeHtml(name)}">
+      <div class="stat-value">${prepQty_(g.done)} / ${prepQty_(g.target)}</div>
+      <div class="stat-label">${escapeHtml(name)} (${escapeHtml(g.unit || 'kg')})</div>
+      <div class="stat-sub">${g.tiles} tile${g.tiles === 1 ? '' : 's'} - ${g.open} still open. Tap for details.</div>
+    </div>`;
+  }).join('');
+
+  // Tiles grouped under a small heading per shift (only when more than one shift is showing).
+  const shifts = [];
+  tasks.forEach(t => { if (shifts.indexOf(t.shift) === -1) shifts.push(t.shift); });
+  const grid = document.getElementById('prep-grid');
+  grid.innerHTML = shifts.map(sh => {
+    const heading = shifts.length > 1 ? `<div class="prep-shift-heading">${escapeHtml(sh || 'Any shift')}</div>` : '';
+    return heading + tasks.filter(t => t.shift === sh).map(t => prepCardHtml_(t, canManage)).join('');
+  }).join('');
+}
+
+function prepPseudoOrder_(t) {
+  return { orderId: 'prep:' + t.prepId, sageRef: t.prepItem, customerName: (t.shift || 'Any shift') + ' - target ' + prepQty_(t.targetQty) + ' ' + (t.unit || 'kg') };
+}
+
+function prepRefresh_() { loadBoard(true); }
+
+function onPrepAction_(action, prepId) {
+  const t = prepTaskById_(prepId);
+  if (!t) { alert('That prep tile is no longer on the board - it may have just been changed. The board is refreshing.'); prepRefresh_(); return; }
+  if (action === 'log') return openPrepEditModal_('log', t);
+  if (action === 'label') return openPrepEditModal_('label', t);
+  if (action === 'adjust') return openPrepEditModal_('adjust', t);
+  if (action === 'skip') return openPrepEditModal_('skip', t);
+  if (action === 'complete') {
+    prepPending = { prepId: t.prepId };
+    return openKitchenManagerModal(prepPseudoOrder_(t), 'prepComplete');
+  }
+  if (action === 'reopen') {
+    return apiPost('reopenPrepTask', { prepId: t.prepId }).then(prepRefresh_).catch(err => { alert(err.message); prepRefresh_(); });
+  }
+  if (action === 'restore') {
+    return apiPost('skipPrepTask', { prepId: t.prepId, skipped: false }).then(prepRefresh_).catch(err => { alert(err.message); prepRefresh_(); });
+  }
+}
+
+function openPrepEditModal_(mode, t) {
+  prepEditMode = mode;
+  prepEditTaskId = t ? t.prepId : null;
+  const unit = t ? (t.unit || 'kg') : 'kg';
+  const show = (id, on) => document.getElementById(id).classList.toggle('hidden', !on);
+  show('prep-edit-shift-field', mode === 'add');
+  show('prep-edit-item-field', mode === 'add');
+  show('prep-edit-qty-field', mode !== 'skip');
+  show('prep-edit-note-field', mode === 'adjust' || mode === 'skip' || mode === 'add');
+  const qty = document.getElementById('prep-edit-qty');
+  const note = document.getElementById('prep-edit-note');
+  note.value = '';
+  qty.value = '';
+  const title = document.getElementById('prep-edit-title');
+  const sub = document.getElementById('prep-edit-sub');
+  const qlabel = document.getElementById('prep-edit-qty-label');
+  const submit = document.getElementById('prep-edit-submit-btn');
+  if (mode === 'log') {
+    title.textContent = 'Log prep progress';
+    sub.textContent = `${t.prepItem} - ${t.shift || 'Any shift'} shift. ${prepQty_(t.qtyCompleted)} of ${prepQty_(t.targetQty)} ${unit} done so far.`;
+    qlabel.textContent = `How much did you just prep? (${unit})`;
+    submit.textContent = 'Next: who is logging this?';
+  } else if (mode === 'adjust') {
+    title.textContent = 'Adjust the target';
+    sub.textContent = `${t.prepItem} - ${t.shift || 'Any shift'} shift. Calculated target was ${prepQty_(t.calcQty || t.targetQty)} ${unit}.`;
+    qlabel.textContent = `New target (${unit})`;
+    qty.value = prepQty_(t.targetQty);
+    submit.textContent = 'Save';
+  } else if (mode === 'label') {
+    title.textContent = 'Print PREP STOCK labels';
+    sub.textContent = `${t.prepItem}. Each label says PREP STOCK, the product name and today's date.`;
+    qlabel.textContent = 'How many labels? (one per container/bag)';
+    qty.value = '1';
+    submit.textContent = '🏷 Print';
+  } else if (mode === 'skip') {
+    title.textContent = 'Skip this tile';
+    sub.textContent = `${t.prepItem} - ${t.shift || 'Any shift'} shift. It will show as skipped and can be restored.`;
+    submit.textContent = 'Skip tile';
+  } else {
+    title.textContent = 'Add a prep tile';
+    sub.textContent = "For today. Use this for an extra shift or a special order the calculation doesn't know about.";
+    qlabel.textContent = 'Quantity (kg)';
+    const shiftNames = (boardData && boardData.settings && boardData.settings.shiftNames) || [];
+    document.getElementById('prep-edit-shift').innerHTML = shiftNames.map(n => `<option value="${escapeHtml(n)}">${escapeHtml(n)}</option>`).join('');
+    const items = (boardData && boardData.prepItems) || [];
+    document.getElementById('prep-edit-item').innerHTML = items.map(i => `<option value="${escapeHtml(i.name)}">${escapeHtml(i.name)}</option>`).join('');
+    submit.textContent = 'Add tile';
+  }
+  document.getElementById('prep-edit-modal').classList.remove('hidden');
+  if (mode !== 'skip') setTimeout(() => qty.focus(), 50);
+}
+function closePrepEditModal_() {
+  document.getElementById('prep-edit-modal').classList.add('hidden');
+  prepEditMode = null;
+}
+function submitPrepEdit_() {
+  const mode = prepEditMode, id = prepEditTaskId;
+  const qtyVal = Number(document.getElementById('prep-edit-qty').value);
+  const note = document.getElementById('prep-edit-note').value.trim();
+  const t = id ? prepTaskById_(id) : null;
+  if (mode === 'log') {
+    if (!(qtyVal > 0)) { alert('Enter how much was just prepped (more than 0).'); return; }
+    if (!t) { closePrepEditModal_(); prepRefresh_(); return; }
+    prepPending = { prepId: t.prepId, qty: qtyVal };
+    closePrepEditModal_();
+    openKitchenManagerModal(prepPseudoOrder_(t), 'prepLog');
+    return;
+  }
+  if (mode === 'label') {
+    const n = Math.floor(qtyVal);
+    if (!(n >= 1) || n > 100) { alert('Enter a number of labels between 1 and 100.'); return; }
+    if (!t) { closePrepEditModal_(); prepRefresh_(); return; }
+    closePrepEditModal_();
+    printPrepLabels_(t, n);
+    return;
+  }
+  if (mode === 'adjust') {
+    if (!(qtyVal > 0)) { alert('Target must be more than 0 - use Skip if nothing is needed.'); return; }
+    closePrepEditModal_();
+    apiPost('adjustPrepTask', { prepId: id, targetQty: qtyVal, note: note }).then(prepRefresh_).catch(err => { alert(err.message); prepRefresh_(); });
+    return;
+  }
+  if (mode === 'skip') {
+    closePrepEditModal_();
+    apiPost('skipPrepTask', { prepId: id, skipped: true, note: note }).then(prepRefresh_).catch(err => { alert(err.message); prepRefresh_(); });
+    return;
+  }
+  if (mode === 'add') {
+    const shift = document.getElementById('prep-edit-shift').value;
+    const item = document.getElementById('prep-edit-item').value;
+    if (!shift || !item) { alert('Pick a shift and a prep item.'); return; }
+    if (!(qtyVal > 0)) { alert('Enter a quantity above 0.'); return; }
+    closePrepEditModal_();
+    apiPost('addManualPrepTask', { date: todayDateStr(), shift: shift, prepItem: item, qty: qtyVal, note: note }).then(prepRefresh_).catch(err => { alert(err.message); prepRefresh_(); });
+  }
+}
+
+// PREP STOCK labels: same Argox 58mm x 43mm die-cut stock and the same print plumbing as the
+// order labels, but a completely different face - no logo, no customer/batch/address, just
+// PREP STOCK, the product name and the date it was prepped (today).
+function prepLabelPagesHtml_(name, dateStr, count) {
+  const cls = name.length > 28 ? ' xlong' : name.length > 16 ? ' long' : '';
+  const page = `<div class="label-page prep-label">
+          <div class="prep-label-banner">PREP STOCK</div>
+          <div class="prep-label-product${cls}">${escapeHtml(name)}</div>
+          <div class="prep-label-date">${escapeHtml(dateStr)}</div>
+        </div>`;
+  return new Array(count).fill(page).join('');
+}
+function printPrepLabels_(t, count) {
+  document.getElementById('print-labels-body').innerHTML = prepLabelPagesHtml_(t.prepItem, fmtDateLong(dateOnlyStr(new Date())), count);
+  document.getElementById('print-page-style').textContent = '@page{ size:58mm 43mm; margin:0; }';
+  document.body.setAttribute('data-print-target', 'labels');
+  const onAfterPrint = () => {
+    window.removeEventListener('afterprint', onAfterPrint);
+    document.getElementById('print-page-style').textContent = '@page{ size:80mm auto; margin:0; }';
+    document.body.setAttribute('data-print-target', 'slip');
+  };
+  window.addEventListener('afterprint', onAfterPrint);
+  setTimeout(() => window.print(), 150);
+}
+
+function logPrepAs(pseudoId, kitchenManagerName) {
+  if (!prepPending || pendingKitchenManagerOrderId !== pseudoId) return;
+  const p = prepPending;
+  document.querySelectorAll('#kitchen-manager-modal-grid .packer-tile').forEach(b => b.disabled = true);
+  apiPost('logPrepProgress', { prepId: p.prepId, qty: p.qty, kitchenManagerName: kitchenManagerName }).then(() => {
+    prepPending = null; closeKitchenManagerModal(); prepRefresh_();
+  }).catch(err => { alert(err.message); prepPending = null; closeKitchenManagerModal(); prepRefresh_(); });
+}
+function completePrepAs(pseudoId, kitchenManagerName) {
+  if (!prepPending || pendingKitchenManagerOrderId !== pseudoId) return;
+  const p = prepPending;
+  document.querySelectorAll('#kitchen-manager-modal-grid .packer-tile').forEach(b => b.disabled = true);
+  apiPost('completePrepTask', { prepId: p.prepId, kitchenManagerName: kitchenManagerName }).then(() => {
+    prepPending = null; closeKitchenManagerModal(); prepRefresh_();
+  }).catch(err => { alert(err.message); prepPending = null; closeKitchenManagerModal(); prepRefresh_(); });
+}
+
+// The numbers behind one prep item's stat tile: every tile for it, with who logged what.
+function openPrepItemDetail_(itemName) {
+  const tasks = prepVisibleTasks_().filter(t => t.prepItem === itemName);
+  document.getElementById('prep-info-title').textContent = itemName;
+  document.getElementById('prep-info-sub').textContent = 'Today\'s tiles for this item';
+  document.getElementById('prep-info-body').innerHTML = tasks.length ? `<table class="prep-table">
+    <tr><th>Shift</th><th class="num">Target</th><th class="num">Done</th><th>Status</th><th>Who</th></tr>
+    ${tasks.map(t => `<tr>
+      <td>${escapeHtml(t.shift || 'Any')}</td>
+      <td class="num">${prepQty_(t.targetQty)} ${escapeHtml(t.unit || 'kg')}</td>
+      <td class="num">${prepQty_(t.qtyCompleted)}</td>
+      <td>${escapeHtml(t.status)}${t.adjustedBy ? '<br><span class="prep-meta">' + (t.source === 'Manual' ? 'added' : 'adjusted') + ' by ' + escapeHtml(t.adjustedBy) + '</span>' : ''}</td>
+      <td>${escapeHtml(t.completedBy || t.lastLoggedBy || '-')}${(t.completedAt || t.lastLoggedAt) ? '<br><span class="prep-meta">' + fmtTime(t.completedAt || t.lastLoggedAt) + '</span>' : ''}</td>
+    </tr>`).join('')}
+  </table>` : '<div class="empty-note">No tiles for this item.</div>';
+  document.getElementById('prep-info-modal').classList.remove('hidden');
+}
+
+// "Show the working": per prep item - known orders, history average, which is used, per-shift tile.
+function prepPlanHtml_(plan, headline) {
+  const rows = (plan.items || []).map(i => `<tr>
+      <td><strong>${escapeHtml(i.name)}</strong></td>
+      <td class="num">${prepQty_(i.known)}</td>
+      <td class="num">${prepQty_(i.history)}</td>
+      <td class="num">${prepQty_(i.dayDemand)}${i.usedHistory ? '<br><span class="prep-meta">history</span>' : '<br><span class="prep-meta">known</span>'}</td>
+      <td class="num"><strong>${prepQty_(i.perShift)} ${escapeHtml(i.unit || 'kg')}</strong>${i.basis === 'fixed' ? '<br><span class="prep-meta">fixed</span>' : ''}</td>
+    </tr>`).join('');
+  const hist = (plan.historyDays || []).length
+    ? 'History = average of ' + plan.historyDays.map(d => fmtDateLong(d)).join(', ') + ' (days the factory had no orders are ignored).'
+    : 'No history yet for this weekday - tiles use the known orders only.';
+  return (headline ? `<div class="result-box" style="margin-bottom:12px;">${headline}</div>` : '') +
+    `<div class="prep-meta" style="margin:0 0 8px;">Production day ${escapeHtml(fmtDateLong(plan.targetDay))} - shifts: <strong>${escapeHtml((plan.shifts || []).join(', ') || 'none')}</strong> (${escapeHtml(plan.shiftSource || '')}). Each tile = the larger of known orders and history, divided equally across the shifts, rounded up.</div>
+    <table class="prep-table">
+      <tr><th>Prep item</th><th class="num">Known orders</th><th class="num">History avg</th><th class="num">Day demand</th><th class="num">Per shift</th></tr>
+      ${rows || '<tr><td colspan="5">Nothing to prepare - no linked products have demand.</td></tr>'}
+    </table>
+    <div class="prep-meta" style="margin-top:10px;">${escapeHtml(hist)}</div>`;
+}
+function showPrepPlan_(plan, title, headline) {
+  document.getElementById('prep-info-title').textContent = title;
+  document.getElementById('prep-info-sub').textContent = '';
+  document.getElementById('prep-info-body').innerHTML = prepPlanHtml_(plan, headline);
+  document.getElementById('prep-info-modal').classList.remove('hidden');
+}
+function prepPreview_() {
+  apiPost('previewPrepPlan', { date: todayDateStr() }).then(plan => showPrepPlan_(plan, "How today's prep is calculated"))
+    .catch(err => alert(err.message));
+}
+function prepGenerate_() {
+  apiPost('generatePrepTasks', { date: todayDateStr(), mode: 'recalc' }).then(r => {
+    prepRefresh_();
+    const head = `Created ${r.created} new tile${r.created === 1 ? '' : 's'}, refreshed ${r.updated}, left ${r.unchanged} untouched. Tiles that already have progress logged, or that a manager adjusted, are never changed.`;
+    showPrepPlan_(r, 'Prep tiles updated', head);
+  }).catch(err => alert(err.message));
+}
+
+function wirePrepUi() {
+  document.getElementById('prep-edit-cancel-btn').onclick = closePrepEditModal_;
+  document.getElementById('prep-edit-submit-btn').onclick = submitPrepEdit_;
+  document.getElementById('prep-edit-qty').addEventListener('keydown', e => { if (e.key === 'Enter') submitPrepEdit_(); });
+  document.getElementById('prep-info-close-btn').onclick = () => document.getElementById('prep-info-modal').classList.add('hidden');
+  document.getElementById('prep-generate-btn').onclick = prepGenerate_;
+  document.getElementById('prep-why-btn').onclick = prepPreview_;
+  document.getElementById('prep-add-btn').onclick = () => {
+    if (!((boardData && boardData.prepItems) || []).length) { alert('No prep items yet - set them up in Admin > Prep first.'); return; }
+    openPrepEditModal_('add', null);
+  };
+  document.getElementById('prep-grid').addEventListener('click', e => {
+    const btn = e.target.closest('[data-prep-action]');
+    if (btn) onPrepAction_(btn.getAttribute('data-prep-action'), btn.getAttribute('data-prep-id'));
+  });
+  document.getElementById('prep-stats').addEventListener('click', e => {
+    const card = e.target.closest('[data-prep-stat]');
+    if (card) openPrepItemDetail_(card.getAttribute('data-prep-stat'));
+  });
+  // Admin > Prep
+  document.getElementById('add-prep-item-btn').onclick = () => {
+    const name = document.getElementById('new-prep-item-name').value.trim();
+    if (!name) { alert('Enter a prep item name.'); return; }
+    apiPost('addPrepItem', { name: name, unit: document.getElementById('new-prep-item-unit').value.trim() || 'kg', perShiftQty: document.getElementById('new-prep-item-per').value })
+      .then(prep => { document.getElementById('new-prep-item-name').value = ''; document.getElementById('new-prep-item-per').value = ''; renderPrepAdmin(prep); })
+      .catch(err => alert(err.message));
+  };
+  document.getElementById('add-prep-map-btn').onclick = () => {
+    const product = document.getElementById('new-prep-map-product').value.trim();
+    const item = document.getElementById('new-prep-map-item').value;
+    const y = Number(document.getElementById('new-prep-map-yield').value);
+    if (!product) { alert('Pick the finished product.'); return; }
+    if (!item) { alert('Add a prep item first, then link products to it.'); return; }
+    if (!(y > 0)) { alert('Enter the yield - e.g. 1.25 if 1 kg of this product needs 1.25 kg of the prepped item.'); return; }
+    apiPost('addPrepMap', { productDescription: product, prepItem: item, yieldPerUnit: y })
+      .then(prep => { document.getElementById('new-prep-map-product').value = ''; document.getElementById('new-prep-map-yield').value = ''; renderPrepAdmin(prep); })
+      .catch(err => alert(err.message));
+  };
+  document.getElementById('save-prep-settings-btn').onclick = () => {
+    const box = document.getElementById('prep-settings-result');
+    apiPost('updateSettings', { settings: {
+      PrepHistoryWeeks: document.getElementById('prep-set-weeks').value,
+      PrepLeadDays: document.getElementById('prep-set-lead').value,
+      PrepRoundKg: document.getElementById('prep-set-round').value,
+      PrepShifts: document.getElementById('prep-set-shifts').value.trim()
+    } }).then(() => { box.className = 'result-box success'; box.textContent = 'Saved. New rules apply the next time tiles are generated or recalculated.'; })
+      .catch(err => { box.className = 'result-box error'; box.textContent = err.message; });
+  };
+  document.getElementById('prep-preview-btn').onclick = prepPreview_;
+}
+
+// ---- Admin > Prep ----
+function refreshPrepProductOptions_() {
+  const dl = document.getElementById('prep-map-product-options');
+  if (dl && Array.isArray(allProducts)) {
+    dl.innerHTML = allProducts.map(p => p.description).filter(Boolean).map(d => '<option value="' + escapeHtml(d) + '"></option>').join('');
+  }
+}
+function renderPrepAdmin(prep) {
+  prep = prep || {};
+  const items = Array.isArray(prep.items) ? prep.items : [];
+  const map = Array.isArray(prep.map) ? prep.map : [];
+  const st = prep.settings || {};
+
+  const itemBox = document.getElementById('prep-items-admin-list');
+  itemBox.innerHTML = items.length ? items.map((r, i) => `
+    <div class="packer-row">
+      <span>${escapeHtml(r.name)} <span style="color:var(--muted);">(${escapeHtml(r.unit)})</span></span>
+      <div style="display:flex;align-items:center;gap:10px;">
+        <input type="number" class="prep-item-per-input" data-idx="${i}" value="${r.perShiftQty === null ? '' : r.perShiftQty}" min="0" step="any" placeholder="calculated" style="width:96px;" title="Fixed quantity per shift (blank = calculate)">
+        <button class="toggle ${r.active ? 'on' : ''}" data-idx="${i}" data-active="${r.active}"><span class="knob"></span></button>
+        <button class="icon-btn" style="background:#f3d6d6;color:#a11;width:32px;height:32px;font-size:14px;" data-delete-idx="${i}" title="Delete prep item">✕</button>
+      </div>
+    </div>`).join('') : '<div class="log-row">No prep items yet - add one below (e.g. Peeled Potato).</div>';
+  itemBox.querySelectorAll('.prep-item-per-input').forEach(input => {
+    const commit = () => {
+      const r = items[Number(input.getAttribute('data-idx'))];
+      const was = r.perShiftQty === null ? '' : String(r.perShiftQty);
+      if (input.value === was) return;
+      input.disabled = true;
+      apiPost('updatePrepItem', { name: r.name, fields: { perShiftQty: input.value } }).then(renderPrepAdmin).catch(err => { alert(err.message); input.disabled = false; });
+    };
+    input.addEventListener('blur', commit);
+    input.addEventListener('keydown', e => { if (e.key === 'Enter') input.blur(); });
+  });
+  itemBox.querySelectorAll('.toggle').forEach(btn => {
+    btn.onclick = () => {
+      const r = items[Number(btn.getAttribute('data-idx'))];
+      btn.disabled = true;
+      apiPost('updatePrepItem', { name: r.name, fields: { active: btn.getAttribute('data-active') !== 'true' } }).then(renderPrepAdmin).catch(err => { alert(err.message); btn.disabled = false; });
+    };
+  });
+  itemBox.querySelectorAll('[data-delete-idx]').forEach(btn => {
+    btn.onclick = () => {
+      const r = items[Number(btn.getAttribute('data-delete-idx'))];
+      if (!confirm(`Delete the prep item "${r.name}"? Every product link to it is removed too. Tiles already created stay as they are. This can't be undone.`)) return;
+      btn.disabled = true;
+      apiPost('deletePrepItem', { name: r.name }).then(renderPrepAdmin).catch(err => { alert(err.message); btn.disabled = false; });
+    };
+  });
+
+  const mapBox = document.getElementById('prep-map-admin-list');
+  mapBox.innerHTML = map.length ? map.map((r, i) => `
+    <div class="packer-row">
+      <span>${escapeHtml(r.productDescription)} <span style="color:var(--muted);">&rarr; ${escapeHtml(r.prepItem)}</span></span>
+      <div style="display:flex;align-items:center;gap:10px;">
+        <input type="number" class="prep-map-yield-input" data-idx="${i}" value="${r.yieldPerUnit}" min="0" step="any" style="width:80px;" title="Yield per unit">
+        <button class="toggle ${r.active ? 'on' : ''}" data-idx="${i}" data-active="${r.active}"><span class="knob"></span></button>
+        <button class="icon-btn" style="background:#f3d6d6;color:#a11;width:32px;height:32px;font-size:14px;" data-delete-idx="${i}" title="Delete link">✕</button>
+      </div>
+    </div>`).join('') : '<div class="log-row">No products linked yet.</div>';
+  mapBox.querySelectorAll('.prep-map-yield-input').forEach(input => {
+    const commit = () => {
+      const r = map[Number(input.getAttribute('data-idx'))];
+      const y = Number(input.value);
+      if (!(y > 0)) { alert('Yield must be a positive number.'); input.value = r.yieldPerUnit; return; }
+      if (y === r.yieldPerUnit) return;
+      input.disabled = true;
+      apiPost('updatePrepMap', { productDescription: r.productDescription, prepItem: r.prepItem, fields: { yieldPerUnit: y } }).then(renderPrepAdmin).catch(err => { alert(err.message); input.disabled = false; });
+    };
+    input.addEventListener('blur', commit);
+    input.addEventListener('keydown', e => { if (e.key === 'Enter') input.blur(); });
+  });
+  mapBox.querySelectorAll('.toggle').forEach(btn => {
+    btn.onclick = () => {
+      const r = map[Number(btn.getAttribute('data-idx'))];
+      btn.disabled = true;
+      apiPost('updatePrepMap', { productDescription: r.productDescription, prepItem: r.prepItem, fields: { active: btn.getAttribute('data-active') !== 'true' } }).then(renderPrepAdmin).catch(err => { alert(err.message); btn.disabled = false; });
+    };
+  });
+  mapBox.querySelectorAll('[data-delete-idx]').forEach(btn => {
+    btn.onclick = () => {
+      const r = map[Number(btn.getAttribute('data-delete-idx'))];
+      if (!confirm(`Remove the link between "${r.productDescription}" and "${r.prepItem}"?`)) return;
+      btn.disabled = true;
+      apiPost('deletePrepMap', { productDescription: r.productDescription, prepItem: r.prepItem }).then(renderPrepAdmin).catch(err => { alert(err.message); btn.disabled = false; });
+    };
+  });
+
+  // product picker: real Production product descriptions beat free typing (matching is
+  // case-insensitive but not fuzzy)
+  refreshPrepProductOptions_();
+  const sel = document.getElementById('new-prep-map-item');
+  if (sel) sel.innerHTML = items.filter(i => i.active).map(i => `<option value="${escapeHtml(i.name)}">${escapeHtml(i.name)}</option>`).join('');
+
+  const setVal = (id, v) => { const el = document.getElementById(id); if (el && document.activeElement !== el) el.value = v; };
+  setVal('prep-set-weeks', st.historyWeeks === undefined ? 4 : st.historyWeeks);
+  setVal('prep-set-lead', st.leadDays === undefined ? 0 : st.leadDays);
+  setVal('prep-set-round', st.roundKg === undefined ? 5 : st.roundKg);
+  setVal('prep-set-shifts', st.shifts || '');
 }
 
 /* ===================== VIEW MODAL ===================== */
@@ -3316,6 +3934,9 @@ function loadAdminData(silent) {
     renderNeedsReviewList(data.needsReview);
     renderProductsList(data.products);
     renderUsersAdmin(data.users);
+    // data.prep is missing when the live Apps Script is still on an older Code.gs - fall back to
+    // empty lists so the rest of Admin keeps working (same defensive pattern as labelBatchSize above).
+    renderPrepAdmin(data.prep || { items: [], map: [], settings: {} });
     document.getElementById('set-company').value = data.settings.CompanyName || '';
     document.getElementById('set-warn').value = data.settings.FlagWarningMinutes || 10;
     document.getElementById('set-crit').value = data.settings.FlagCriticalMinutes || 20;
@@ -3759,6 +4380,7 @@ let allProducts = [];
 function renderProductsList(products) {
   products = Array.isArray(products) ? products : []; // see the BUG FIX comment on renderShiftsAdmin above
   allProducts = products;
+  if (typeof refreshPrepProductOptions_ === 'function') refreshPrepProductOptions_();
   document.getElementById('products-count').textContent = products.length;
   renderProductsListFiltered();
   // Feed the Label Batch Size admin tab's product datalist (index.html,
@@ -3954,6 +4576,7 @@ function wireStaticEvents() {
   document.getElementById('view-close-btn').onclick = closeViewModal;
   document.getElementById('partial-progress-cancel-btn').onclick = closePartialProgressModal;
   document.getElementById('partial-progress-submit-btn').onclick = submitPartialProgress;
+  wirePrepUi();
 
   document.getElementById('order-search').addEventListener('input', (e) => {
     orderSearchQuery = e.target.value;
@@ -3981,7 +4604,7 @@ function wireStaticEvents() {
     tab.onclick = () => {
       document.querySelectorAll('.admin-tab').forEach(t => t.classList.remove('active'));
       tab.classList.add('active');
-      ['import', 'products', 'shifts', 'customer-shelf-life', 'label-batch-size', 'packers', 'kitchen-managers', 'users', 'settings'].forEach(name => {
+      ['import', 'products', 'shifts', 'customer-shelf-life', 'label-batch-size', 'prep', 'packers', 'kitchen-managers', 'users', 'settings'].forEach(name => {
         document.getElementById('tab-' + name).classList.toggle('hidden', name !== tab.getAttribute('data-tab'));
       });
     };
