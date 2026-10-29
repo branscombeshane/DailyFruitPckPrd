@@ -3467,7 +3467,7 @@ function onPrepAction_(action, prepId) {
   const t = prepTaskById_(prepId);
   if (!t) { alert('That prep tile is no longer on the board - it may have just been changed. The board is refreshing.'); prepRefresh_(); return; }
   if (action === 'log') return openPrepEditModal_('log', t);
-  if (action === 'label') return openPrepEditModal_('label', t);
+  if (action === 'label') return printPrepLabelsForTask_(t);
   if (action === 'adjust') return openPrepEditModal_('adjust', t);
   if (action === 'skip') return openPrepEditModal_('skip', t);
   if (action === 'complete') {
@@ -3510,12 +3510,6 @@ function openPrepEditModal_(mode, t) {
     qlabel.textContent = `New target (${unit})`;
     qty.value = prepQty_(t.targetQty);
     submit.textContent = 'Save';
-  } else if (mode === 'label') {
-    title.textContent = 'Print PREP STOCK labels';
-    sub.textContent = `${t.prepItem}. Each label says PREP STOCK, the product name and today's date.`;
-    qlabel.textContent = 'How many labels? (one per container/bag)';
-    qty.value = '1';
-    submit.textContent = '🏷 Print';
   } else if (mode === 'skip') {
     title.textContent = 'Skip this tile';
     sub.textContent = `${t.prepItem} - ${t.shift || 'Any shift'} shift. It will show as skipped and can be restored.`;
@@ -3550,14 +3544,6 @@ function submitPrepEdit_() {
     openKitchenManagerModal(prepPseudoOrder_(t), 'prepLog');
     return;
   }
-  if (mode === 'label') {
-    const n = Math.floor(qtyVal);
-    if (!(n >= 1) || n > 100) { alert('Enter a number of labels between 1 and 100.'); return; }
-    if (!t) { closePrepEditModal_(); prepRefresh_(); return; }
-    closePrepEditModal_();
-    printPrepLabels_(t, n);
-    return;
-  }
   if (mode === 'adjust') {
     if (!(qtyVal > 0)) { alert('Target must be more than 0 - use Skip if nothing is needed.'); return; }
     closePrepEditModal_();
@@ -3590,6 +3576,15 @@ function prepLabelPagesHtml_(name, dateStr, count) {
           <div class="prep-label-date">${escapeHtml(dateStr)}</div>
         </div>`;
   return new Array(count).fill(page).join('');
+}
+// One PREP STOCK label per 10kg prepped, like the order labels (95kg = nine + one for the 5kg left over). Counted on what has been
+// prepped so far, or on the target when nothing has been logged yet. No question asked - the Labels button prints straight away.
+function printPrepLabelsForTask_(t) {
+  const qty = Number(t.qtyCompleted) > 0 ? Number(t.qtyCompleted) : Number(t.targetQty);
+  const n = computeLabelChunks(qty, LABEL_BATCH_SIZE).length;
+  if (!(n >= 1)) { alert('Nothing to label yet - there is no prepped quantity or target on this tile.'); return; }
+  if (n > 100) { alert('That is ' + n + ' labels (' + prepQty_(qty) + ' ' + (t.unit || 'kg') + ') - check the quantity on this tile first.'); return; }
+  printPrepLabels_(t, n);
 }
 function printPrepLabels_(t, count) {
   document.getElementById('print-labels-body').innerHTML = prepLabelPagesHtml_(t.prepItem, fmtDateLong(dateOnlyStr(new Date())), count);
