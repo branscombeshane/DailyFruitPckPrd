@@ -1024,7 +1024,7 @@
 
     <h3 style="margin-top:26px;">2. Products that use a prep item</h3>
     <p style="color:var(--muted);font-size:14px;">Yield = how much of the prepped item one unit of the finished product needs. Example: 1 kg of Potato Chips needs 1.25 kg of Peeled Potato, so the yield is 1.25 (it covers peeling waste). Only Production lines on orders are counted.</p>
-    <p style="color:var(--muted);font-size:14px;"><strong>Cover a whole family at once:</strong> end the product with a <strong>*</strong>. For example <strong>Potato Large - *</strong> links every product whose name starts with "Potato Large - " (chips, cubes, wedges, even when a customer's note or a spelling difference is tacked on). A more specific link always beats a family one, so you can give chips their own yield. You can also type a Sage product code. Names are not case-sensitive.</p>
+    <p style="color:var(--muted);font-size:14px;"><strong>Cover a whole family at once:</strong> end the product with a <strong>*</strong>. For example <strong>Potato Large - *</strong> links every product whose name starts with "Potato Large - " (chips, cubes, wedges, even when a customer's note or a spelling difference is tacked on). A more specific link always beats a family one, so you can give chips their own yield. To leave a product OUT of a family, link it on its own with a yield of <strong>0</strong> (e.g. <strong>Potato Large - BAG</strong> = 0, because bags are sold unpeeled). You can also type a Sage product code. Names are not case-sensitive.</p>
     <div id="prep-map-admin-list"></div>
     <div class="field" style="margin-top:14px;">
       <label>Finished product</label>
@@ -3727,7 +3727,8 @@ function wirePrepUi() {
     const y = Number(document.getElementById('new-prep-map-yield').value);
     if (!product) { alert('Pick the finished product.'); return; }
     if (!item) { alert('Add a prep item first, then link products to it.'); return; }
-    if (!(y > 0)) { alert('Enter the yield - e.g. 1.25 if 1 kg of this product needs 1.25 kg of the prepped item.'); return; }
+    if (document.getElementById('new-prep-map-yield').value.trim() === '' || !(y >= 0)) { alert('Enter the yield - e.g. 1.25 if 1 kg of this product needs 1.25 kg of the prepped item. Enter 0 if this product does NOT use the prep item.'); return; }
+    if (y === 0 && !confirm('Yield 0 means "' + product + '" does NOT use ' + item + ' - it is left out of the prep, even if a family link (ending in *) would otherwise include it.\n\nContinue?')) return;
     apiPost('addPrepMap', { productDescription: product, prepItem: item, yieldPerUnit: y })
       .then(prep => { document.getElementById('new-prep-map-product').value = ''; document.getElementById('new-prep-map-yield').value = ''; renderPrepAdmin(prep); })
       .catch(err => alert(err.message));
@@ -3875,7 +3876,7 @@ function renderPrepAdmin(prep) {
   const mapBox = document.getElementById('prep-map-admin-list');
   mapBox.innerHTML = map.length ? map.map((r, i) => `
     <div class="packer-row">
-      <span>${escapeHtml(r.productDescription)} <span style="color:var(--muted);">&rarr; ${escapeHtml(r.prepItem)}</span></span>
+      <span>${escapeHtml(r.productDescription)} <span style="color:var(--muted);">&rarr; ${escapeHtml(r.prepItem)}</span>${r.yieldPerUnit === 0 ? ' <span style="color:#a11;font-weight:600;">· not prepped (excluded)</span>' : ''}</span>
       <div style="display:flex;align-items:center;gap:10px;">
         <input type="number" class="prep-map-yield-input" data-idx="${i}" value="${r.yieldPerUnit}" min="0" step="any" style="width:80px;" title="Yield per unit">
         <button class="toggle ${r.active ? 'on' : ''}" data-idx="${i}" data-active="${r.active}"><span class="knob"></span></button>
@@ -3886,8 +3887,9 @@ function renderPrepAdmin(prep) {
     const commit = () => {
       const r = map[Number(input.getAttribute('data-idx'))];
       const y = Number(input.value);
-      if (!(y > 0)) { alert('Yield must be a positive number.'); input.value = r.yieldPerUnit; return; }
+      if (input.value.trim() === '' || !(y >= 0)) { alert('Yield must be a number: above 0, or 0 to leave this product out of the prep item.'); input.value = r.yieldPerUnit; return; }
       if (y === r.yieldPerUnit) return;
+      if (y === 0 && !confirm('Yield 0 means "' + r.productDescription + '" does NOT use ' + r.prepItem + ' - it is left out of the prep, even if a family link would otherwise include it.\n\nContinue?')) { input.value = r.yieldPerUnit; return; }
       input.disabled = true;
       apiPost('updatePrepMap', { productDescription: r.productDescription, prepItem: r.prepItem, fields: { yieldPerUnit: y } }).then(renderPrepAdmin).catch(err => { alert(err.message); input.disabled = false; });
     };
