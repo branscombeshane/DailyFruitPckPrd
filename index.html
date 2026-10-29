@@ -166,6 +166,12 @@
   .prep-bar{height:12px;background:var(--line);border-radius:7px;overflow:hidden;margin:8px 0 6px;}
   .prep-bar > span{display:block;height:100%;background:var(--green);}
   .prep-meta{font-size:12.5px;color:var(--muted);font-weight:600;margin-top:4px;}
+  .impact-verdict{margin:12px 0;padding:12px 14px;border-radius:10px;border-left:6px solid var(--line);background:var(--card);font-size:14.5px;line-height:1.45;}
+  .impact-verdict.better{border-left-color:#3d9a55;background:var(--ok-bg);}
+  .impact-verdict.worse{border-left-color:var(--crit);background:#fbeceb;}
+  .impact-verdict.same{border-left-color:var(--warn);}
+  .impact-verdict.early,.impact-verdict.notstarted{border-left-color:#9aa;}
+  .prep-table tr.pilot-week td{background:var(--ok-bg);}
   .prep-table{width:100%;border-collapse:collapse;font-size:14px;}
   .prep-table th{text-align:left;font-size:11.5px;text-transform:uppercase;letter-spacing:.4px;color:var(--muted);padding:6px 6px;border-bottom:2px solid var(--line);}
   .prep-table td{padding:8px 6px;border-bottom:1px solid var(--line);vertical-align:top;}
@@ -671,7 +677,7 @@
        leaves peeled/prepared stock behind for the next one. -->
   <div id="prep-section" class="hidden">
     <div class="section-heading" style="flex-wrap:wrap;">
-      <span>Prep for the next shift</span> <span class="count" id="prep-count">0</span>
+      <span>Prep stock</span> <span class="count" id="prep-count">0</span>
       <span id="prep-manager-actions" class="hidden" style="margin-left:auto;display:flex;gap:8px;flex-wrap:wrap;text-transform:none;letter-spacing:normal;">
         <button class="btn-secondary" id="prep-why-btn" style="padding:7px 12px;font-size:13px;">ℹ️ How it's calculated</button>
         <button class="btn-secondary" id="prep-generate-btn" style="padding:7px 12px;font-size:13px;">🔄 Generate / recalculate</button>
@@ -726,6 +732,17 @@
   <div class="section-heading" id="dash-packers-heading-label">Packers today</div>
   <div id="dash-packers-list"></div>
   <div class="empty-board hidden" id="dash-packers-empty">No orders printed yet today.</div>
+
+  <!-- Prep pilot: managers/admins only (shown by renderPrepSection) -->
+  <div id="prep-impact-section" class="hidden">
+    <div class="section-heading">Prep pilot - is it working?
+      <button class="btn-secondary" id="prep-impact-btn" style="margin-left:auto;">📊 Check now</button>
+    </div>
+    <div class="prep-meta" id="prep-impact-hint">Compares how long production orders take (slip printed to marked complete) before and after prep tiles started. Orders that use a prepped item are compared with all other production orders, so a generally busy or quiet spell isn't mistaken for the tiles working. Tap a tile to see the orders behind it.</div>
+    <div id="prep-impact-verdict" class="hidden"></div>
+    <div class="dashboard-grid" id="prep-impact-stats"></div>
+    <div id="prep-impact-weekly"></div>
+  </div>
 </div>
 
 <!-- ============ DATA HISTORY (any past day's Printed/Completed/Production
@@ -1018,7 +1035,16 @@
     <div class="field"><label>Yield (prep item per 1 unit)</label><input type="number" id="new-prep-map-yield" min="0" step="any" placeholder="e.g. 1.25"></div>
     <button class="btn-primary" id="add-prep-map-btn">Link product</button>
 
-    <h3 style="margin-top:26px;">3. Rules</h3>
+    <h3 style="margin-top:26px;">3. When is each day's prep done? <span style="font-weight:400;font-size:13px;color:var(--muted);">(optional)</span></h3>
+    <p style="color:var(--muted);font-size:14px;">Use this to prep a heavy day on the quiet days before it. Example: <strong>Sunday ← Friday, Day shift, 30%</strong> means the Friday Day shift gets prep tiles worth 30% of Sunday's expected demand (Sunday's production is Monday's deliveries). Add as many rules as you like, and several can feed one day. Pick "All shifts" to split a rule across the shifts that run that day. A weekday that has rules here is prepped <em>only</em> by those rules; a weekday with none keeps the normal equal split between its own shifts. The share is a % of that day's demand, so anything under 100% in total is simply made fresh on the day. (A fixed quantity per shift on a prep item doesn't apply to a weekday that has rules.)</p>
+    <div id="prep-schedule-admin-list"></div>
+    <div class="field" style="margin-top:14px;"><label>Day being prepared for</label><select id="new-prep-sched-target"></select></div>
+    <div class="field"><label>Prep is done on</label><select id="new-prep-sched-prepday"></select></div>
+    <div class="field"><label>By which shift</label><select id="new-prep-sched-shift"></select></div>
+    <div class="field"><label>Share of that day's demand (%)</label><input type="number" id="new-prep-sched-pct" min="1" max="100" step="any" placeholder="e.g. 30"></div>
+    <button class="btn-primary" id="add-prep-sched-btn">Add rule</button>
+
+    <h3 style="margin-top:26px;">4. Rules</h3>
     <div class="field">
       <label>History: how many past weeks of the same weekday to average</label>
       <input type="number" id="prep-set-weeks" min="1" max="12" step="1">
@@ -1036,12 +1062,24 @@
       <input type="text" id="prep-set-shifts" placeholder="Leave blank to use the shifts that actually ran that weekday">
       <p style="color:var(--muted);font-size:12.5px;margin:6px 0 0;">Blank = the system looks at which shifts completed Production orders on that weekday over the history weeks, so a Sunday-only shift doesn't get Monday tiles. Names must match the Shifts tab exactly.</p>
     </div>
+    <div class="field">
+      <label>Prep share per shift</label>
+      <div id="prep-weights-grid"></div>
+      <p style="color:var(--muted);font-size:12.5px;margin:6px 0 0;">How the day's prep is split across shifts. 1 each = equal. Give a shift with spare capacity a bigger number (2 = twice the share) so it preps more for the busy shift after it; 0 = that shift gets no prep tiles. "Show today's plan" below lists how much production each shift actually completed recently, to help you set these.</p>
+    </div>
+    <div class="field">
+      <label>Pilot start date (optional)</label>
+      <input type="date" id="prep-set-pilot">
+      <p style="color:var(--muted);font-size:12.5px;margin:6px 0 0;">Used by "Prep pilot - is it working?" on the Dashboard. Blank = it counts from the first day prep tiles exist.</p>
+    </div>
     <button class="btn-primary" id="save-prep-settings-btn">Save rules</button>
     <div class="result-box hidden" id="prep-settings-result"></div>
 
     <h3 style="margin-top:26px;">Check the numbers</h3>
     <p style="color:var(--muted);font-size:13px;">Shows what today's tiles would be and why, without creating anything.</p>
     <button class="btn-secondary" id="prep-preview-btn">🔍 Show today's plan</button>
+    <div class="field" style="margin-top:12px;"><label>Or check another day (e.g. a Friday)</label><input type="date" id="prep-preview-date"></div>
+    <button class="btn-secondary" id="prep-preview-other-btn">🔍 Show that day's plan</button>
   </div>
 
   <div class="admin-panel hidden" id="tab-packers">
@@ -3344,6 +3382,7 @@ function prepCardHtml_(t, canManage) {
   const today = todayDateStr();
   const carry = t.date !== today ? `<div class="prep-meta">⏮ From ${escapeHtml(fmtDateLong(t.date))} - still open</div>` : '';
   let notes = '';
+  if (t.forDay) notes += `<div class="prep-meta"><strong>Prepping for ${t.forDay.split(',').map(d => escapeHtml(fmtDateLong(d))).join(' + ')}</strong></div>`;
   if (t.source === 'Manual') notes += `<div class="prep-meta">➕ Added by ${escapeHtml(t.adjustedBy || 'a manager')}</div>`;
   else if (t.adjustedBy && t.status !== 'Skipped') notes += `<div class="prep-meta">✏️ Adjusted by ${escapeHtml(t.adjustedBy)} (calculated ${prepQty_(t.calcQty)} ${unit})</div>`;
   if (t.note && t.status !== 'Skipped') notes += `<div class="prep-meta">${escapeHtml(t.note)}</div>`;
@@ -3384,6 +3423,8 @@ function renderPrepSection() {
   const section = document.getElementById('prep-section');
   if (!section) return;
   const canManage = prepCanManage_();
+  const impactSec = document.getElementById('prep-impact-section');
+  if (impactSec) impactSec.classList.toggle('hidden', !canManage);
   const tasks = prepVisibleTasks_();
   section.classList.toggle('hidden', !canManage && !tasks.length);
   document.getElementById('prep-manager-actions').classList.toggle('hidden', !canManage);
@@ -3600,23 +3641,39 @@ function openPrepItemDetail_(itemName) {
 
 // "Show the working": per prep item - known orders, history average, which is used, per-shift tile.
 function prepPlanHtml_(plan, headline) {
-  const rows = (plan.items || []).map(i => `<tr>
-      <td><strong>${escapeHtml(i.name)}</strong></td>
+  const list = plan.items || plan.perItem || [];
+  const rows = list.map(i => {
+    const by = Array.isArray(i.byShift) ? i.byShift : [];
+    const uneven = by.some(b => b.qty !== by[0].qty);
+    const cell = uneven
+      ? by.map(b => `${escapeHtml(b.shift)}: <strong>${prepQty_(b.qty)}</strong>`).join('<br>')
+      : `<strong>${prepQty_(i.perShift)} ${escapeHtml(i.unit || 'kg')}</strong>${by.length > 1 ? '<br><span class="prep-meta">each shift</span>' : ''}`;
+    const forTxt = i.targetDay ? `<br><span class="prep-meta">for ${escapeHtml(fmtDateLong(i.targetDay))} - ${i.sharePct}%${i.ruleShift ? ' - ' + escapeHtml(i.ruleShift) + ' shift' : ''}</span>` : '';
+    return `<tr>
+      <td><strong>${escapeHtml(i.name)}</strong>${forTxt}</td>
       <td class="num">${prepQty_(i.known)}</td>
       <td class="num">${prepQty_(i.history)}</td>
       <td class="num">${prepQty_(i.dayDemand)}${i.usedHistory ? '<br><span class="prep-meta">history</span>' : '<br><span class="prep-meta">known</span>'}</td>
-      <td class="num"><strong>${prepQty_(i.perShift)} ${escapeHtml(i.unit || 'kg')}</strong>${i.basis === 'fixed' ? '<br><span class="prep-meta">fixed</span>' : ''}</td>
-    </tr>`).join('');
+      <td class="num">${cell}${i.basis === 'fixed' ? '<br><span class="prep-meta">fixed</span>' : ''}</td>
+    </tr>`;
+  }).join('');
   const hist = (plan.historyDays || []).length
     ? 'History = average of ' + plan.historyDays.map(d => fmtDateLong(d)).join(', ') + ' (days the factory had no orders are ignored).'
     : 'No history yet for this weekday - tiles use the known orders only.';
+  const shares = (plan.shiftShares || []);
+  const uneven = shares.some(s => s.weight !== shares[0].weight);
+  const shareTxt = shares.length ? (uneven ? 'shares ' + shares.map(s => s.shift + ' ' + s.weight).join(', ') : 'split equally') : '';
+  const load = (plan.shiftLoad || []);
+  const loadHtml = load.length ? `<div class="prep-meta" style="margin:14px 0 6px;"><strong>Recent production completed by each shift</strong> (the history weeks) - use this to decide who has spare capacity:</div>
+    <table class="prep-table"><tr><th>Shift</th><th class="num">Orders</th><th class="num">Production kg</th><th class="num">Share</th></tr>
+    ${load.map(l => `<tr><td>${escapeHtml(l.shift)}</td><td class="num">${l.orders}</td><td class="num">${prepQty_(l.kg)}</td><td class="num">${l.sharePct}%</td></tr>`).join('')}</table>` : '';
   return (headline ? `<div class="result-box" style="margin-bottom:12px;">${headline}</div>` : '') +
-    `<div class="prep-meta" style="margin:0 0 8px;">Production day ${escapeHtml(fmtDateLong(plan.targetDay))} - shifts: <strong>${escapeHtml((plan.shifts || []).join(', ') || 'none')}</strong> (${escapeHtml(plan.shiftSource || '')}). Each tile = the larger of known orders and history, divided equally across the shifts, rounded up.</div>
+    `<div class="prep-meta" style="margin:0 0 8px;">Production day ${escapeHtml(fmtDateLong(plan.targetDay))} - shifts: <strong>${escapeHtml((plan.shifts || []).join(', ') || 'none')}</strong> (${escapeHtml(plan.shiftSource || '')}). ${plan.mode === 'schedule' ? 'This weekday has prep-ahead rules (Admin > Prep), so it preps for the days shown. Each tile = the rule\'s share of that day\'s demand (the larger of known orders and history), added up per tile and rounded up.' : 'Each tile = the larger of known orders and history, ' + escapeHtml(shareTxt || 'divided across the shifts') + ', rounded up.'}</div>
     <table class="prep-table">
       <tr><th>Prep item</th><th class="num">Known orders</th><th class="num">History avg</th><th class="num">Day demand</th><th class="num">Per shift</th></tr>
       ${rows || '<tr><td colspan="5">Nothing to prepare - no linked products have demand.</td></tr>'}
     </table>
-    <div class="prep-meta" style="margin-top:10px;">${escapeHtml(hist)}</div>`;
+    <div class="prep-meta" style="margin-top:10px;">${escapeHtml(hist)}</div>${loadHtml}`;
 }
 function showPrepPlan_(plan, title, headline) {
   document.getElementById('prep-info-title').textContent = title;
@@ -3624,8 +3681,9 @@ function showPrepPlan_(plan, title, headline) {
   document.getElementById('prep-info-body').innerHTML = prepPlanHtml_(plan, headline);
   document.getElementById('prep-info-modal').classList.remove('hidden');
 }
-function prepPreview_() {
-  apiPost('previewPrepPlan', { date: todayDateStr() }).then(plan => showPrepPlan_(plan, "How today's prep is calculated"))
+function prepPreview_(dateStr) {
+  const d = typeof dateStr === 'string' && dateStr ? dateStr : todayDateStr();
+  apiPost('previewPrepPlan', { date: d }).then(plan => showPrepPlan_(plan, d === todayDateStr() ? "How today's prep is calculated" : 'How the prep for ' + fmtDateLong(d) + ' is calculated'))
     .catch(err => alert(err.message));
 }
 function prepGenerate_() {
@@ -3642,7 +3700,7 @@ function wirePrepUi() {
   document.getElementById('prep-edit-qty').addEventListener('keydown', e => { if (e.key === 'Enter') submitPrepEdit_(); });
   document.getElementById('prep-info-close-btn').onclick = () => document.getElementById('prep-info-modal').classList.add('hidden');
   document.getElementById('prep-generate-btn').onclick = prepGenerate_;
-  document.getElementById('prep-why-btn').onclick = prepPreview_;
+  document.getElementById('prep-why-btn').onclick = () => prepPreview_();
   document.getElementById('prep-add-btn').onclick = () => {
     if (!((boardData && boardData.prepItems) || []).length) { alert('No prep items yet - set them up in Admin > Prep first.'); return; }
     openPrepEditModal_('add', null);
@@ -3680,11 +3738,80 @@ function wirePrepUi() {
       PrepHistoryWeeks: document.getElementById('prep-set-weeks').value,
       PrepLeadDays: document.getElementById('prep-set-lead').value,
       PrepRoundKg: document.getElementById('prep-set-round').value,
-      PrepShifts: document.getElementById('prep-set-shifts').value.trim()
+      PrepShifts: document.getElementById('prep-set-shifts').value.trim(),
+      PrepShiftWeights: prepWeightsFromGrid_(),
+      PrepPilotStart: document.getElementById('prep-set-pilot').value
     } }).then(() => { box.className = 'result-box success'; box.textContent = 'Saved. New rules apply the next time tiles are generated or recalculated.'; })
       .catch(err => { box.className = 'result-box error'; box.textContent = err.message; });
   };
-  document.getElementById('prep-preview-btn').onclick = prepPreview_;
+  document.getElementById('add-prep-sched-btn').onclick = () => {
+    const pct = Number(document.getElementById('new-prep-sched-pct').value);
+    if (!(pct > 0 && pct <= 100)) { alert('Enter the share as a % between 1 and 100.'); return; }
+    apiPost('addPrepSchedule', { targetDay: document.getElementById('new-prep-sched-target').value, prepDay: document.getElementById('new-prep-sched-prepday').value, shift: document.getElementById('new-prep-sched-shift').value, sharePct: pct })
+      .then(prep => { document.getElementById('new-prep-sched-pct').value = ''; renderPrepAdmin(prep); })
+      .catch(err => alert(err.message));
+  };
+  document.getElementById('prep-preview-btn').onclick = () => prepPreview_();
+  document.getElementById('prep-preview-other-btn').onclick = () => {
+    const d = document.getElementById('prep-preview-date').value;
+    if (!d) { alert('Pick a date first.'); return; }
+    prepPreview_(d);
+  };
+  document.getElementById('prep-impact-btn').onclick = loadPrepImpact_;
+  document.getElementById('prep-impact-stats').addEventListener('click', e => {
+    const card = e.target.closest('[data-impact]');
+    if (card) openPrepImpactDetail_(card.getAttribute('data-impact'));
+  });
+}
+
+// ---- Dashboard > Prep pilot ----
+let prepImpact = null;
+function fmtMinutes_(m) {
+  if (m === null || m === undefined) return '-';
+  const h = Math.floor(m / 60), r = m % 60;
+  return h ? h + ' h ' + String(r).padStart(2, '0') + ' min' : r + ' min';
+}
+function loadPrepImpact_() {
+  apiPost('getPrepImpact', {}, { timeoutMs: 60000 }).then(res => { prepImpact = res; renderPrepImpact_(); })
+    .catch(err => alert(err.message));
+}
+function renderPrepImpact_() {
+  const r = prepImpact;
+  if (!r) return;
+  const v = document.getElementById('prep-impact-verdict');
+  v.className = 'impact-verdict ' + (r.verdict ? r.verdict.level : '');
+  v.textContent = r.needsSetup ? 'Link some products to prep items first (Admin > Prep) - without links there is nothing to compare.' : (r.verdict ? r.verdict.text : '');
+  const start = r.pilotStart ? fmtDateLong(r.pilotStart) + (r.startSource === 'first tile' ? ' (first day with prep tiles)' : ' (set in Rules)') : 'not started';
+  const g = r.groups;
+  const tile = (key, label, st, extra) => `<div class="stat-card" data-impact="${key}">
+      <div class="stat-value">${fmtMinutes_(st.median)}</div>
+      <div class="stat-label">${label}</div>
+      <div class="stat-sub">${st.n} order${st.n === 1 ? '' : 's'}${st.p80 !== null ? ' - slowest 1 in 5 took ' + fmtMinutes_(st.p80) + ' or more' : ''}. Tap for the orders.</div>
+    </div>`;
+  document.getElementById('prep-impact-stats').innerHTML =
+    tile('prep-before', 'Prep orders - BEFORE (typical time)', g.prep.before) +
+    tile('prep-after', 'Prep orders - AFTER (typical time)', g.prep.after) +
+    tile('other-before', 'All other orders - BEFORE', g.other.before) +
+    tile('other-after', 'All other orders - AFTER', g.other.after);
+  const weeks = (r.weekly || []);
+  document.getElementById('prep-impact-weekly').innerHTML = weeks.length ? `<div class="prep-meta" style="margin:14px 0 6px;">Pilot start: <strong>${escapeHtml(start)}</strong>. Typical time per week, printed to complete (shaded weeks are after the start):</div>
+    <table class="prep-table"><tr><th>Week starting</th><th class="num">Prep orders</th><th class="num">All other orders</th></tr>
+    ${weeks.map(w => `<tr class="${w.pilot ? 'pilot-week' : ''}"><td>${escapeHtml(fmtDateLong(w.week))}</td>
+      <td class="num">${fmtMinutes_(w.prep.median)} <span class="prep-meta">(${w.prep.n})</span></td>
+      <td class="num">${fmtMinutes_(w.other.median)} <span class="prep-meta">(${w.other.n})</span></td></tr>`).join('')}</table>
+    <div class="prep-meta" style="margin-top:8px;">Counts only orders with both a printed and a completed time, taking between 0 and 24 hours${r.excluded ? ' (' + r.excluded + ' left out as outside that range)' : ''}. Caution: the "other" group also needs cutting and peeling and competes for the same staff, so it is a fair control for busy/quiet spells, not a perfect one.</div>` : '';
+}
+function openPrepImpactDetail_(key) {
+  if (!prepImpact) return;
+  const [group, period] = key.split('-');
+  const rows = (prepImpact.orders || []).filter(o => o.group === group && o.period === period);
+  document.getElementById('prep-info-title').textContent = (group === 'prep' ? 'Prep orders' : 'All other orders') + ' - ' + (period === 'before' ? 'before' : 'after');
+  document.getElementById('prep-info-sub').textContent = rows.length + ' order' + (rows.length === 1 ? '' : 's') + ', most recent first' + (prepImpact.orders.length >= 1500 ? ' (list capped at the latest 1500 overall)' : '');
+  document.getElementById('prep-info-body').innerHTML = rows.length ? `<table class="prep-table">
+    <tr><th>Order</th><th>Customer</th><th>Completed</th><th>Shift</th><th class="num">Time</th></tr>
+    ${rows.map(o => `<tr><td>${escapeHtml(o.ref)}</td><td>${escapeHtml(o.customer)}</td><td>${escapeHtml(fmtDateLong(o.day))}</td><td>${escapeHtml(o.shift || '-')}</td><td class="num">${fmtMinutes_(o.minutes)}</td></tr>`).join('')}
+  </table>` : '<div class="empty-note">No orders in this group.</div>';
+  document.getElementById('prep-info-modal').classList.remove('hidden');
 }
 
 // ---- Admin > Prep ----
@@ -3794,6 +3921,95 @@ function renderPrepAdmin(prep) {
   setVal('prep-set-lead', st.leadDays === undefined ? 0 : st.leadDays);
   setVal('prep-set-round', st.roundKg === undefined ? 5 : st.roundKg);
   setVal('prep-set-shifts', st.shifts || '');
+  setVal('prep-set-pilot', st.pilotStart || '');
+  renderPrepWeightsGrid_(st.shiftWeights || '');
+  renderPrepScheduleAdmin_(Array.isArray(prep.schedule) ? prep.schedule : []);
+}
+
+// ---- Admin > Prep > prep-ahead schedule ----
+const PREP_WEEKDAYS_UI = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+function renderPrepScheduleAdmin_(rules) {
+  const box = document.getElementById('prep-schedule-admin-list');
+  if (!box) return;
+  const totals = {};
+  rules.filter(r => r.active).forEach(r => { totals[r.targetDay] = (totals[r.targetDay] || 0) + r.sharePct; });
+  box.innerHTML = rules.length ? rules.map((r, i) => `
+    <div class="packer-row">
+      <span><strong>${escapeHtml(r.targetDay)}</strong> <span style="color:var(--muted);">&larr; prepped on</span> <strong>${escapeHtml(r.prepDay)}</strong>, ${r.shift ? escapeHtml(r.shift) + ' shift' : 'all shifts that day'}</span>
+      <div style="display:flex;align-items:center;gap:10px;">
+        <input type="number" class="prep-sched-pct-input" data-idx="${i}" value="${r.sharePct}" min="1" max="100" step="any" style="width:76px;" title="% of the target day's demand"> %
+        <button class="toggle ${r.active ? 'on' : ''}" data-idx="${i}" data-active="${r.active}"><span class="knob"></span></button>
+        <button class="icon-btn" style="background:#f3d6d6;color:#a11;width:32px;height:32px;font-size:14px;" data-delete-idx="${i}" title="Delete rule">✕</button>
+      </div>
+    </div>`).join('') + Object.keys(totals).map(d => `<div class="prep-meta" style="margin:6px 0;">${escapeHtml(d)}: ${Math.round(totals[d] * 10) / 10}% prepped ahead${totals[d] > 100 ? ' <strong style="color:var(--crit);">- over 100%, more stock than the day needs</strong>' : (totals[d] < 100 ? ' - the other ' + Math.round((100 - totals[d]) * 10) / 10 + '% is made fresh on the day' : '')}</div>`).join('')
+    : '<div class="log-row">No rules yet - every weekday preps for itself (equal split between its shifts).</div>';
+  const call = (action, r, extra) => apiPost(action, Object.assign({ targetDay: r.targetDay, prepDay: r.prepDay, shift: r.shift }, extra || {})).then(renderPrepAdmin);
+  box.querySelectorAll('.prep-sched-pct-input').forEach(input => {
+    const commit = () => {
+      const r = rules[Number(input.getAttribute('data-idx'))];
+      const v = Number(input.value);
+      if (!(v > 0 && v <= 100)) { alert('Share must be above 0 and at most 100.'); input.value = r.sharePct; return; }
+      if (v === r.sharePct) return;
+      input.disabled = true;
+      call('updatePrepSchedule', r, { fields: { sharePct: v } }).catch(err => { alert(err.message); input.disabled = false; });
+    };
+    input.addEventListener('blur', commit);
+    input.addEventListener('keydown', e => { if (e.key === 'Enter') input.blur(); });
+  });
+  box.querySelectorAll('.toggle').forEach(btn => {
+    btn.onclick = () => {
+      const r = rules[Number(btn.getAttribute('data-idx'))];
+      btn.disabled = true;
+      call('updatePrepSchedule', r, { fields: { active: btn.getAttribute('data-active') !== 'true' } }).catch(err => { alert(err.message); btn.disabled = false; });
+    };
+  });
+  box.querySelectorAll('[data-delete-idx]').forEach(btn => {
+    btn.onclick = () => {
+      const r = rules[Number(btn.getAttribute('data-delete-idx'))];
+      if (!confirm(`Delete the rule "${r.targetDay} prepped on ${r.prepDay}${r.shift ? ' (' + r.shift + ')' : ''}"? Tiles already created stay as they are.`)) return;
+      btn.disabled = true;
+      call('deletePrepSchedule', r).catch(err => { alert(err.message); btn.disabled = false; });
+    };
+  });
+  const dayOpts = PREP_WEEKDAYS_UI.map(d => `<option value="${d}">${d}</option>`).join('');
+  const tsel = document.getElementById('new-prep-sched-target'), psel = document.getElementById('new-prep-sched-prepday'), ssel = document.getElementById('new-prep-sched-shift');
+  if (tsel && !tsel.options.length) { tsel.innerHTML = dayOpts; tsel.value = 'Sunday'; }
+  if (psel && !psel.options.length) { psel.innerHTML = dayOpts; psel.value = 'Friday'; }
+  if (ssel) {
+    const keep = ssel.value;
+    const names = ((boardData && boardData.settings && boardData.settings.shiftNames) || []);
+    ssel.innerHTML = '<option value="">All shifts that day</option>' + names.map(n => `<option value="${escapeHtml(n)}">${escapeHtml(n)}</option>`).join('');
+    ssel.value = keep;
+  }
+}
+
+// "Day=2, Night=1" <-> one number box per shift
+function prepParseWeightsClient_(raw) {
+  const out = {};
+  String(raw || '').split(',').forEach(part => {
+    const m = /^(.+?)\s*[=:]\s*(\d+(?:\.\d+)?)\s*$/.exec(part.trim());
+    if (m) out[m[1].trim().toLowerCase()] = Number(m[2]);
+  });
+  return out;
+}
+function renderPrepWeightsGrid_(raw) {
+  const grid = document.getElementById('prep-weights-grid');
+  if (!grid || grid.contains(document.activeElement)) return;   // don't wipe a box someone is typing in
+  const names = ((boardData && boardData.settings && boardData.settings.shiftNames) || []).slice();
+  const w = prepParseWeightsClient_(raw);
+  Object.keys(w).forEach(k => { if (!names.some(n => n.toLowerCase() === k)) names.push(k); });   // keep a weight for a shift that was renamed
+  grid.innerHTML = names.length ? names.map(n => {
+    const v = w[n.toLowerCase()];
+    return `<div class="packer-row"><span>${escapeHtml(n)}</span><input type="number" class="prep-weight-input" data-shift="${escapeHtml(n)}" min="0" step="any" value="${v === undefined ? 1 : v}" style="width:90px;"></div>`;
+  }).join('') : '<div class="log-row">No shifts found yet.</div>';
+}
+function prepWeightsFromGrid_() {
+  const parts = [];
+  document.querySelectorAll('#prep-weights-grid .prep-weight-input').forEach(inp => {
+    const v = Number(inp.value);
+    if (inp.value !== '' && v >= 0 && v !== 1) parts.push(inp.getAttribute('data-shift') + '=' + v);
+  });
+  return parts.join(', ');
 }
 
 /* ===================== VIEW MODAL ===================== */
