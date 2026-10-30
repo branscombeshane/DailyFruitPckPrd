@@ -3396,20 +3396,22 @@ function prepCardHtml_(t, canManage) {
   if (t.status === 'Done') {
     cls += ' done';
     status = `<div class="assigned-strip"><span>✅ Done${t.completedBy ? ' by ' + escapeHtml(t.completedBy) : ''}</span><span>${t.completedAt ? fmtTime(t.completedAt) : ''}</span></div>`;
-    actions = `<div class="card-actions">${labelBtn}${canManage ? `<button class="btn-secondary" data-prep-action="reopen" data-prep-id="${id}">↩ Re-open</button>` : ''}</div>`;
+    actions = `<div class="prod-actions">${labelBtn}</div>${canManage ? `<div class="card-actions" style="margin-top:8px;"><button class="btn-secondary" data-prep-action="reopen" data-prep-id="${id}">↩ Re-open</button></div>` : ''}`;
   } else if (t.status === 'Skipped') {
     cls += ' skipped';
     status = `<div class="prep-meta">⏭ Skipped${t.adjustedBy ? ' by ' + escapeHtml(t.adjustedBy) : ''}${t.note ? ' - ' + escapeHtml(t.note) : ''}</div>`;
     actions = canManage ? `<div class="card-actions"><button class="btn-secondary" data-prep-action="restore" data-prep-id="${id}">Restore</button></div>` : '';
   } else {
     if (t.lastLoggedBy) status = `<div class="prep-meta">Last logged by ${escapeHtml(t.lastLoggedBy)}${t.lastLoggedAt ? ' at ' + fmtTime(t.lastLoggedAt) : ''}</div>`;
-    actions = `<div class="prod-actions">
+    // Same order as an order tile: Slip / Labels on top, then Log progress / Complete.
+    actions = `<div class="prod-actions">${labelBtn}</div>
+      <div class="prod-actions" style="margin-top:8px;">
         <button class="btn-secondary" data-prep-action="log" data-prep-id="${id}">📝 Log progress</button>
         <button class="btn-primary" data-prep-action="complete" data-prep-id="${id}">Complete</button>
-      </div>` + `<div class="card-actions" style="margin-top:8px;">
-        ${labelBtn}${canManage ? `<button class="btn-secondary" data-prep-action="adjust" data-prep-id="${id}">✏️ Adjust</button>
-        <button class="btn-secondary" data-prep-action="skip" data-prep-id="${id}">⏭ Skip</button>` : ''}
-      </div>`;
+      </div>` + (canManage ? `<div class="card-actions" style="margin-top:8px;">
+        <button class="btn-secondary" data-prep-action="adjust" data-prep-id="${id}">✏️ Adjust</button>
+        <button class="btn-secondary" data-prep-action="skip" data-prep-id="${id}">⏭ Skip</button>
+      </div>` : '');
   }
   return `<div class="${cls}" data-prep-card="${id}">
     <div class="prep-card-head">
