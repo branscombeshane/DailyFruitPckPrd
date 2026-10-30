@@ -1478,6 +1478,9 @@ function handleApiResponse(res) {
     if (AUTH_ERROR_MESSAGES.includes(res.error)) {
       logoutUser('You were signed out — please sign in again.');
     }
+    else if (String(res.error || '').indexOf('You are not approved for the ') === 0) {
+      logoutUser(res.error); // this login's shift was taken off the Kitchen Manager's approved shifts - back to sign-in
+    }
     throw new Error(res.error || 'Unknown server error');
   }
   return res.data;
