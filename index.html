@@ -484,6 +484,7 @@
     .prep-label-product.long{font-size:14px;}
     .prep-label-product.xlong{font-size:11.5px;}
     .prep-label-date{font-size:15px;font-weight:800;}
+    .prep-label-shift{font-size:15px;font-weight:800;text-transform:uppercase;letter-spacing:.5px;}
   }
 
   .conn-banner{
@@ -1177,7 +1178,7 @@
   <div class="slip-ref-line" id="slip-ref"></div>
   <div class="slip-meta" id="slip-created"></div>
   <div class="slip-meta hidden" id="slip-delivery-row"><strong>Delivery:</strong> <span id="slip-delivery"></span></div>
-  <div class="slip-meta"><strong>Customer:</strong> <span id="slip-customer"></span></div>
+  <div class="slip-meta" id="slip-customer-row"><strong>Customer:</strong> <span id="slip-customer"></span></div>
   <div class="slip-meta hidden" id="slip-notes-row"><strong>Notes:</strong> <span id="slip-notes"></span></div>
   <div class="slip-meta" id="slip-assigned-row"><strong>Assigned to:</strong> <span id="slip-packer"></span> at <span id="slip-assigned-time"></span></div>
   <div class="slip-rule"></div>
@@ -3390,7 +3391,7 @@ function prepCardHtml_(t, canManage) {
   else if (t.adjustedBy && t.status !== 'Skipped') notes += `<div class="prep-meta">✏️ Adjusted by ${escapeHtml(t.adjustedBy)} (calculated ${prepQty_(t.calcQty)} ${unit})</div>`;
   if (t.note && t.status !== 'Skipped') notes += `<div class="prep-meta">${escapeHtml(t.note)}</div>`;
   const id = escapeHtml(t.prepId);
-  const labelBtn = `<button class="btn-secondary" data-prep-action="label" data-prep-id="${id}">🏷 Labels</button>`;
+  const labelBtn = `<button class="btn-secondary" data-prep-action="slip" data-prep-id="${id}">🖨 Slip</button><button class="btn-secondary" data-prep-action="label" data-prep-id="${id}">🏷 Labels</button>`;
   let cls = 'prep-card', status = '', actions = '';
   if (t.status === 'Done') {
     cls += ' done';
@@ -3470,6 +3471,7 @@ function onPrepAction_(action, prepId) {
   const t = prepTaskById_(prepId);
   if (!t) { alert('That prep tile is no longer on the board - it may have just been changed. The board is refreshing.'); prepRefresh_(); return; }
   if (action === 'log') return openPrepEditModal_('log', t);
+  if (action === 'slip') return printPrepSlip_(t);
   if (action === 'label') return printPrepLabelsForTask_(t);
   if (action === 'adjust') return openPrepEditModal_('adjust', t);
   if (action === 'skip') return openPrepEditModal_('skip', t);
@@ -3571,12 +3573,13 @@ function submitPrepEdit_() {
 // PREP STOCK labels: same Argox 58mm x 43mm die-cut stock and the same print plumbing as the
 // order labels, but a completely different face - no logo, no customer/batch/address, just
 // PREP STOCK, the product name and the date it was prepped (today).
-function prepLabelPagesHtml_(name, dateStr, count) {
+function prepLabelPagesHtml_(name, dateStr, count, shift) {
   const cls = name.length > 28 ? ' xlong' : name.length > 16 ? ' long' : '';
   const page = `<div class="label-page prep-label">
           <div class="prep-label-banner">PREP STOCK</div>
           <div class="prep-label-product${cls}">${escapeHtml(name)}</div>
-          <div class="prep-label-date">${escapeHtml(dateStr)}</div>
+          <div class="prep-label-date">${escapeHtml(dateStr)}</div>${shift ? `
+          <div class="prep-label-shift">${escapeHtml(shift)} shift</div>` : ''}
         </div>`;
   return new Array(count).fill(page).join('');
 }
@@ -3589,8 +3592,51 @@ function printPrepLabelsForTask_(t) {
   if (n > 100) { alert('That is ' + n + ' labels (' + prepQty_(qty) + ' ' + (t.unit || 'kg') + ') - check the quantity on this tile first.'); return; }
   printPrepLabels_(t, n);
 }
+// The shift that prepped the stock (the tile's shift). A blank or generic "Any shift" tile prints no shift line.
+function prepShiftName_(t) {
+  const sh = String((t && t.shift) || '').trim();
+  return (!sh || /^any shift$/i.test(sh)) ? '' : sh;
+}
+// Prep stock slip: the same 80mm slip template as the Production Job Slip, filled in for one prep tile.
+function printPrepSlip_(t) {
+  const unit = t.unit || 'kg';
+  const sh = prepShiftName_(t);
+  const el = id => document.getElementById(id);
+  el('print-page-style').textContent = '@page{ size:80mm auto; margin:0; }';
+  document.body.setAttribute('data-print-target', 'slip');
+  el('slip-type-label').textContent = 'Prep Stock Slip';
+  el('slip-ref').textContent = t.prepItem;
+  el('slip-created').textContent = (sh ? sh + ' shift - ' : '') + 'Prep for ' + fmtDateLong(t.date || todayDateStr());
+  el('slip-delivery-row').classList.add('hidden');
+  el('slip-customer-row').classList.add('hidden');
+  const noteBits = [];
+  if (t.forDay) noteBits.push('Prepping for ' + t.forDay.split(',').map(d => fmtDateLong(d)).join(' + '));
+  if (t.status === 'Done' && t.completedBy) noteBits.push('Completed by ' + t.completedBy + (t.completedAt ? ' at ' + fmtTime(t.completedAt) : ''));
+  if (t.note && t.status !== 'Skipped') noteBits.push(t.note);
+  el('slip-notes').textContent = noteBits.join(' - ');
+  el('slip-notes-row').classList.toggle('hidden', !noteBits.length);
+  el('slip-assigned-row').classList.add('hidden');
+  el('slip-signature-label').textContent = 'Prepared by: ____________________';
+  el('slip-printed-time').textContent = 'Printed: ' + fmtDateTimeFull(new Date());
+  const line = (label, qty) => `
+    <div class="slip-item">
+      <div class="slip-item-desc">${escapeHtml(t.prepItem)}</div>
+      <div class="slip-item-meta"><span>${escapeHtml(label)}</span><span class="slip-item-qty">${escapeHtml(prepQty_(qty))} ${escapeHtml(unit)}</span></div>
+    </div>`;
+  el('slip-items-body').innerHTML = line('Target', t.targetQty) + line('Prepped so far', t.qtyCompleted);
+  el('slip-unclassified-note').classList.add('hidden');
+  const onAfterPrint = () => {
+    window.removeEventListener('afterprint', onAfterPrint);
+    el('slip-type-label').textContent = 'Packing Slip';
+    el('slip-customer-row').classList.remove('hidden');
+    el('slip-assigned-row').classList.remove('hidden');
+    el('slip-signature-label').textContent = 'Packer signature: ____________________';
+  };
+  window.addEventListener('afterprint', onAfterPrint);
+  setTimeout(() => window.print(), 150);
+}
 function printPrepLabels_(t, count) {
-  document.getElementById('print-labels-body').innerHTML = prepLabelPagesHtml_(t.prepItem, fmtDateLong(dateOnlyStr(new Date())), count);
+  document.getElementById('print-labels-body').innerHTML = prepLabelPagesHtml_(t.prepItem, fmtDateLong(dateOnlyStr(new Date())), count, prepShiftName_(t));
   document.getElementById('print-page-style').textContent = '@page{ size:58mm 43mm; margin:0; }';
   document.body.setAttribute('data-print-target', 'labels');
   const onAfterPrint = () => {
