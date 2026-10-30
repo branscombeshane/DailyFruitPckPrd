@@ -673,6 +673,10 @@
 
 <!-- ============ PRODUCTION BOARD ============ -->
 <div id="production-view" class="hidden">
+  <div class="section-heading">Prep totals <span class="count" id="tally-count">0</span></div>
+  <div class="tally-panel" id="production-tally"></div>
+  <div class="empty-board hidden" id="tally-empty">Nothing to prep right now.</div>
+
   <!-- Prep for the next shift: tiles created by PrepPlan.gs (no Sage involved) so each shift
        leaves peeled/prepared stock behind for the next one. -->
   <div id="prep-section" class="hidden">
@@ -685,16 +689,15 @@
       </span>
     </div>
     <div class="prep-stats" id="prep-stats"></div>
-    <div class="order-grid" id="prep-grid"></div>
     <div class="empty-board hidden" id="prep-empty" style="padding:24px 20px;">No prep tiles for today yet. They are created automatically each morning - or tap Generate / recalculate. (Prep items and the products that use them are set up in Admin &gt; Prep.)</div>
   </div>
 
-  <div class="section-heading">Prep totals <span class="count" id="tally-count">0</span></div>
-  <div class="tally-panel" id="production-tally"></div>
-  <div class="empty-board hidden" id="tally-empty">Nothing to prep right now.</div>
-
   <div class="section-heading" id="prod-needs-heading">Needs processing <span class="count" id="prod-needs-count">0</span></div>
-  <div class="order-grid" id="prod-needs-grid"></div>
+  <!-- The prep stock tiles (#prep-grid) and the order tiles (#prod-needs-grid) share ONE grid, prep tiles first (display:contents on both). -->
+  <div class="order-grid" id="prod-needs-wrap">
+    <div id="prep-grid" style="display:contents;"></div>
+    <div class="order-grid" id="prod-needs-grid" style="display:contents;"></div>
+  </div>
   <div class="empty-board hidden" id="prod-needs-empty">All caught up — nothing waiting on production 🎉</div>
 
   <div class="section-heading" id="prod-scheduled-heading">Scheduled <span class="count" id="prod-scheduled-count">0</span></div>
