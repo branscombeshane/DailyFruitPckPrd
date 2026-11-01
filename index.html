@@ -772,6 +772,11 @@
     <div id="history-production-tally"></div>
     <div class="empty-board hidden" id="history-tally-empty">Nothing was completed in production on this day.</div>
 
+    <div class="section-heading">Prep stock <span class="count" id="history-prep-count">0</span></div>
+    <div class="prep-stats" id="history-prep-stats"></div>
+    <div id="history-prep-list"></div>
+    <div class="empty-board hidden" id="history-prep-empty">No prep stock was made on this day.</div>
+
     <div class="section-heading">
       <span id="history-printed-heading-label">Printed</span> <span class="count" id="history-printed-count">0</span>
     </div>
@@ -1277,6 +1282,8 @@ let dashTodayCompletedOrders = []; // same, type: productionCompleted
 let historyDate = todayDateStr();
 let historyPrintedOrders = [];
 let historyCompletedOrders = [];
+let historyPrepTasks = []; // prep stock made on historyDate (from getDashHistory.prep)
+let historyPrepItem = null; // prep item whose tile is selected in the history Prep stock section
 // Same idea as dashSelectedUnitBucket above, just a separate variable so
 // picking a tile on the History page never affects the Dashboard's own
 // tally tiles (today) and vice versa.
@@ -3018,6 +3025,8 @@ function renderHistoryView() {
   document.getElementById('history-packers-list').innerHTML = packerNames.map(name => `
     <div class="dash-packer-row"><span>${escapeHtml(name)}</span><span>${printedByPacker[name]} printed</span></div>`).join('');
 
+  renderHistoryPrep_();
+
   const completedGroups = computeProductionTally(completedOrders);
   document.getElementById('history-tally-count').textContent = completedGroups.length;
   document.getElementById('history-tally-empty').classList.toggle('hidden', completedGroups.length > 0);
@@ -3025,6 +3034,49 @@ function renderHistoryView() {
     () => historySelectedUnitBucket,
     v => { historySelectedUnitBucket = v; renderHistoryView(); });
   applyHistorySearchFilter();
+}
+
+// Data History > Prep stock: one tile per prep item made on the day (tap it to list just that item's tiles), then the tiles
+// themselves - shift, done against target, who completed / last logged it and when.
+function renderHistoryPrep_() {
+  const tasks = historyPrepTasks || [];
+  const byItem = {};
+  tasks.forEach(t => {
+    const g = byItem[t.prepItem] || (byItem[t.prepItem] = { unit: t.unit, done: 0, target: 0, tiles: 0 });
+    g.done += t.qtyCompleted; g.target += t.targetQty; g.tiles++;
+  });
+  const names = Object.keys(byItem).sort();
+  if (historyPrepItem && !byItem[historyPrepItem]) historyPrepItem = null;
+  document.getElementById('history-prep-count').textContent = tasks.length;
+  document.getElementById('history-prep-empty').classList.toggle('hidden', tasks.length > 0);
+  const statsEl = document.getElementById('history-prep-stats');
+  statsEl.innerHTML = names.map(n => {
+    const g = byItem[n];
+    return `<div class="stat-card${historyPrepItem === n ? ' selected' : ''}" data-history-prep-item="${escapeHtml(n)}">
+      <div class="stat-value">${prepQty_(g.done)}</div>
+      <div class="stat-label">${escapeHtml(n)} (${escapeHtml(g.unit || 'kg')})</div>
+      <div class="stat-sub">${g.tiles} tile${g.tiles === 1 ? '' : 's'} - target ${prepQty_(g.target)}. Tap for details.</div>
+    </div>`;
+  }).join('');
+  statsEl.querySelectorAll('[data-history-prep-item]').forEach(el => {
+    el.onclick = () => {
+      const n = el.getAttribute('data-history-prep-item');
+      historyPrepItem = historyPrepItem === n ? null : n;
+      renderHistoryPrep_();
+    };
+  });
+  const shown = historyPrepItem ? tasks.filter(t => t.prepItem === historyPrepItem) : tasks;
+  document.getElementById('history-prep-list').innerHTML = shown.length ? `<table class="prep-table">
+    <tr><th>Prep item</th><th>Shift</th><th class="num">Done</th><th class="num">Target</th><th>Status</th><th>Who</th></tr>
+    ${shown.map(t => `<tr>
+      <td><strong>${escapeHtml(t.prepItem)}</strong>${t.forDay ? '<br><span class="prep-meta">for ' + t.forDay.split(',').map(d => escapeHtml(fmtDateLong(d))).join(' + ') + '</span>' : ''}</td>
+      <td>${escapeHtml(t.shift || 'Any')}</td>
+      <td class="num">${prepQty_(t.qtyCompleted)} ${escapeHtml(t.unit || 'kg')}</td>
+      <td class="num">${prepQty_(t.targetQty)}</td>
+      <td>${escapeHtml(t.status)}</td>
+      <td>${escapeHtml(t.completedBy || t.lastLoggedBy || '-')}${(t.completedAt || t.lastLoggedAt) ? '<br><span class="prep-meta">' + fmtTime(t.completedAt || t.lastLoggedAt) + '</span>' : ''}</td>
+    </tr>`).join('')}
+  </table>` : '';
 }
 
 // Renders the order list behind whichever stat tile is currently selected
@@ -5162,6 +5214,8 @@ function loadHistoryDate(dateStr, opts) {
     historySelectedUnitBucket = null; // belonged to the old date's shift/product breakdown, which may no longer exist
     historyPrintedOrders = [];
     historyCompletedOrders = [];
+    historyPrepTasks = [];
+    historyPrepItem = null;
     historyDueOrders = [];
     renderHistoryView();
   }
@@ -5187,6 +5241,7 @@ function loadHistoryDate(dateStr, opts) {
     } else {
       historyPrintedOrders = res.printed.orders;
       historyCompletedOrders = res.completed.orders;
+      historyPrepTasks = res.prep || [];
     }
     renderHistoryView();
   }).catch(err => { if (dateChanged) alert(err.message); else console.error(err); });
