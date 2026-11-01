@@ -908,6 +908,7 @@
     <button class="admin-tab" data-tab="prep">Prep</button>
     <button class="admin-tab" data-tab="packers">Packers</button>
     <button class="admin-tab" data-tab="kitchen-managers">Kitchen Managers</button>
+    <button class="admin-tab" data-tab="hidden-customers">Hidden Customers</button>
     <button class="admin-tab" data-tab="users">Users</button>
     <button class="admin-tab" data-tab="settings">Settings</button>
   </div>
@@ -1111,6 +1112,17 @@
       <input type="text" id="new-kitchen-manager-name" placeholder="Full name">
     </div>
     <button class="btn-primary" id="add-kitchen-manager-btn">Add Kitchen Manager</button>
+  </div>
+
+  <div class="admin-panel hidden" id="tab-hidden-customers">
+    <h3>Hidden Customers</h3>
+    <p style="color:var(--muted);font-size:14px;">Invoices for these customers (internal or own-company accounts) are still imported and logged, but they never show on the Packing or Production boards, the Dashboard, Data History or the prep plan. Type any part of the customer's name (at least 3 letters, capitals don't matter) — "daily fruit" hides every customer whose name contains it. Orders already on the board disappear straight away, and removing a name brings them back.</p>
+    <div id="hidden-customers-admin-list"></div>
+    <div class="field" style="margin-top:16px;">
+      <label>Hide a customer</label>
+      <input type="text" id="new-hidden-customer-name" placeholder="Customer name, or part of it">
+    </div>
+    <button class="btn-primary" id="add-hidden-customer-btn">Hide this customer</button>
   </div>
 
   <div class="admin-panel hidden" id="tab-users">
@@ -4257,6 +4269,7 @@ function loadAdminData(silent) {
     renderLabelBatchSizeAdmin(data.labelBatchSize || []);
     renderPackersAdmin(data.packers);
     renderKitchenManagersAdmin(data.kitchenManagers);
+    renderHiddenCustomersAdmin(data.hiddenCustomers || []);
     renderImportLog(data.importLog);
     renderNeedsReviewList(data.needsReview);
     renderProductsList(data.products);
@@ -4533,6 +4546,28 @@ function renderKitchenManagersAdmin(kitchenManagers) {
       if (!confirm(`Delete Kitchen Manager "${name}"? This can't be undone — if they might come back, use the toggle to switch them off instead.`)) return;
       btn.disabled = true;
       apiPost('deleteKitchenManager', { name: name }).then(kms => renderKitchenManagersAdmin(kms)).catch(err => { alert(err.message); btn.disabled = false; });
+    };
+  });
+}
+
+// Admin > Hidden Customers: names whose invoices stay off every board (see HiddenCustomers.gs).
+function renderHiddenCustomersAdmin(list) {
+  list = Array.isArray(list) ? list : [];
+  const el = document.getElementById('hidden-customers-admin-list');
+  el.innerHTML = list.length ? list.map(h => `
+    <div class="packer-row" style="flex-direction:column;align-items:stretch;gap:4px;">
+      <div style="display:flex;align-items:center;justify-content:space-between;">
+        <span><strong>${escapeHtml(h.name)}</strong></span>
+        <button class="icon-btn" style="background:#f3d6d6;color:#a11;width:32px;height:32px;font-size:14px;" data-hidden-customer-delete="${escapeHtml(h.name)}" title="Show this customer again">✕</button>
+      </div>
+      <div style="color:var(--muted);font-size:13px;">${h.orderCount ? h.orderCount + ' order' + (h.orderCount === 1 ? '' : 's') + ' held back right now' + (h.customers && h.customers.length ? ' — matches: ' + escapeHtml(h.customers.join(', ')) : '') : 'No current orders match this name yet.'}${h.addedBy ? ' · added by ' + escapeHtml(h.addedBy) : ''}</div>
+    </div>`).join('') : '<div class="empty-note">No customers are hidden.</div>';
+  el.querySelectorAll('[data-hidden-customer-delete]').forEach(btn => {
+    btn.onclick = () => {
+      const name = btn.getAttribute('data-hidden-customer-delete');
+      if (!confirm('Show "' + name + '" again? Its orders will come back on the boards.')) return;
+      btn.disabled = true;
+      apiPost('deleteHiddenCustomer', { name: name }).then(l => { renderHiddenCustomersAdmin(l); loadBoard(true); }).catch(err => { alert(err.message); btn.disabled = false; });
     };
   });
 }
@@ -4931,7 +4966,7 @@ function wireStaticEvents() {
     tab.onclick = () => {
       document.querySelectorAll('.admin-tab').forEach(t => t.classList.remove('active'));
       tab.classList.add('active');
-      ['import', 'products', 'shifts', 'customer-shelf-life', 'label-batch-size', 'prep', 'packers', 'kitchen-managers', 'users', 'settings'].forEach(name => {
+      ['import', 'products', 'shifts', 'customer-shelf-life', 'label-batch-size', 'prep', 'packers', 'kitchen-managers', 'hidden-customers', 'users', 'settings'].forEach(name => {
         document.getElementById('tab-' + name).classList.toggle('hidden', name !== tab.getAttribute('data-tab'));
       });
     };
@@ -5029,6 +5064,23 @@ function wireStaticEvents() {
     }).catch(err => alert(err.message)).finally(() => {
       btn.disabled = false;
       btn.textContent = 'Add override';
+    });
+  };
+
+  document.getElementById('add-hidden-customer-btn').onclick = () => {
+    const input = document.getElementById('new-hidden-customer-name');
+    const name = input.value.trim();
+    if (!name) return;
+    const btn = document.getElementById('add-hidden-customer-btn');
+    btn.disabled = true;
+    btn.textContent = 'Hiding…';
+    apiPost('addHiddenCustomer', { name: name }).then(l => {
+      input.value = '';
+      renderHiddenCustomersAdmin(l);
+      loadBoard(true);
+    }).catch(err => alert(err.message)).finally(() => {
+      btn.disabled = false;
+      btn.textContent = 'Hide this customer';
     });
   };
 
