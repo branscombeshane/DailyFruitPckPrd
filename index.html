@@ -3796,11 +3796,11 @@ function showPrepPlan_(plan, title, headline) {
 }
 function prepPreview_(dateStr) {
   const d = typeof dateStr === 'string' && dateStr ? dateStr : todayDateStr();
-  apiPost('previewPrepPlan', { date: d }).then(plan => showPrepPlan_(plan, d === todayDateStr() ? "How today's prep is calculated" : 'How the prep for ' + fmtDateLong(d) + ' is calculated'))
+  apiPost('previewPrepPlan', { date: d }, { timeoutMs: 60000 }).then(plan => showPrepPlan_(plan, d === todayDateStr() ? "How today's prep is calculated" : 'How the prep for ' + fmtDateLong(d) + ' is calculated'))
     .catch(err => alert(err.message));
 }
 function prepGenerate_() {
-  apiPost('generatePrepTasks', { date: todayDateStr(), mode: 'recalc' }).then(r => {
+  apiPost('generatePrepTasks', { date: todayDateStr(), mode: 'recalc' }, { timeoutMs: 90000 }).then(r => {
     prepRefresh_();
     const head = `Created ${r.created} new tile${r.created === 1 ? '' : 's'}, refreshed ${r.updated}, left ${r.unchanged} untouched. Tiles that already have progress logged, or that a manager adjusted, are never changed.`;
     showPrepPlan_(r, 'Prep tiles updated', head);
