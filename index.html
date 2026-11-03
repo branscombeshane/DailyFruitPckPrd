@@ -3802,7 +3802,7 @@ function prepPreview_(dateStr) {
 function prepGenerate_() {
   apiPost('generatePrepTasks', { date: todayDateStr(), mode: 'recalc' }, { timeoutMs: 90000 }).then(r => {
     prepRefresh_();
-    const head = `Created ${r.created} new tile${r.created === 1 ? '' : 's'}, refreshed ${r.updated}, left ${r.unchanged} untouched. Tiles that already have progress logged, or that a manager adjusted, are never changed.`;
+    const head = `Created ${r.created} new tile${r.created === 1 ? '' : 's'}, refreshed ${r.updated}, left ${r.unchanged} untouched${r.retired ? ', cleared ' + r.retired + ' old tile' + (r.retired === 1 ? '' : 's') + ' nobody had logged anything on' : ''}. Tiles that already have progress logged, or that a manager adjusted, are never changed.`;
     showPrepPlan_(r, 'Prep tiles updated', head);
   }).catch(err => alert(err.message));
 }
