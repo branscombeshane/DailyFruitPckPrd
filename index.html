@@ -194,6 +194,8 @@
   .order-arrived{font-size:12px;color:var(--muted);margin-top:2px;}
   .order-deliver{font-size:12px;color:var(--info);font-weight:700;margin-top:2px;}
   .order-overdue{font-size:12px;color:var(--crit);font-weight:700;margin-top:2px;}
+  .order-amended{font-size:12px;font-weight:700;margin-top:4px;padding:4px 8px;border-radius:6px;background:#fff4d6;color:#7a4b00;border:1px solid #f0c36d;}
+  .order-amended-detail{font-weight:500;margin-top:2px;white-space:normal;}
   .schedule-badge{
     font-size:13px;font-weight:700;padding:4px 10px;border-radius:20px;white-space:nowrap;
     background:var(--info-bg);color:var(--info);
@@ -1930,7 +1932,19 @@ function searchBlob(o) {
 // this renders it as a small line under the customer name wherever a card
 // shows one, so it's visible on the floor, not just stored.
 function orderNotesLine(o) {
-  return o.notes ? `<div class="order-notes">${escapeHtml(o.notes)}</div>` : '';
+  return (o.notes ? `<div class="order-notes">${escapeHtml(o.notes)}</div>` : '') + orderAmendedLine(o);
+}
+
+// "Amended in Sage" marker: replaces the old amendment email. Set by
+// importOrderData_ in Code.gs when a re-imported invoice actually differs
+// from the version already on the board (AmendedAt/AmendedNote). The note
+// says what changed, so the floor can see it without opening anything.
+// Shown on every card that uses orderNotesLine (both boards, all sections).
+function orderAmendedLine(o) {
+  if (!o.amendedAt) return '';
+  return `<div class="order-amended">✏ Amended in Sage ${fmtTime(o.amendedAt)}` +
+    (o.amendedNote ? `<div class="order-amended-detail">${escapeHtml(o.amendedNote)}</div>` : '') +
+    `</div>`;
 }
 
 let orderSearchQuery = '';
