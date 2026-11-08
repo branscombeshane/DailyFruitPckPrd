@@ -1081,7 +1081,7 @@
     </div>
     <div class="field">
       <label>How the prep is split across shifts</label>
-      <p style="color:var(--muted);font-size:12.5px;margin:6px 0 0;">Automatic, by workload: on each prep day, the shift that usually completes the least production (kg, same weekday, over the history weeks) makes the most prep. A rule that names a shift gives that shift its whole share. "Show today's plan" below shows the split and the kg behind it.</p>
+      <p style="color:var(--muted);font-size:12.5px;margin:6px 0 0;">Automatic, by workload per person: on each prep day, the shift that usually completes the least production per person (kg on the same weekday over the history weeks, divided by the Staff number in the Shifts sheet) makes the most prep. Recalculated every time tiles are made, so it follows the last few weeks. A rule that names a shift gives that shift its whole share. "Show today's plan" below shows the split and the kg behind it.</p>
     </div>
     <div class="field">
       <label>Pilot start date (optional)</label>
@@ -3805,7 +3805,7 @@ function prepPlanHtml_(plan, headline) {
     : 'No history yet for this weekday - tiles use the known orders only.';
   // Split by workload (server: prepLoadShares_) - least production kg on that weekday = biggest share of the prep.
   const shares = (plan.shiftShares || []);
-  const shareTxt = shares.length ? 'split by workload: ' + shares.map(s => s.shift + ' ' + s.sharePct + '% (did ' + prepQty_(s.loadKg) + ' kg)').join(', ') : '';
+  const shareTxt = shares.length ? 'split by workload per person: ' + shares.map(s => s.shift + ' ' + s.sharePct + '% (' + (s.staff ? s.staff + ' staff, ' : '') + 'did ' + prepQty_(s.loadKg) + ' kg)').join(', ') : '';
   const load = (plan.shiftLoad || []);
   const loadHtml = load.length ? `<div class="prep-meta" style="margin:14px 0 6px;"><strong>Recent production completed by each shift</strong> (the history weeks) - use this to decide who has spare capacity:</div>
     <table class="prep-table"><tr><th>Shift</th><th class="num">Orders</th><th class="num">Production kg</th><th class="num">Share</th></tr>
