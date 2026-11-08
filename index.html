@@ -480,13 +480,18 @@
        lines, just a heavy boxed PREP STOCK banner, the product name and the
        date. The banner is a thick BORDER rather than a black fill so it never
        depends on the browser's "print backgrounds" setting. */
-    .label-page.prep-label{justify-content:center;gap:2.2mm;text-align:center;}
-    .prep-label-banner{border:1.1mm solid #000;font-size:24px;font-weight:900;letter-spacing:.5px;line-height:1;padding:1.6mm 0 1.4mm;text-align:center;}
-    .prep-label-product{font-size:18px;font-weight:800;line-height:1.1;word-break:break-word;}
-    .prep-label-product.long{font-size:14px;}
-    .prep-label-product.xlong{font-size:11.5px;}
-    .prep-label-date{font-size:15px;font-weight:800;}
-    .prep-label-shift{font-size:15px;font-weight:800;text-transform:uppercase;letter-spacing:.5px;}
+    /* 2026-11-08 (Shane): the label also says WHO made the stock and WHEN, and WHO uses it (the production day it is
+       for), so the next shift can see at a glance which stock is theirs. */
+    .label-page.prep-label{justify-content:space-between;text-align:center;}
+    .prep-label-banner{border:.8mm solid #000;font-size:14px;font-weight:900;letter-spacing:.5px;line-height:1;padding:.9mm 0 .7mm;text-align:center;}
+    .prep-label-product{font-size:15px;font-weight:800;line-height:1.08;word-break:break-word;}
+    .prep-label-product.long{font-size:12.5px;}
+    .prep-label-product.xlong{font-size:10.5px;}
+    .prep-label-qty{font-size:12px;font-weight:800;}
+    .prep-label-made{font-size:8px;line-height:1.3;text-align:left;}
+    .prep-label-made b{font-weight:800;}
+    .prep-label-use{border:.6mm solid #000;font-size:11.5px;font-weight:900;line-height:1.1;padding:.7mm .5mm;text-transform:uppercase;}
+    .prep-label-use small{display:block;font-size:7px;font-weight:700;text-transform:none;}
   }
 
   .conn-banner{
@@ -3654,17 +3659,29 @@ function submitPrepEdit_() {
 }
 
 // PREP STOCK labels: same Argox 58mm x 43mm die-cut stock and the same print plumbing as the
-// order labels, but a completely different face - no logo, no customer/batch/address, just
-// PREP STOCK, the product name and the date it was prepped (today).
-function prepLabelPagesHtml_(name, dateStr, count, shift) {
+// order labels, but a completely different face - no logo, no customer/batch/address.
+// Each label says (2026-11-08, Shane): PREP STOCK, the item, the kg on THIS label, when and by which shift it was MADE
+// and WHO made it (the person who completed / last logged the tile - a blank line to write on if nobody has yet), and
+// the production day it is FOR (the tile's "prepping for" day, or the tile's own day for a same-day tile), so the next
+// shift can tell their stock from anyone else's.
+function prepLabelPagesHtml_(t, chunks) {
+  const name = String(t.prepItem || '');
   const cls = name.length > 28 ? ' xlong' : name.length > 16 ? ' long' : '';
-  const page = `<div class="label-page prep-label">
+  const unit = t.unit || 'kg';
+  const shift = prepShiftName_(t);
+  const madeAt = t.completedAt || t.lastLoggedAt;
+  const madeDay = fmtDateLong(madeAt ? dateOnlyStr(madeAt) : dateOnlyStr(new Date()));
+  const who = String(t.completedBy || t.lastLoggedBy || '').trim();
+  const forDays = String(t.forDay || '').split(',').map(d => d.trim()).filter(Boolean);
+  const useDays = (forDays.length ? forDays : [t.date || dateOnlyStr(new Date())]).map(d => fmtDateLong(d)).join(' + ');
+  const page = qty => `<div class="label-page prep-label">
           <div class="prep-label-banner">PREP STOCK</div>
           <div class="prep-label-product${cls}">${escapeHtml(name)}</div>
-          <div class="prep-label-date">${escapeHtml(dateStr)}</div>${shift ? `
-          <div class="prep-label-shift">${escapeHtml(shift)} shift</div>` : ''}
+          <div class="prep-label-qty">${escapeHtml(prepQty_(qty))} ${escapeHtml(unit)}</div>
+          <div class="prep-label-made">Made: <b>${escapeHtml(madeDay)}${shift ? ' - ' + escapeHtml(shift) + ' shift' : ''}</b><br>By: <b>${who ? escapeHtml(who) : '________________'}</b></div>
+          <div class="prep-label-use">Use on ${escapeHtml(useDays)}<small>for that day's production shifts</small></div>
         </div>`;
-  return new Array(count).fill(page).join('');
+  return chunks.map(page).join('');
 }
 // One PREP STOCK label per 10kg prepped, like the order labels (95kg = nine + one for the 5kg left over). Counted on what has been
 // prepped so far, or on the target when nothing has been logged yet. No question asked - the Labels button prints straight away.
@@ -3673,7 +3690,7 @@ function printPrepLabelsForTask_(t) {
   const n = computeLabelChunks(qty, LABEL_BATCH_SIZE).length;
   if (!(n >= 1)) { alert('Nothing to label yet - there is no prepped quantity or target on this tile.'); return; }
   if (n > 100) { alert('That is ' + n + ' labels (' + prepQty_(qty) + ' ' + (t.unit || 'kg') + ') - check the quantity on this tile first.'); return; }
-  printPrepLabels_(t, n);
+  printPrepLabels_(t, computeLabelChunks(qty, LABEL_BATCH_SIZE));
 }
 // The shift that prepped the stock (the tile's shift). A blank or generic "Any shift" tile prints no shift line.
 function prepShiftName_(t) {
@@ -3718,8 +3735,8 @@ function printPrepSlip_(t) {
   window.addEventListener('afterprint', onAfterPrint);
   setTimeout(() => window.print(), 150);
 }
-function printPrepLabels_(t, count) {
-  document.getElementById('print-labels-body').innerHTML = prepLabelPagesHtml_(t.prepItem, fmtDateLong(dateOnlyStr(new Date())), count, prepShiftName_(t));
+function printPrepLabels_(t, chunks) {
+  document.getElementById('print-labels-body').innerHTML = prepLabelPagesHtml_(t, chunks);
   document.getElementById('print-page-style').textContent = '@page{ size:58mm 43mm; margin:0; }';
   document.body.setAttribute('data-print-target', 'labels');
   const onAfterPrint = () => {
