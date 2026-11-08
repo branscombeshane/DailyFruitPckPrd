@@ -1080,9 +1080,8 @@
       <p style="color:var(--muted);font-size:12.5px;margin:6px 0 0;">Blank = the system looks at which shifts completed Production orders on that weekday over the history weeks, so a Sunday-only shift doesn't get Monday tiles. Names must match the Shifts tab exactly.</p>
     </div>
     <div class="field">
-      <label>Prep share per shift</label>
-      <div id="prep-weights-grid"></div>
-      <p style="color:var(--muted);font-size:12.5px;margin:6px 0 0;">How the day's prep is split across shifts. 1 each = equal. Give a shift with spare capacity a bigger number (2 = twice the share) so it preps more for the busy shift after it; 0 = that shift gets no prep tiles. "Show today's plan" below lists how much production each shift actually completed recently, to help you set these.</p>
+      <label>How the prep is split across shifts</label>
+      <p style="color:var(--muted);font-size:12.5px;margin:6px 0 0;">Automatic, by workload: on each prep day, the shift that usually completes the least production (kg, same weekday, over the history weeks) makes the most prep. A rule that names a shift gives that shift its whole share. "Show today's plan" below shows the split and the kg behind it.</p>
     </div>
     <div class="field">
       <label>Pilot start date (optional)</label>
@@ -3804,15 +3803,15 @@ function prepPlanHtml_(plan, headline) {
   const hist = (plan.historyDays || []).length
     ? 'History = average of ' + plan.historyDays.map(d => fmtDateLong(d)).join(', ') + ' (days the factory had no orders are ignored).'
     : 'No history yet for this weekday - tiles use the known orders only.';
+  // Split by workload (server: prepLoadShares_) - least production kg on that weekday = biggest share of the prep.
   const shares = (plan.shiftShares || []);
-  const uneven = shares.some(s => s.weight !== shares[0].weight);
-  const shareTxt = shares.length ? (uneven ? 'shares ' + shares.map(s => s.shift + ' ' + s.weight).join(', ') : 'split equally') : '';
+  const shareTxt = shares.length ? 'split by workload: ' + shares.map(s => s.shift + ' ' + s.sharePct + '% (did ' + prepQty_(s.loadKg) + ' kg)').join(', ') : '';
   const load = (plan.shiftLoad || []);
   const loadHtml = load.length ? `<div class="prep-meta" style="margin:14px 0 6px;"><strong>Recent production completed by each shift</strong> (the history weeks) - use this to decide who has spare capacity:</div>
     <table class="prep-table"><tr><th>Shift</th><th class="num">Orders</th><th class="num">Production kg</th><th class="num">Share</th></tr>
     ${load.map(l => `<tr><td>${escapeHtml(l.shift)}</td><td class="num">${l.orders}</td><td class="num">${prepQty_(l.kg)}</td><td class="num">${l.sharePct}%</td></tr>`).join('')}</table>` : '';
   return (headline ? `<div class="result-box" style="margin-bottom:12px;">${headline}</div>` : '') +
-    `<div class="prep-meta" style="margin:0 0 8px;">Production day ${escapeHtml(fmtDateLong(plan.targetDay))} - shifts: <strong>${escapeHtml((plan.shifts || []).join(', ') || 'none')}</strong> (${escapeHtml(plan.shiftSource || '')}). ${plan.mode === 'schedule' ? 'This weekday has prep-ahead rules (Admin > Prep), so it preps for the days shown. Each tile = the rule\'s share of that day\'s demand (the larger of known orders and history), added up per tile and rounded up.' : 'Each tile = the larger of known orders and history, ' + escapeHtml(shareTxt || 'divided across the shifts') + ', rounded up.'}</div>
+    `<div class="prep-meta" style="margin:0 0 8px;">Production day ${escapeHtml(fmtDateLong(plan.targetDay))} - shifts: <strong>${escapeHtml((plan.shifts || []).join(', ') || 'none')}</strong> (${escapeHtml(plan.shiftSource || '')}). ${plan.mode === 'schedule' ? 'This weekday has prep-ahead rules (Admin > Prep), so it preps for the days shown. Each tile = the rule\'s share of that day\'s demand (the larger of known orders and history), added up per tile and rounded up. Rules that name no shift are ' + escapeHtml(shareTxt || 'split across the shifts') + ' - least production work makes the most prep.' : 'Each tile = the larger of known orders and history, ' + escapeHtml(shareTxt || 'divided across the shifts') + ', rounded up.'}</div>
     <table class="prep-table">
       <tr><th>Prep item</th><th class="num">Known orders</th><th class="num">History avg</th><th class="num">Day demand</th><th class="num">Per shift</th></tr>
       ${rows || '<tr><td colspan="5">Nothing to prepare - no linked products have demand.</td></tr>'}
@@ -3884,7 +3883,6 @@ function wirePrepUi() {
       PrepLeadDays: document.getElementById('prep-set-lead').value,
       PrepRoundKg: document.getElementById('prep-set-round').value,
       PrepShifts: document.getElementById('prep-set-shifts').value.trim(),
-      PrepShiftWeights: prepWeightsFromGrid_(),
       PrepPilotStart: document.getElementById('prep-set-pilot').value
     } }).then(() => { box.className = 'result-box success'; box.textContent = 'Saved. New rules apply the next time tiles are generated or recalculated.'; })
       .catch(err => { box.className = 'result-box error'; box.textContent = err.message; });
@@ -4068,7 +4066,6 @@ function renderPrepAdmin(prep) {
   setVal('prep-set-round', st.roundKg === undefined ? 5 : st.roundKg);
   setVal('prep-set-shifts', st.shifts || '');
   setVal('prep-set-pilot', st.pilotStart || '');
-  renderPrepWeightsGrid_(st.shiftWeights || '');
   renderPrepScheduleAdmin_(Array.isArray(prep.schedule) ? prep.schedule : []);
 }
 
@@ -4130,33 +4127,6 @@ function renderPrepScheduleAdmin_(rules) {
 }
 
 // "Day=2, Night=1" <-> one number box per shift
-function prepParseWeightsClient_(raw) {
-  const out = {};
-  String(raw || '').split(',').forEach(part => {
-    const m = /^(.+?)\s*[=:]\s*(\d+(?:\.\d+)?)\s*$/.exec(part.trim());
-    if (m) out[m[1].trim().toLowerCase()] = Number(m[2]);
-  });
-  return out;
-}
-function renderPrepWeightsGrid_(raw) {
-  const grid = document.getElementById('prep-weights-grid');
-  if (!grid || grid.contains(document.activeElement)) return;   // don't wipe a box someone is typing in
-  const names = ((boardData && boardData.settings && boardData.settings.shiftNames) || []).slice();
-  const w = prepParseWeightsClient_(raw);
-  Object.keys(w).forEach(k => { if (!names.some(n => n.toLowerCase() === k)) names.push(k); });   // keep a weight for a shift that was renamed
-  grid.innerHTML = names.length ? names.map(n => {
-    const v = w[n.toLowerCase()];
-    return `<div class="packer-row"><span>${escapeHtml(n)}</span><input type="number" class="prep-weight-input" data-shift="${escapeHtml(n)}" min="0" step="any" value="${v === undefined ? 1 : v}" style="width:90px;"></div>`;
-  }).join('') : '<div class="log-row">No shifts found yet.</div>';
-}
-function prepWeightsFromGrid_() {
-  const parts = [];
-  document.querySelectorAll('#prep-weights-grid .prep-weight-input').forEach(inp => {
-    const v = Number(inp.value);
-    if (inp.value !== '' && v >= 0 && v !== 1) parts.push(inp.getAttribute('data-shift') + '=' + v);
-  });
-  return parts.join(', ');
-}
 
 /* ===================== VIEW MODAL ===================== */
 function openViewModal(order, primaryDept) {
