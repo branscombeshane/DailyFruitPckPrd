@@ -3770,9 +3770,10 @@ function openPrepItemDetail_(itemName) {
   document.getElementById('prep-info-title').textContent = itemName;
   document.getElementById('prep-info-sub').textContent = 'Today\'s tiles for this item';
   document.getElementById('prep-info-body').innerHTML = tasks.length ? `<table class="prep-table">
-    <tr><th>Shift</th><th class="num">Target</th><th class="num">Done</th><th>Status</th><th>Who</th></tr>
+    <tr><th>Shift</th><th>For</th><th class="num">Target</th><th class="num">Done</th><th>Status</th><th>Who</th></tr>
     ${tasks.map(t => `<tr>
       <td>${escapeHtml(t.shift || 'Any')}</td>
+      <td>${t.forDay ? escapeHtml(t.forDay.split(',').map(d => fmtDateLong(d)).join(' + ')) + '<br><span class="prep-meta">production</span>' : '<span class="prep-meta">same day</span>'}</td>
       <td class="num">${prepQty_(t.targetQty)} ${escapeHtml(t.unit || 'kg')}</td>
       <td class="num">${prepQty_(t.qtyCompleted)}</td>
       <td>${escapeHtml(t.status)}${t.adjustedBy ? '<br><span class="prep-meta">' + (t.source === 'Manual' ? 'added' : 'adjusted') + ' by ' + escapeHtml(t.adjustedBy) + '</span>' : ''}</td>
