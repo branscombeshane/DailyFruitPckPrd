@@ -3099,7 +3099,7 @@ function renderHistoryPrep_() {
   document.getElementById('history-prep-list').innerHTML = shown.length ? `<table class="prep-table">
     <tr><th>Prep item</th><th>Shift</th><th class="num">Done</th><th class="num">Target</th><th>Status</th><th>Who</th></tr>
     ${shown.map(t => `<tr>
-      <td><strong>${escapeHtml(t.prepItem)}</strong>${t.forDay ? '<br><span class="prep-meta">for ' + t.forDay.split(',').map(d => escapeHtml(fmtDateLong(d))).join(' + ') + '</span>' : ''}</td>
+      <td><strong>${escapeHtml(t.prepItem)}</strong>${t.forDay ? '<br><span class="prep-meta">for ' + escapeHtml(prepForText_(t)) + '</span>' : ''}</td>
       <td>${escapeHtml(t.shift || 'Any')}</td>
       <td class="num">${prepQty_(t.qtyCompleted)} ${escapeHtml(t.unit || 'kg')}</td>
       <td class="num">${prepQty_(t.targetQty)}</td>
@@ -3471,7 +3471,7 @@ function prepCardHtml_(t, canManage) {
   const today = todayDateStr();
   const carry = t.date !== today ? `<div class="prep-meta">⏮ From ${escapeHtml(fmtDateLong(t.date))} - still open</div>` : '';
   let notes = '';
-  if (t.forDay) notes += `<div class="prep-meta"><strong>Prepping for ${t.forDay.split(',').map(d => escapeHtml(fmtDateLong(d))).join(' + ')}</strong></div>`;
+  if (t.forDay) notes += `<div class="prep-meta"><strong>Prepping for ${escapeHtml(prepForText_(t))}</strong></div>`;
   if (t.source === 'Manual') notes += `<div class="prep-meta">➕ Added by ${escapeHtml(t.adjustedBy || 'a manager')}</div>`;
   else if (t.adjustedBy && t.status !== 'Skipped') notes += `<div class="prep-meta">✏️ Adjusted by ${escapeHtml(t.adjustedBy)} (calculated ${prepQty_(t.calcQty)} ${unit})</div>`;
   if (t.note && t.status !== 'Skipped') notes += `<div class="prep-meta">${escapeHtml(t.note)}</div>`;
@@ -3657,6 +3657,13 @@ function submitPrepEdit_() {
   }
 }
 
+// Who the stock is for (8 Nov, Shane's prep chain - each shift preps for the next shift): "Mon, Nov 9 - Day shift", or just the
+// day(s) when the tile is for a whole day. Blank ForDay = the tile's own day.
+function prepForText_(t) {
+  const days = String(t.forDay || '').split(',').map(d => d.trim()).filter(Boolean);
+  const dayTxt = days.map(d => fmtDateLong(d)).join(' + ');
+  return dayTxt ? dayTxt + (t.forShift ? ' - ' + t.forShift + ' shift' : '') : '';
+}
 // PREP STOCK labels: same Argox 58mm x 43mm die-cut stock and the same print plumbing as the
 // order labels, but a completely different face - no logo, no customer/batch/address.
 // Each label says (2026-11-08, Shane): PREP STOCK, the item, the kg on THIS label, when and by which shift it was MADE
@@ -3671,14 +3678,14 @@ function prepLabelPagesHtml_(t, chunks) {
   const madeAt = t.completedAt || t.lastLoggedAt;
   const madeDay = fmtDateLong(madeAt ? dateOnlyStr(madeAt) : dateOnlyStr(new Date()));
   const who = String(t.completedBy || t.lastLoggedBy || '').trim();
-  const forDays = String(t.forDay || '').split(',').map(d => d.trim()).filter(Boolean);
-  const useDays = (forDays.length ? forDays : [t.date || dateOnlyStr(new Date())]).map(d => fmtDateLong(d)).join(' + ');
+  const useDays = prepForText_(t) || fmtDateLong(t.date || dateOnlyStr(new Date()));
+  const useWho = t.forShift ? 'for that shift\'s production' : 'for that day\'s production shifts';
   const page = qty => `<div class="label-page prep-label">
           <div class="prep-label-banner">PREP STOCK</div>
           <div class="prep-label-product${cls}">${escapeHtml(name)}</div>
           <div class="prep-label-qty">${escapeHtml(prepQty_(qty))} ${escapeHtml(unit)}</div>
           <div class="prep-label-made">Made: <b>${escapeHtml(madeDay)}${shift ? ' - ' + escapeHtml(shift) + ' shift' : ''}</b><br>By: <b>${who ? escapeHtml(who) : '________________'}</b></div>
-          <div class="prep-label-use">Use on ${escapeHtml(useDays)}<small>for that day's production shifts</small></div>
+          <div class="prep-label-use">Use on ${escapeHtml(useDays)}<small>${escapeHtml(useWho)}</small></div>
         </div>`;
   return chunks.map(page).join('');
 }
@@ -3709,7 +3716,7 @@ function printPrepSlip_(t) {
   el('slip-delivery-row').classList.add('hidden');
   el('slip-customer-row').classList.add('hidden');
   const noteBits = [];
-  if (t.forDay) noteBits.push('Prepping for ' + t.forDay.split(',').map(d => fmtDateLong(d)).join(' + '));
+  if (t.forDay) noteBits.push('Prepping for ' + prepForText_(t));
   if (t.status === 'Done' && t.completedBy) noteBits.push('Completed by ' + t.completedBy + (t.completedAt ? ' at ' + fmtTime(t.completedAt) : ''));
   if (t.note && t.status !== 'Skipped') noteBits.push(t.note);
   el('slip-notes').textContent = noteBits.join(' - ');
@@ -3773,7 +3780,7 @@ function openPrepItemDetail_(itemName) {
     <tr><th>Shift</th><th>For</th><th class="num">Target</th><th class="num">Done</th><th>Status</th><th>Who</th></tr>
     ${tasks.map(t => `<tr>
       <td>${escapeHtml(t.shift || 'Any')}</td>
-      <td>${t.forDay ? escapeHtml(t.forDay.split(',').map(d => fmtDateLong(d)).join(' + ')) + '<br><span class="prep-meta">production</span>' : '<span class="prep-meta">same day</span>'}</td>
+      <td>${t.forDay ? escapeHtml(prepForText_(t)) + '<br><span class="prep-meta">production</span>' : '<span class="prep-meta">same day</span>'}</td>
       <td class="num">${prepQty_(t.targetQty)} ${escapeHtml(t.unit || 'kg')}</td>
       <td class="num">${prepQty_(t.qtyCompleted)}</td>
       <td>${escapeHtml(t.status)}${t.adjustedBy ? '<br><span class="prep-meta">' + (t.source === 'Manual' ? 'added' : 'adjusted') + ' by ' + escapeHtml(t.adjustedBy) + '</span>' : ''}</td>
@@ -3792,7 +3799,7 @@ function prepPlanHtml_(plan, headline) {
     const cell = uneven
       ? by.map(b => `${escapeHtml(b.shift)}: <strong>${prepQty_(b.qty)}</strong>`).join('<br>')
       : `<strong>${prepQty_(i.perShift)} ${escapeHtml(i.unit || 'kg')}</strong>${by.length > 1 ? '<br><span class="prep-meta">each shift</span>' : ''}`;
-    const forTxt = i.targetDay ? `<br><span class="prep-meta">for ${escapeHtml(fmtDateLong(i.targetDay))} - ${i.sharePct}%${i.ruleShift ? ' - ' + escapeHtml(i.ruleShift) + ' shift' : ''}</span>` : '';
+    const forTxt = i.targetDay ? `<br><span class="prep-meta">${i.ruleShift ? escapeHtml(i.ruleShift) + ' shift preps ' : ''}for ${escapeHtml(fmtDateLong(i.targetDay))}${i.targetShift ? ' - ' + escapeHtml(i.targetShift) + ' shift (' + i.prodSharePct + '% of the day)' : ''}${Number(i.sharePct) !== 100 ? ' - ' + i.sharePct + '%' : ''}</span>` : '';
     return `<tr>
       <td><strong>${escapeHtml(i.name)}</strong>${forTxt}</td>
       <td class="num">${prepQty_(i.known)}</td>
@@ -4079,7 +4086,7 @@ function renderPrepScheduleAdmin_(rules) {
   rules.filter(r => r.active).forEach(r => { totals[r.targetDay] = (totals[r.targetDay] || 0) + r.sharePct; });
   box.innerHTML = rules.length ? rules.map((r, i) => `
     <div class="packer-row">
-      <span><strong>${escapeHtml(r.targetDay)}</strong> <span style="color:var(--muted);">&larr; prepped on</span> <strong>${escapeHtml(r.prepDay)}</strong>, ${r.shift ? escapeHtml(r.shift) + ' shift' : 'all shifts that day'}</span>
+      <span><strong>${escapeHtml(r.targetDay)}${r.targetShift ? ' ' + escapeHtml(r.targetShift) + ' shift' : ''}</strong> <span style="color:var(--muted);">&larr; prepped on</span> <strong>${escapeHtml(r.prepDay)}</strong>, ${r.shift ? escapeHtml(r.shift) + ' shift' : 'all shifts that day'}</span>
       <div style="display:flex;align-items:center;gap:10px;">
         <input type="number" class="prep-sched-pct-input" data-idx="${i}" value="${r.sharePct}" min="1" max="100" step="any" style="width:76px;" title="% of the target day's demand"> %
         <button class="toggle ${r.active ? 'on' : ''}" data-idx="${i}" data-active="${r.active}"><span class="knob"></span></button>
