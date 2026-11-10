@@ -3497,6 +3497,7 @@ function prepCardHtml_(t, canManage) {
   else if (t.adjustedBy && t.status !== 'Skipped') notes += `<div class="prep-meta">✏️ Adjusted by ${escapeHtml(t.adjustedBy)} (calculated ${prepQty_(t.calcQty)} ${unit})</div>`;
   if (t.note && t.status !== 'Skipped') notes += `<div class="prep-meta">${escapeHtml(t.note)}</div>`;
   if (t.receivedAt) notes += prepReceivedLine_(t);
+  if (t.labelsPrintedAt) notes += prepLabelsLine_(t);
   const id = escapeHtml(t.prepId);
 
   const labelBtn = `<button class="btn-secondary" data-prep-action="slip" data-prep-id="${id}">🖨 Slip</button><button class="btn-secondary" data-prep-action="label" data-prep-id="${id}">🏷 Labels</button>`;
@@ -3720,12 +3721,25 @@ function prepLabelPagesHtml_(t, chunks) {
 }
 // One PREP STOCK label per 10kg prepped, like the order labels (95kg = nine + one for the 5kg left over). Counted on what has been
 // prepped so far, or on the target when nothing has been logged yet. No question asked - the Labels button prints straight away.
+// 10 Nov 2026 (Shane): when the tile's labels were printed and by whom (first print; reprints shown with the latest).
+function prepLabelsLine_(t) {
+  let s = `🏷 Labels printed ${fmtTime(t.labelsPrintedAt)}${t.labelsPrintedBy ? ' by ' + escapeHtml(t.labelsPrintedBy) : ''}`;
+  if (t.labelsPrintCount > 1 && t.labelsLastPrintedAt) s += ` · reprinted ${t.labelsPrintCount - 1}×, last ${fmtTime(t.labelsLastPrintedAt)}${t.labelsLastPrintedBy ? ' by ' + escapeHtml(t.labelsLastPrintedBy) : ''}`;
+  return `<div class="prep-meta">${s}</div>`;
+}
 function printPrepLabelsForTask_(t) {
   const qty = Number(t.qtyCompleted) > 0 ? Number(t.qtyCompleted) : Number(t.targetQty);
   const n = computeLabelChunks(qty, LABEL_BATCH_SIZE).length;
   if (!(n >= 1)) { alert('Nothing to label yet - there is no prepped quantity or target on this tile.'); return; }
   if (n > 100) { alert('That is ' + n + ' labels (' + prepQty_(qty) + ' ' + (t.unit || 'kg') + ') - check the quantity on this tile first.'); return; }
   printPrepLabels_(t, computeLabelChunks(qty, LABEL_BATCH_SIZE));
+  // Time stamp on the tile straight away, then saved on the server (PrepPlan.gs markPrepLabelsPrinted_).
+  const nowIso = new Date().toISOString();
+  if (!t.labelsPrintedAt) { t.labelsPrintedAt = nowIso; t.labelsPrintedBy = userName || ''; }
+  t.labelsLastPrintedAt = nowIso; t.labelsLastPrintedBy = userName || '';
+  t.labelsPrintCount = (Number(t.labelsPrintCount) || 0) + 1;
+  renderPrepSection();
+  apiPost('markPrepLabelsPrinted', { prepId: t.prepId }).then(() => loadBoard(false)).catch(() => {});
 }
 // The shift that prepped the stock (the tile's shift). A blank or generic "Any shift" tile prints no shift line.
 function prepShiftName_(t) {
