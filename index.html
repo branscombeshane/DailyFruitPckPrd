@@ -3498,7 +3498,7 @@ function prepCardHtml_(t, canManage) {
   if (t.note && t.status !== 'Skipped') notes += `<div class="prep-meta">${escapeHtml(t.note)}</div>`;
   if (t.receivedAt) notes += prepReceivedLine_(t);
   const id = escapeHtml(t.prepId);
-  const whyBtn = t.calcInfo ? `<button class="btn-secondary" data-prep-action="why" data-prep-id="${id}" style="margin-top:8px;width:100%;">🔍 How was this worked out?</button>` : '';
+
   const labelBtn = `<button class="btn-secondary" data-prep-action="slip" data-prep-id="${id}">🖨 Slip</button><button class="btn-secondary" data-prep-action="label" data-prep-id="${id}">🏷 Labels</button>`;
   let cls = 'prep-card', status = '', actions = '';
   if (t.status === 'Done') {
@@ -3522,7 +3522,6 @@ function prepCardHtml_(t, canManage) {
       </div>` : '');
   }
   if (t.receiveFlag === 'short') cls += ' short';
-  actions += whyBtn;
   return `<div class="${cls}" data-prep-card="${id}">
     <div class="prep-card-head">
       <div class="prep-item-name">${escapeHtml(t.prepItem)}</div>
@@ -3560,7 +3559,7 @@ function renderPrepSection() {
     return `<div class="stat-card ${g.open === 0 ? '' : 'warn'}" data-prep-stat="${escapeHtml(name)}">
       <div class="stat-value">${prepQty_(g.done)} / ${prepQty_(g.target)}</div>
       <div class="stat-label">${escapeHtml(name)} (${escapeHtml(g.unit || 'kg')})</div>
-      <div class="stat-sub">${g.tiles} tile${g.tiles === 1 ? '' : 's'} - ${g.open} still open. Tap for details.</div>
+      <div class="stat-sub">${g.tiles} tile${g.tiles === 1 ? '' : 's'} - ${g.open} still open. Tap to see how it was worked out.</div>
     </div>`;
   }).join('');
 
@@ -3941,9 +3940,14 @@ function whyPartHtml_(part, c, t, unit, n0) {
 }
 function openPrepWhy_(t) {
   const c = t.calcInfo;
-  const unit = t.unit || 'kg';
-  document.getElementById('prep-info-title').textContent = `${t.prepItem}: ${prepQty_(c ? c.final : t.calcQty)} ${unit}`;
+  document.getElementById('prep-info-title').textContent = `${t.prepItem}: ${prepQty_(c ? c.final : t.calcQty)} ${t.unit || 'kg'}`;
   document.getElementById('prep-info-sub').textContent = `Made by the ${t.shift || ''} shift${t.forDay ? ' for ' + prepForText_(t) : ''}. How the number was worked out:`;
+  document.getElementById('prep-info-body').innerHTML = prepWhyBodyHtml_(t);
+  document.getElementById('prep-info-modal').classList.remove('hidden');
+}
+function prepWhyBodyHtml_(t) {
+  const c = t.calcInfo;
+  const unit = t.unit || 'kg';
   let body = '';
   if (!c) {
     body = '<div class="empty-note">This tile was made before the explanation was added (or added by hand). It shows after the next Recalculate.</div>';
@@ -3958,8 +3962,7 @@ function openPrepWhy_(t) {
   }
   if (t.adjustedBy && Number(t.targetQty) !== Number(c ? c.final : t.targetQty)) body += `<div class="prep-meta" style="margin-top:8px;">✏️ ${escapeHtml(t.adjustedBy)} changed the target to ${prepQty_(t.targetQty)} ${escapeHtml(unit)}.</div>`;
   if (t.receivedAt) body += prepReceivedLine_(t);
-  document.getElementById('prep-info-body').innerHTML = body;
-  document.getElementById('prep-info-modal').classList.remove('hidden');
+  return body;
 }
 
 function logPrepAs(pseudoId, kitchenManagerName) {
@@ -3983,8 +3986,12 @@ function completePrepAs(pseudoId, kitchenManagerName) {
 function openPrepItemDetail_(itemName) {
   const tasks = prepVisibleTasks_().filter(t => t.prepItem === itemName);
   document.getElementById('prep-info-title').textContent = itemName;
-  document.getElementById('prep-info-sub').textContent = 'Today\'s tiles for this item';
-  document.getElementById('prep-info-body').innerHTML = tasks.length ? `<table class="prep-table">
+  document.getElementById('prep-info-sub').textContent = 'How each of today\'s targets was worked out, then the tiles and who logged what.';
+  // 10 Nov 2026 (Shane): the "How was this worked out?" picture lives here, one block per tile.
+  const why = tasks.filter(t => t.status !== 'Skipped').map(t => `<div style="border-top:3px solid #e0a030;margin-top:14px;padding-top:8px;">
+      <div style="font-weight:800;font-size:16px;">${escapeHtml(t.shift || 'Any shift')} shift: ${prepQty_(t.targetQty)} ${escapeHtml(t.unit || 'kg')}${t.forDay ? ' <span class="prep-meta">for ' + escapeHtml(prepForText_(t)) + '</span>' : ''}</div>
+      ${prepWhyBodyHtml_(t)}</div>`).join('');
+  document.getElementById('prep-info-body').innerHTML = why + (tasks.length ? `<h4 style="margin:18px 0 6px;">The tiles</h4><table class="prep-table">
     <tr><th>Shift</th><th>For</th><th class="num">Target</th><th class="num">Done</th><th>Status</th><th>Who</th></tr>
     ${tasks.map(t => `<tr>
       <td>${escapeHtml(t.shift || 'Any')}</td>
@@ -3994,7 +4001,7 @@ function openPrepItemDetail_(itemName) {
       <td>${escapeHtml(t.status)}${t.adjustedBy ? '<br><span class="prep-meta">' + (t.source === 'Manual' ? 'added' : 'adjusted') + ' by ' + escapeHtml(t.adjustedBy) + '</span>' : ''}</td>
       <td>${escapeHtml(t.completedBy || t.lastLoggedBy || '-')}${(t.completedAt || t.lastLoggedAt) ? '<br><span class="prep-meta">' + fmtTime(t.completedAt || t.lastLoggedAt) + '</span>' : ''}</td>
     </tr>`).join('')}
-  </table>` : '<div class="empty-note">No tiles for this item.</div>';
+  </table>` : '<div class="empty-note">No tiles for this item.</div>');
   document.getElementById('prep-info-modal').classList.remove('hidden');
 }
 
