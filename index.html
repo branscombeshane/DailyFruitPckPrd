@@ -3919,18 +3919,22 @@ function whyPartHtml_(part, c, t, unit, n0) {
   let formula = prepQty_(demand) + ' ' + escapeHtml(unit);
   if (part.targetShift) {
     const b = part.prodBasis;
-    html += `<div class="why-step"><h4><span class="why-num">${n++}</span>${escapeHtml(part.targetShift)} shift's part of the day: ${prepQty_(part.prodSharePct)}%</h4>
+    const wdName = escapeHtml(fmtDateLong(part.targetDay).split(',')[0] || 'that day');
+    const sh = escapeHtml(part.targetShift);
+    html += `<div class="why-step"><h4><span class="why-num">${n++}</span>Only the ${sh} shift's part: ${prepQty_(part.prodSharePct)}%</h4>
       ${b && !b.estimated && b.dayKg ? (() => {
-          // 10 Nov 2026: kg of Production products sold by the KG only (each/bag lines left out - PrepPlan.gs
-          // prepIsKgLine_), shown as a typical day (average over the weeks counted). Older tiles without the day count
-          // show the combined total, labelled as such.
-          const wd = escapeHtml(fmtDateLong(part.targetDay).split(',')[0] || 'day');
+          // 10 Nov 2026 (Shane: "still unclear"): plain words. Kg of Production products sold by the KG only (PrepPlan.gs
+          // prepIsKgLine_), as an average day. Tiles made before the KG-only change have no day count: they show the
+          // combined total and say so.
           const per = b.days ? b.days : 1;
-          const lbl = b.days ? 'a typical ' + wd + ' (avg of ' + b.days + ')' : 'recent ' + wd + 's combined';
-          return whyBars_([{ label: 'Whole day - ' + lbl, value: Math.round(b.dayKg / per) }, { label: escapeHtml(part.targetShift) + ' shift completed', value: Math.round(b.shiftKg / per), used: true }], 'kg') +
-            `<div class="prep-meta">Kilograms of production completed (products sold by the KG only). On ${b.days ? 'a typical ' + wd : 'recent ' + wd + 's'} the ${escapeHtml(part.targetShift)} shift completed ${Math.round(b.shiftKg / per)} of ${Math.round(b.dayKg / per)} kg = ${prepQty_(part.prodSharePct)}%.</div>`;
+          const dayKg = Math.round(b.dayKg / per), shiftKg = Math.round(b.shiftKg / per);
+          const when = b.days ? 'An average ' + wdName + ' (last ' + b.days + ')' : 'Last few ' + wdName + 's added together';
+          return `<div class="prep-meta" style="margin-bottom:6px;">This stock is only for what the <b>${sh} shift</b> produces on ${wdName}, not the whole day. So we look at how much of ${wdName}'s production the ${sh} shift usually does.</div>` +
+            whyBars_([{ label: when + ': all shifts', value: dayKg }, { label: when + ': ' + sh + ' shift', value: shiftKg, used: true }], 'kg') +
+            `<div class="prep-meta">${sh} shift ${shiftKg} kg ÷ whole day ${dayKg} kg = <b>${prepQty_(part.prodSharePct)}%</b>. Counts KG production products only (no each/bag items).</div>` +
+            (b.days ? '' : `<div class="prep-meta" style="color:var(--warn,#b45309);">This tile was worked out before the latest update. Press Recalculate for the new figures.</div>`);
         })()
-        : `<div class="prep-meta">No production recorded yet for this shift on that weekday, so it is given an equal share.</div>`}
+        : `<div class="prep-meta">This stock is only for the ${sh} shift's production. No ${sh} shift production is recorded yet on ${wdName}s, so it gets an equal share of the day.</div>`}
     </div>`;
     formula += ' × ' + prepQty_(part.prodSharePct) + '%';
   }
