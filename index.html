@@ -3921,14 +3921,14 @@ function whyPartHtml_(part, c, t, unit, n0) {
     const b = part.prodBasis;
     html += `<div class="why-step"><h4><span class="why-num">${n++}</span>${escapeHtml(part.targetShift)} shift's part of the day: ${prepQty_(part.prodSharePct)}%</h4>
       ${b && !b.estimated && b.dayKg ? (() => {
-          // 10 Nov 2026: these are order QUANTITIES (kg for some products, units/bags for others) - a yardstick for the
-          // share, not a weight. Shown as a typical day (average over the weeks counted); older tiles without the day
-          // count show the combined total, labelled as such.
+          // 10 Nov 2026: kg of Production products sold by the KG only (each/bag lines left out - PrepPlan.gs
+          // prepIsKgLine_), shown as a typical day (average over the weeks counted). Older tiles without the day count
+          // show the combined total, labelled as such.
           const wd = escapeHtml(fmtDateLong(part.targetDay).split(',')[0] || 'day');
           const per = b.days ? b.days : 1;
           const lbl = b.days ? 'a typical ' + wd + ' (avg of ' + b.days + ')' : 'recent ' + wd + 's combined';
-          return whyBars_([{ label: 'Whole day - ' + lbl, value: Math.round(b.dayKg / per) }, { label: escapeHtml(part.targetShift) + ' shift completed', value: Math.round(b.shiftKg / per), used: true }], 'qty') +
-            `<div class="prep-meta">Quantities ordered on the order lines the shift completed (kg for some products, units or bags for others) - used only to work out each shift's share, not as a weight. On ${b.days ? 'a typical ' + wd : 'recent ' + wd + 's'} the ${escapeHtml(part.targetShift)} shift completed ${Math.round(b.shiftKg / per)} of ${Math.round(b.dayKg / per)} = ${prepQty_(part.prodSharePct)}%.</div>`;
+          return whyBars_([{ label: 'Whole day - ' + lbl, value: Math.round(b.dayKg / per) }, { label: escapeHtml(part.targetShift) + ' shift completed', value: Math.round(b.shiftKg / per), used: true }], 'kg') +
+            `<div class="prep-meta">Kilograms of production completed (products sold by the KG only). On ${b.days ? 'a typical ' + wd : 'recent ' + wd + 's'} the ${escapeHtml(part.targetShift)} shift completed ${Math.round(b.shiftKg / per)} of ${Math.round(b.dayKg / per)} kg = ${prepQty_(part.prodSharePct)}%.</div>`;
         })()
         : `<div class="prep-meta">No production recorded yet for this shift on that weekday, so it is given an equal share.</div>`}
     </div>`;
@@ -4036,7 +4036,7 @@ function prepPlanHtml_(plan, headline) {
     : 'No history yet for this weekday - tiles use the known orders only.';
   // Split by workload (server: prepLoadShares_) - least production kg on that weekday = biggest share of the prep.
   const shares = (plan.shiftShares || []);
-  const shareTxt = shares.length ? 'split by workload per person: ' + shares.map(s => s.shift + ' ' + s.sharePct + '% (' + (s.staff ? s.staff + ' staff, ' : '') + 'completed ' + Math.round(s.loadKg) + ' qty on this weekday over the history weeks)').join(', ') : '';
+  const shareTxt = shares.length ? 'split by workload per person: ' + shares.map(s => s.shift + ' ' + s.sharePct + '% (' + (s.staff ? s.staff + ' staff, ' : '') + 'completed ' + Math.round(s.loadKg) + ' kg on this weekday over the history weeks)').join(', ') : '';
   const load = (plan.shiftLoad || []);
   const loadHtml = load.length ? `<div class="prep-meta" style="margin:14px 0 6px;"><strong>Recent production completed by each shift</strong> (the history weeks) - use this to decide who has spare capacity:</div>
     <table class="prep-table"><tr><th>Shift</th><th class="num">Orders</th><th class="num">Production kg</th><th class="num">Share</th></tr>
