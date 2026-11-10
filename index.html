@@ -158,6 +158,23 @@
   .prep-card{background:var(--card);border-radius:14px;border:2px solid var(--line);border-left:8px solid #e0a030;padding:16px;box-shadow:0 1px 3px rgba(0,0,0,.06);}
   .prep-card.done{opacity:.72;border-left-color:#3d9a55;}
   .prep-card.skipped{opacity:.6;border-left-color:#bbb;}
+  .prep-card.short{border-left-color:#c0392b;}
+  .prep-recv{background:#fff8e6;border:2px solid #e0a030;border-radius:14px;padding:14px 16px;margin:10px 0 14px;}
+  .prep-recv h3{margin:0 0 6px;font-size:16px;}
+  .prep-recv-row{display:flex;justify-content:space-between;gap:8px;font-size:14px;padding:4px 0;border-bottom:1px solid #f0dfb5;}
+  .prep-flag-short{color:#c0392b;font-weight:800;}
+  .prep-flag-ok{color:#2e7d43;font-weight:700;}
+  .why-step{border:2px solid var(--line);border-radius:12px;padding:12px 14px;margin:10px 0;}
+  .why-step h4{margin:0 0 8px;font-size:15px;}
+  .why-num{display:inline-block;background:#e0a030;color:#fff;border-radius:50%;width:22px;height:22px;text-align:center;line-height:22px;font-size:13px;margin-right:6px;}
+  .why-bar{display:flex;align-items:center;gap:8px;margin:5px 0;font-size:13.5px;}
+  .why-bar-label{flex:0 0 42%;}
+  .why-bar-track{flex:1;background:#eee;border-radius:6px;height:16px;overflow:hidden;}
+  .why-bar-fill{height:100%;background:#9bb7d4;}
+  .why-bar-fill.used{background:#e0a030;}
+  .why-bar-val{flex:0 0 74px;text-align:right;font-weight:700;}
+  .why-result{background:var(--ok-bg);border-radius:12px;padding:12px 14px;font-size:15px;font-weight:700;margin-top:10px;}
+  .prep-recv-input{width:110px;padding:8px;font-size:16px;border:2px solid var(--line);border-radius:8px;}
   .prep-card-head{display:flex;justify-content:space-between;align-items:flex-start;gap:8px;}
   .prep-item-name{font-size:19px;font-weight:800;}
   .prep-shift-badge{font-size:11.5px;font-weight:800;text-transform:uppercase;background:var(--ok-bg);color:var(--green-dark);padding:2px 9px;border-radius:10px;white-space:nowrap;}
@@ -697,6 +714,7 @@
       </span>
     </div>
     <div class="prep-stats" id="prep-stats"></div>
+    <div id="prep-receive"></div>
     <div class="empty-board hidden" id="prep-empty" style="padding:24px 20px;">No prep tiles for today yet. They are created automatically each morning - or tap Generate / recalculate. (Prep items and the products that use them are set up in Admin &gt; Prep.)</div>
   </div>
 
@@ -3285,7 +3303,7 @@ function assignOrderTo(orderId, packerName, tileBtn) {
 let pendingKitchenManagerOrderId = null;
 let kitchenManagerModalMode = 'complete';
 function openKitchenManagerModal(order, mode) {
-  kitchenManagerModalMode = (mode === 'incomplete' || mode === 'partial' || mode === 'prepLog' || mode === 'prepComplete') ? mode : 'complete';
+  kitchenManagerModalMode = (mode === 'incomplete' || mode === 'partial' || mode === 'prepLog' || mode === 'prepComplete' || mode === 'prepReceive') ? mode : 'complete';
   pendingKitchenManagerOrderId = order.orderId;
   document.getElementById('kitchen-manager-modal-ref').textContent = order.sageRef;
   document.getElementById('kitchen-manager-modal-customer').textContent = order.customerName || '';
@@ -3294,6 +3312,7 @@ function openKitchenManagerModal(order, mode) {
       : kitchenManagerModalMode === 'partial' ? "Who's logging this progress?"
       : kitchenManagerModalMode === 'prepLog' ? "Who's logging this prep?"
       : kitchenManagerModalMode === 'prepComplete' ? "Who's marking this prep complete?"
+      : kitchenManagerModalMode === 'prepReceive' ? "Who counted the prep stock?"
       : "Who's marking this complete?";
   document.getElementById('kitchen-manager-modal-incomplete-note').classList.toggle('hidden', kitchenManagerModalMode !== 'incomplete');
 
@@ -3314,6 +3333,8 @@ function openKitchenManagerModal(order, mode) {
           ? logPrepAs(order.orderId, name)
           : kitchenManagerModalMode === 'prepComplete'
             ? completePrepAs(order.orderId, name)
+            : kitchenManagerModalMode === 'prepReceive'
+            ? receivePrepAs(order.orderId, name)
             : completeProductionAs(order.orderId, name, btn);
     grid.appendChild(btn);
   });
@@ -3457,7 +3478,7 @@ function prepVisibleTasks_() {
   const seeAll = prepCanManage_() || !userShift;
   const order = (boardData && boardData.settings && boardData.settings.shiftNames) || [];
   return all
-    .filter(t => (t.date === today || (t.date === yesterday && t.status === 'Open')) && (seeAll || t.shift === userShift))
+    .filter(t => (t.date === today || (t.date === yesterday && t.status === 'Open' && !t.receivedAt)) && (seeAll || t.shift === userShift))
     .sort((a, b) => {
       const ia = order.indexOf(a.shift), ib = order.indexOf(b.shift);
       const rank = t => (t.status === 'Open' ? 0 : t.status === 'Done' ? 1 : 2);
@@ -3475,7 +3496,9 @@ function prepCardHtml_(t, canManage) {
   if (t.source === 'Manual') notes += `<div class="prep-meta">➕ Added by ${escapeHtml(t.adjustedBy || 'a manager')}</div>`;
   else if (t.adjustedBy && t.status !== 'Skipped') notes += `<div class="prep-meta">✏️ Adjusted by ${escapeHtml(t.adjustedBy)} (calculated ${prepQty_(t.calcQty)} ${unit})</div>`;
   if (t.note && t.status !== 'Skipped') notes += `<div class="prep-meta">${escapeHtml(t.note)}</div>`;
+  if (t.receivedAt) notes += prepReceivedLine_(t);
   const id = escapeHtml(t.prepId);
+  const whyBtn = t.calcInfo ? `<button class="btn-secondary" data-prep-action="why" data-prep-id="${id}" style="margin-top:8px;width:100%;">🔍 How was this worked out?</button>` : '';
   const labelBtn = `<button class="btn-secondary" data-prep-action="slip" data-prep-id="${id}">🖨 Slip</button><button class="btn-secondary" data-prep-action="label" data-prep-id="${id}">🏷 Labels</button>`;
   let cls = 'prep-card', status = '', actions = '';
   if (t.status === 'Done') {
@@ -3498,6 +3521,8 @@ function prepCardHtml_(t, canManage) {
         <button class="btn-secondary" data-prep-action="skip" data-prep-id="${id}">⏭ Skip</button>
       </div>` : '');
   }
+  if (t.receiveFlag === 'short') cls += ' short';
+  actions += whyBtn;
   return `<div class="${cls}" data-prep-card="${id}">
     <div class="prep-card-head">
       <div class="prep-item-name">${escapeHtml(t.prepItem)}</div>
@@ -3529,7 +3554,8 @@ function renderPrepSection() {
     const g = byItem[t.prepItem] || (byItem[t.prepItem] = { unit: t.unit, target: 0, done: 0, tiles: 0, open: 0 });
     g.target += t.targetQty; g.done += t.qtyCompleted; g.tiles++; if (t.status === 'Open') g.open++;
   });
-  document.getElementById('prep-stats').innerHTML = Object.keys(byItem).sort().map(name => {
+  const shortTile = canManage ? prepShortfallTileHtml_() : '';
+  document.getElementById('prep-stats').innerHTML = shortTile + Object.keys(byItem).sort().map(name => {
     const g = byItem[name];
     return `<div class="stat-card ${g.open === 0 ? '' : 'warn'}" data-prep-stat="${escapeHtml(name)}">
       <div class="stat-value">${prepQty_(g.done)} / ${prepQty_(g.target)}</div>
@@ -3537,6 +3563,9 @@ function renderPrepSection() {
       <div class="stat-sub">${g.tiles} tile${g.tiles === 1 ? '' : 's'} - ${g.open} still open. Tap for details.</div>
     </div>`;
   }).join('');
+
+  renderPrepReceive_();
+  if (prepReceivable_().length) section.classList.remove('hidden');
 
   // Tiles grouped under a small heading per shift (only when more than one shift is showing).
   const shifts = [];
@@ -3558,6 +3587,7 @@ function onPrepAction_(action, prepId) {
   const t = prepTaskById_(prepId);
   if (!t) { alert('That prep tile is no longer on the board - it may have just been changed. The board is refreshing.'); prepRefresh_(); return; }
   if (action === 'log') return openPrepEditModal_('log', t);
+  if (action === 'why') return openPrepWhy_(t);
   if (action === 'slip') return printPrepSlip_(t);
   if (action === 'label') return printPrepLabelsForTask_(t);
   if (action === 'adjust') return openPrepEditModal_('adjust', t);
@@ -3754,6 +3784,184 @@ function printPrepLabels_(t, chunks) {
   setTimeout(() => window.print(), 150);
 }
 
+// ---- Receiving prep stock (10 Nov 2026) --------------------------------------------------------------------------
+// When a shift starts it counts the prep stock the shift before made for it and enters the weights. Anything short of
+// the target (or of what the previous shift logged) is flagged to management - see receivePrepStock_ in PrepPlan.gs.
+let prepReceivePending = null;
+function prepForDays_(t) { return String(t.forDay || '').split(',').map(d => d.trim()).filter(Boolean); }
+function prepShortBy_(t) {
+  if (t.receivedQty === null || t.receivedQty === undefined) return 0;
+  return Math.max(0, Math.max(Number(t.targetQty) || 0, Number(t.qtyCompleted) || 0) - Number(t.receivedQty));
+}
+function prepReceivedLine_(t) {
+  const unit = escapeHtml(t.unit || 'kg');
+  const who = `${t.receivedBy ? ' by ' + escapeHtml(t.receivedBy) : ''}${t.receivedShift ? ' (' + escapeHtml(t.receivedShift) + ')' : ''}`;
+  return t.receiveFlag === 'short'
+    ? `<div class="prep-meta prep-flag-short">⚠ Counted ${prepQty_(t.receivedQty)} of ${prepQty_(t.targetQty)} ${unit}${who} - SHORT ${prepQty_(prepShortBy_(t))} ${unit}</div>`
+    : `<div class="prep-meta prep-flag-ok">✓ Counted ${prepQty_(t.receivedQty)} ${unit}${who}</div>`;
+}
+// Stock prepped FOR this login's shift (or for the whole day) for today or yesterday that nobody has counted yet.
+function prepReceivable_() {
+  const all = (boardData && boardData.prepTasks) || [];
+  const today = todayDateStr(), yesterday = addDaysStr(today, -1);
+  const seeAll = prepCanManage_() || !userShift;
+  return all.filter(t => {
+    if (t.receivedAt || t.status === 'Skipped' || t.source === 'Manual') return false;
+    const days = prepForDays_(t);
+    if (!days.some(d => d === today || d === yesterday)) return false;
+    if (seeAll) return true;
+    return t.forShift === userShift || (!t.forShift && t.shift !== userShift);
+  }).sort((a, b) => a.prepItem.localeCompare(b.prepItem));
+}
+function renderPrepReceive_() {
+  const box = document.getElementById('prep-receive');
+  if (!box) return;
+  const list = prepReceivable_();
+  if (!list.length) { box.innerHTML = ''; return; }
+  box.innerHTML = `<div class="prep-recv">
+      <h3>📦 Prep stock made for ${userShift && !prepCanManage_() ? 'your shift' : 'the shifts'} - count it and confirm</h3>
+      <div class="prep-meta" style="margin-bottom:6px;">Weigh what is actually there before you start, and enter the weights. Anything short is flagged to management.</div>
+      ${list.map(t => `<div class="prep-recv-row"><span><strong>${escapeHtml(t.prepItem)}</strong> - made by ${escapeHtml(t.shift || '?')} for ${escapeHtml(prepForText_(t))}</span><span>expected ${prepQty_(t.targetQty)} ${escapeHtml(t.unit || 'kg')}${t.qtyCompleted ? ' (logged ' + prepQty_(t.qtyCompleted) + ')' : ' (nothing logged)'}</span></div>`).join('')}
+      <button class="btn-primary" id="prep-receive-btn" style="margin-top:10px;width:100%;">⚖ Count &amp; confirm received</button>
+    </div>`;
+  document.getElementById('prep-receive-btn').onclick = openPrepReceiveModal_;
+}
+function openPrepReceiveModal_() {
+  const list = prepReceivable_();
+  if (!list.length) return;
+  document.getElementById('prep-info-title').textContent = 'Count the prep stock you received';
+  document.getElementById('prep-info-sub').textContent = 'Weigh what is actually there and enter it. Enter 0 if nothing was prepped. Anything short is flagged to management.';
+  document.getElementById('prep-info-body').innerHTML = `<table class="prep-table">
+      <tr><th>Item</th><th class="num">Expected</th><th class="num">Counted</th></tr>
+      ${list.map(t => `<tr><td><strong>${escapeHtml(t.prepItem)}</strong><br><span class="prep-meta">made by ${escapeHtml(t.shift || '?')} for ${escapeHtml(prepForText_(t))}${t.qtyCompleted ? ' - they logged ' + prepQty_(t.qtyCompleted) : ' - they logged nothing'}</span></td>
+        <td class="num">${prepQty_(t.targetQty)} ${escapeHtml(t.unit || 'kg')}</td>
+        <td class="num"><input type="number" min="0" step="any" inputmode="decimal" class="prep-recv-input" data-recv-id="${escapeHtml(t.prepId)}" placeholder="${escapeHtml(t.unit || 'kg')}"></td></tr>`).join('')}
+    </table>
+    <button class="btn-primary" id="prep-recv-next" style="margin-top:12px;width:100%;">Next: who counted it?</button>`;
+  document.getElementById('prep-info-modal').classList.remove('hidden');
+  document.getElementById('prep-recv-next').onclick = () => {
+    const items = [];
+    let missing = 0;
+    document.querySelectorAll('[data-recv-id]').forEach(inp => {
+      const v = inp.value.trim();
+      if (v === '') { missing++; return; }
+      const n = Number(v);
+      if (!(n >= 0)) { missing++; return; }
+      items.push({ prepId: inp.getAttribute('data-recv-id'), qty: n });
+    });
+    if (missing) { alert('Enter a weight for every item (0 if nothing was there).'); return; }
+    prepReceivePending = items;
+    document.getElementById('prep-info-modal').classList.add('hidden');
+    openKitchenManagerModal({ orderId: 'prepreceive', sageRef: 'Prep stock received', customerName: items.length + ' item' + (items.length === 1 ? '' : 's') + ' counted' }, 'prepReceive');
+  };
+}
+function receivePrepAs(pseudoId, kitchenManagerName) {
+  if (!prepReceivePending || pendingKitchenManagerOrderId !== pseudoId) return;
+  const items = prepReceivePending;
+  document.querySelectorAll('#kitchen-manager-modal-grid .packer-tile').forEach(b => b.disabled = true);
+  apiPost('receivePrepStock', { items: items, kitchenManagerName: kitchenManagerName }).then(res => {
+    prepReceivePending = null; closeKitchenManagerModal(); prepRefresh_();
+    const short = (res && res.short) || [];
+    if (short.length) alert('Saved. SHORT - flagged to management:\n' + short.map(x => '• ' + x.item + ': counted ' + prepQty_(x.counted) + ' of ' + prepQty_(Math.max(x.target, x.logged)) + ' ' + x.unit).join('\n'));
+  }).catch(err => { alert(err.message); prepReceivePending = null; closeKitchenManagerModal(); prepRefresh_(); });
+}
+// Managers: every shortfall counted in the last two weeks (the server sends them with the board).
+function prepShortfalls_() {
+  return ((boardData && boardData.prepTasks) || []).filter(t => t.receiveFlag === 'short')
+    .sort((a, b) => String(b.receivedAt).localeCompare(String(a.receivedAt)));
+}
+function prepShortfallTileHtml_() {
+  const list = prepShortfalls_();
+  const week = addDaysStr(todayDateStr(), -6);
+  const recent = list.filter(t => String(t.receivedAt).slice(0, 10) >= week).length;
+  return `<div class="stat-card ${list.length ? 'warn' : ''}" data-prep-shortfalls="1" style="${list.length ? 'border-color:#c0392b;' : ''}">
+      <div class="stat-value">${list.length}</div>
+      <div class="stat-label">⚠ Prep shortfalls (14 days)</div>
+      <div class="stat-sub">${recent} in the last 7 days. Tap for details.</div>
+    </div>`;
+}
+function openPrepShortfalls_() {
+  const list = prepShortfalls_();
+  document.getElementById('prep-info-title').textContent = 'Prep stock shortfalls';
+  document.getElementById('prep-info-sub').textContent = 'Counted by the receiving shift at the start of their shift, last 14 days. "Logged" is what the shift that prepped it recorded.';
+  document.getElementById('prep-info-body').innerHTML = list.length ? `<table class="prep-table">
+      <tr><th>Counted</th><th>Item / for</th><th>Prepped by</th><th class="num">Target</th><th class="num">Logged</th><th class="num">Counted</th><th class="num">Short</th></tr>
+      ${list.map(t => `<tr><td>${t.receivedAt ? fmtTime(t.receivedAt) : ''}<br><span class="prep-meta">${escapeHtml(t.receivedBy)}${t.receivedShift ? ' (' + escapeHtml(t.receivedShift) + ')' : ''}</span></td>
+        <td><strong>${escapeHtml(t.prepItem)}</strong><br><span class="prep-meta">${escapeHtml(prepForText_(t))}</span></td>
+        <td>${escapeHtml(t.shift || '')}<br><span class="prep-meta">${escapeHtml(fmtDateLong(t.date))}${t.lastLoggedBy ? ' - ' + escapeHtml(t.lastLoggedBy) : ''}</span></td>
+        <td class="num">${prepQty_(t.targetQty)}</td><td class="num">${prepQty_(t.qtyCompleted)}</td><td class="num">${prepQty_(t.receivedQty)}</td>
+        <td class="num prep-flag-short">${prepQty_(prepShortBy_(t))} ${escapeHtml(t.unit || 'kg')}</td></tr>`).join('')}
+    </table>` : '<div class="empty-note">No shortfalls counted in the last 14 days.</div>';
+  document.getElementById('prep-info-modal').classList.remove('hidden');
+}
+
+// ---- "How was this worked out?" (10 Nov 2026) ---------------------------------------------------------------------
+// A picture of the tile's own calculation (stored with the tile when it was made - PrepPlan.gs CalcInfo), so any shift
+// manager can see where the number comes from.
+function whyBars_(rows, unit) {
+  const max = Math.max.apply(null, rows.map(r => r.value || 0).concat([1]));
+  return rows.map(r => `<div class="why-bar"><span class="why-bar-label">${r.label}</span><span class="why-bar-track"><span class="why-bar-fill ${r.used ? 'used' : ''}" style="display:block;width:${Math.round(100 * (r.value || 0) / max)}%;"></span></span><span class="why-bar-val">${prepQty_(r.value)} ${escapeHtml(unit)}</span></div>`).join('');
+}
+function whyPartHtml_(part, c, t, unit, n0) {
+  let n = n0, html = '';
+  const dayTxt = escapeHtml(fmtDateLong(part.targetDay || c.targetDay || ''));
+  const weeks = (part.historyByDay || c.historyByDay || []);
+  const known = part.known !== undefined ? part.known : c.known, history = part.history !== undefined ? part.history : c.history;
+  const usedHistory = part.usedHistory !== undefined ? part.usedHistory : c.usedHistory;
+  const demand = part.dayDemand !== undefined ? part.dayDemand : c.dayDemand;
+  const products = part.products || c.products || [];
+  html += `<div class="why-step"><h4><span class="why-num">${n++}</span>How much ${escapeHtml(t.prepItem)} ${dayTxt} needs (the whole day)</h4>
+    ${whyBars_([{ label: 'Orders already in', value: known, used: !usedHistory }, { label: 'A usual ' + escapeHtml(fmtDateLong(part.targetDay || c.targetDay || '').split(',')[0] || 'day') + ' (average of the last ' + (weeks.length || c.historyWeeks || '') + ')', value: history, used: usedHistory }], unit)}
+    <div class="prep-meta">The <strong>bigger</strong> of the two is used, because more orders usually still come in: <strong>${prepQty_(demand)} ${escapeHtml(unit)}</strong>.</div>
+    ${weeks.length ? `<details style="margin-top:6px;"><summary class="prep-meta" style="cursor:pointer;">The last ${weeks.length} weeks</summary>${whyBars_(weeks.map(w => ({ label: escapeHtml(fmtDateLong(w.day)), value: w.kg })), unit)}</details>` : ''}
+    ${products.length ? `<details style="margin-top:6px;"><summary class="prep-meta" style="cursor:pointer;">The orders already in</summary><table class="prep-table"><tr><th>Product</th><th class="num">Ordered</th><th class="num">× yield</th><th class="num">= ${escapeHtml(unit)}</th></tr>
+      ${products.map(p => `<tr><td>${escapeHtml(p.product)}</td><td class="num">${p.qty === null ? '' : prepQty_(p.qty)}</td><td class="num">${p.yieldPerUnit === null ? '' : prepQty_(p.yieldPerUnit)}</td><td class="num">${prepQty_(p.kg)}</td></tr>`).join('')}</table></details>` : ''}
+  </div>`;
+  let formula = prepQty_(demand) + ' ' + escapeHtml(unit);
+  if (part.targetShift) {
+    const b = part.prodBasis;
+    html += `<div class="why-step"><h4><span class="why-num">${n++}</span>${escapeHtml(part.targetShift)} shift's part of the day: ${prepQty_(part.prodSharePct)}%</h4>
+      ${b && !b.estimated && b.dayKg ? whyBars_([{ label: 'Whole day (recent ' + escapeHtml((fmtDateLong(part.targetDay).split(',')[0]) || '') + 's)', value: b.dayKg }, { label: escapeHtml(part.targetShift) + ' shift made', value: b.shiftKg, used: true }], 'kg') +
+        `<div class="prep-meta">On recent ${escapeHtml(fmtDateLong(part.targetDay).split(',')[0] || '')}s the ${escapeHtml(part.targetShift)} shift completed ${prepQty_(b.shiftKg)} of ${prepQty_(b.dayKg)} kg of production = ${prepQty_(part.prodSharePct)}%.</div>`
+        : `<div class="prep-meta">No production recorded yet for this shift on that weekday, so it is given an equal share.</div>`}
+    </div>`;
+    formula += ' × ' + prepQty_(part.prodSharePct) + '%';
+  }
+  if (part.rulePct !== undefined && Number(part.rulePct) !== 100) {
+    html += `<div class="why-step"><h4><span class="why-num">${n++}</span>Your share of that prep: ${prepQty_(part.rulePct)}%</h4><div class="prep-meta">The prep rules split this day's prep between several shifts (Admin &gt; Prep).</div></div>`;
+    formula += ' × ' + prepQty_(part.rulePct) + '%';
+  }
+  const split = part.splitPct !== undefined ? part.splitPct : c.splitPct;
+  if (split !== undefined && split !== null && Number(split) !== 100) {
+    html += `<div class="why-step"><h4><span class="why-num">${n++}</span>Shared with the other shifts that day: ${prepQty_(split)}%</h4><div class="prep-meta">Split by workload per person - the shift with the least production work per person gets the most prep.</div></div>`;
+    formula += ' × ' + prepQty_(split) + '%';
+  }
+  if (c.scalePct !== undefined && Number(c.scalePct) !== 100) formula += ' × ' + prepQty_(c.scalePct) + '%';
+  return { html: html, n: n, formula: formula + ' = ' + prepQty_(part.raw !== undefined ? part.raw : c.raw) + ' ' + escapeHtml(unit) };
+}
+function openPrepWhy_(t) {
+  const c = t.calcInfo;
+  const unit = t.unit || 'kg';
+  document.getElementById('prep-info-title').textContent = `${t.prepItem}: ${prepQty_(c ? c.final : t.calcQty)} ${unit}`;
+  document.getElementById('prep-info-sub').textContent = `Made by the ${t.shift || ''} shift${t.forDay ? ' for ' + prepForText_(t) : ''}. How the number was worked out:`;
+  let body = '';
+  if (!c) {
+    body = '<div class="empty-note">This tile was made before the explanation was added (or added by hand). It shows after the next Recalculate.</div>';
+  } else if (c.fixed) {
+    body = `<div class="why-result">This prep item has a fixed amount per shift: ${prepQty_(c.fixed)} ${escapeHtml(unit)} (Admin &gt; Prep).</div>`;
+  } else {
+    const parts = c.parts || [c];
+    let n = 1;
+    const formulas = [];
+    parts.forEach(part => { const r = whyPartHtml_(part, c, t, unit, n); body += r.html; n = r.n; formulas.push(r.formula); });
+    body += `<div class="why-result">${formulas.join('<br>+ ')}<br>→ rounded up to the next ${prepQty_(c.roundKg)} ${escapeHtml(unit)} = <span style="font-size:18px;">${prepQty_(c.final)} ${escapeHtml(unit)}</span></div>`;
+  }
+  if (t.adjustedBy && Number(t.targetQty) !== Number(c ? c.final : t.targetQty)) body += `<div class="prep-meta" style="margin-top:8px;">✏️ ${escapeHtml(t.adjustedBy)} changed the target to ${prepQty_(t.targetQty)} ${escapeHtml(unit)}.</div>`;
+  if (t.receivedAt) body += prepReceivedLine_(t);
+  document.getElementById('prep-info-body').innerHTML = body;
+  document.getElementById('prep-info-modal').classList.remove('hidden');
+}
+
 function logPrepAs(pseudoId, kitchenManagerName) {
   if (!prepPending || pendingKitchenManagerOrderId !== pseudoId) return;
   const p = prepPending;
@@ -3861,6 +4069,7 @@ function wirePrepUi() {
     if (btn) onPrepAction_(btn.getAttribute('data-prep-action'), btn.getAttribute('data-prep-id'));
   });
   document.getElementById('prep-stats').addEventListener('click', e => {
+    if (e.target.closest('[data-prep-shortfalls]')) { openPrepShortfalls_(); return; }
     const card = e.target.closest('[data-prep-stat]');
     if (card) openPrepItemDetail_(card.getAttribute('data-prep-stat'));
   });
