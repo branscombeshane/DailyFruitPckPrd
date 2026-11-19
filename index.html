@@ -936,6 +936,7 @@
     <button class="admin-tab" data-tab="hidden-customers">Hidden Customers</button>
     <button class="admin-tab" data-tab="users">Users</button>
     <button class="admin-tab" data-tab="settings">Settings</button>
+    <button class="admin-tab" data-tab="speed">Speed log</button>
   </div>
 
   <div class="admin-panel" id="tab-import">
@@ -1166,6 +1167,16 @@
     </div>
     <button class="btn-primary" id="add-user-btn">Add user</button>
     <div class="result-box hidden" id="users-result"></div>
+  </div>
+
+  <div class="admin-panel hidden" id="tab-speed">
+    <h3>Speed log</h3>
+    <p style="color:var(--muted);font-size:14px;">Every Daily Fruit app runs on Shane's one Google account and shares its limits: about 30 requests running at once across ALL apps, and 90 minutes a day of timed-trigger runtime (free account). This shows what Packing &amp; Production uses: requests per hour (all tablets, last 6 hours), the slow ones, trigger minutes per day, and this device's own round trips (round trip minus server time = Google start-up, queueing and network).</p>
+    <div class="card-actions" style="margin-bottom:12px;">
+      <button class="btn-primary" id="speed-refresh-btn">Refresh</button>
+      <button class="btn-secondary" id="speed-csv-btn">Download CSV</button>
+    </div>
+    <div id="speed-body"><p class="prep-meta">Press Refresh.</p></div>
   </div>
 
   <div class="admin-panel hidden" id="tab-settings">
@@ -1498,16 +1509,94 @@ function apiGet(action, params, opts) {
   url.searchParams.set('userPin', userPin);
   url.searchParams.set('userShift', userShift);
   Object.keys(params || {}).forEach(k => url.searchParams.set(k, params[k]));
-  const req = fetchJsonWithRetry_(url.toString(), undefined, opts && opts.timeoutMs).then(handleApiResponse).catch(rethrowFriendly_);
+  const t0 = Date.now();
+  const req = fetchJsonWithRetry_(url.toString(), undefined, opts && opts.timeoutMs)
+    .then(res => { perfClientNote_(action, 'GET', t0, res, null); return res; }, err => { perfClientNote_(action, 'GET', t0, null, err); throw err; })
+    .then(handleApiResponse).catch(rethrowFriendly_);
   return silent ? req : req.finally(endApiLoading_);
 }
+// 19 Nov 2026: a SAVE is never retried automatically any more. A save that timed out may still have gone through
+// (Google queues requests when Shane's account is busy), and a retry of "Log progress" / a partial production log /
+// "Add" would record it twice. Only reads (apiGet, login) retry. The person sees the error and checks the board.
 function apiPost(action, payload, opts) {
   beginApiLoading_();
+  const t0 = Date.now();
   return fetchJsonWithRetry_(APP_CONFIG.API_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'text/plain;charset=utf-8' },
     body: JSON.stringify(Object.assign({ action: action, userName: userName, userPin: userPin, userShift: userShift }, payload || {}))
-  }, opts && opts.timeoutMs).then(handleApiResponse).catch(rethrowFriendly_).finally(endApiLoading_);
+  }, opts && opts.timeoutMs, 3)
+    .then(res => { perfClientNote_(action, 'POST', t0, res, null); return res; }, err => { perfClientNote_(action, 'POST', t0, null, err); throw err; })
+    .then(handleApiResponse).catch(err => {
+      if (isTransientFetchError_(err)) throw new Error('No answer from the server - it may still have saved. Check the board before trying again.');
+      throw err;
+    }).finally(endApiLoading_);
+}
+
+// ---- Speed log (19 Nov 2026) - this device's own calls, newest last (Admin > Speed log) ----
+const PERF_CLIENT_LOG = [];
+function perfClientNote_(action, kind, t0, res, err) {
+  try {
+    const p = res && res._perf;
+    PERF_CLIENT_LOG.push({ at: new Date().toISOString(), kind: kind, action: action, roundTripMs: Date.now() - t0,
+      serverMs: p ? p.ms : '', lockMs: p ? p.lockMs : '', ok: !!(res && res.ok), error: err ? String(err.name || err.message || err) : (res && !res.ok ? 'app error' : ''),
+      reads: p && p.reads ? p.reads.slice(0, 4).map(r => r.sheet + ' ' + r.n + 'x ' + r.rows + 'r ' + r.ms + 'ms').join('; ') : '' });
+    if (PERF_CLIENT_LOG.length > 300) PERF_CLIENT_LOG.shift();
+  } catch (e) { /* never break a request */ }
+}
+let speedLogData = null;
+function speedTable_(cols, rows) {
+  if (!rows.length) return '<p class="prep-meta">Nothing recorded yet.</p>';
+  return '<div style="overflow-x:auto;"><table class="prep-table"><tr>' + cols.map(c => '<th' + (c.num ? ' class="num"' : '') + '>' + escapeHtml(c.label) + '</th>').join('') + '</tr>' +
+    rows.map(r => '<tr>' + cols.map(c => '<td' + (c.num ? ' class="num"' : '') + '>' + escapeHtml(String(r[c.key] === undefined ? '' : r[c.key])) + '</td>').join('') + '</tr>').join('') + '</table></div>';
+}
+function speedDeviceSummary_() {
+  const by = {};
+  PERF_CLIENT_LOG.forEach(x => {
+    const a = by[x.kind + ' ' + x.action] || (by[x.kind + ' ' + x.action] = { call: x.kind + ' ' + x.action, count: 0, rt: 0, srv: 0, srvN: 0, failed: 0, maxRt: 0 });
+    a.count++; a.rt += x.roundTripMs; a.maxRt = Math.max(a.maxRt, x.roundTripMs);
+    if (x.serverMs !== '') { a.srv += x.serverMs; a.srvN++; }
+    if (!x.ok) a.failed++;
+  });
+  return Object.values(by).map(a => ({ call: a.call, count: a.count, avgRoundTripMs: Math.round(a.rt / a.count), maxRoundTripMs: a.maxRt,
+    avgServerMs: a.srvN ? Math.round(a.srv / a.srvN) : '', avgGoogleAndNetworkMs: a.srvN ? Math.round(a.rt / a.count - a.srv / a.srvN) : '', failed: a.failed }))
+    .sort((x, y) => y.count - x.count);
+}
+function renderSpeedLog_() {
+  const el = document.getElementById('speed-body');
+  const d = speedLogData;
+  let html = '';
+  if (d) {
+    const days = {};
+    d.triggers.forEach(t => { days[t.day] = (days[t.day] || 0) + t.minutes; });
+    html += '<h4>Timed triggers - minutes per day (budget about 90 min/day for ALL of Shane\'s apps together)</h4>' +
+      speedTable_([{ key: 'day', label: 'Day' }, { key: 'total', label: 'All Packing triggers (min)', num: true }], Object.keys(days).sort().reverse().map(k => ({ day: k, total: Math.round(days[k] * 10) / 10 }))) +
+      speedTable_([{ key: 'day', label: 'Day' }, { key: 'trigger', label: 'Trigger' }, { key: 'runs', label: 'Runs', num: true }, { key: 'minutes', label: 'Minutes', num: true }, { key: 'avgSec', label: 'Avg s', num: true }, { key: 'maxSec', label: 'Max s', num: true }], d.triggers);
+    html += '<h4 style="margin-top:16px;">Requests per hour, all devices (last 6 hours)</h4>' +
+      speedTable_([{ key: 'hour', label: 'Hour' }, { key: 'action', label: 'Action' }, { key: 'count', label: 'Requests', num: true }, { key: 'perMinute', label: 'Per minute', num: true }, { key: 'avgMs', label: 'Avg ms', num: true }, { key: 'maxMs', label: 'Max ms', num: true }, { key: 'totalSec', label: 'Server s', num: true }, { key: 'errors', label: 'Errors', num: true }], d.requests);
+    html += '<h4 style="margin-top:16px;">Slow requests (over ' + d.slowMs + ' ms), every push from another app, and errors - newest first</h4>' +
+      speedTable_([{ key: 'at', label: 'When' }, { key: 'kind', label: 'Type' }, { key: 'action', label: 'Action' }, { key: 'ms', label: 'ms', num: true }, { key: 'lockMs', label: 'Lock wait ms', num: true }, { key: 'reads', label: 'Sheets read' }], d.slow.map(x => Object.assign({}, x, { at: fmtTime(x.at) })));
+  }
+  html += '<h4 style="margin-top:16px;">This device - its own calls since the page was opened</h4>' +
+    speedTable_([{ key: 'call', label: 'Call' }, { key: 'count', label: 'Count', num: true }, { key: 'avgRoundTripMs', label: 'Avg round trip ms', num: true }, { key: 'maxRoundTripMs', label: 'Max round trip ms', num: true }, { key: 'avgServerMs', label: 'Avg server ms', num: true }, { key: 'avgGoogleAndNetworkMs', label: 'Avg Google+network ms', num: true }, { key: 'failed', label: 'Failed', num: true }], speedDeviceSummary_());
+  el.innerHTML = html;
+}
+function loadSpeedLog_() {
+  apiGet('getPerfLog', {}, { loadingLabel: 'Loading speed log…' }).then(d => { speedLogData = d; renderSpeedLog_(); })
+    .catch(err => { renderSpeedLog_(); alert('Could not load the speed log: ' + err.message); });
+}
+function speedCsv_() {
+  const lines = [];
+  const q = v => '"' + String(v === undefined || v === null ? '' : v).replace(/"/g, '""') + '"';
+  const add = (section, rows) => { if (!rows.length) return; const cols = Object.keys(rows[0]); lines.push(q(section)); lines.push(cols.map(q).join(',')); rows.forEach(r => lines.push(cols.map(c => q(r[c])).join(','))); lines.push(''); };
+  if (speedLogData) { add('Triggers per day', speedLogData.triggers); add('Requests per hour (all devices)', speedLogData.requests); add('Slow requests', speedLogData.slow); }
+  add('This device - summary', speedDeviceSummary_());
+  add('This device - every call', PERF_CLIENT_LOG);
+  const blob = new Blob([lines.join('\r\n')], { type: 'text/csv' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'packing-speed-log-' + new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-') + '.csv';
+  document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
 }
 // These three exact messages are the only ones authenticateUser_ (Code.gs)
 // throws for a bad login - if a normal (already-logged-in) request comes
@@ -1774,7 +1863,7 @@ function loadBoard(isFirstLoad) {
       localStorage.setItem(BOARD_LOCAL_CACHE_KEY, JSON.stringify({ userName: userName, data: data }));
     } catch (e) { /* ignore */ }
     document.getElementById('slip-company').textContent = data.settings.companyName || 'Daily Fruit';
-    if (data.settings.boardRefreshSeconds && pollTimer) {
+    if (data.settings.boardRefreshSeconds && pollTimer && document.visibilityState !== 'hidden') {
       clearInterval(pollTimer);
       pollTimer = setInterval(() => loadBoard(false), Math.max(3, data.settings.boardRefreshSeconds) * 1000);
     }
@@ -5201,7 +5290,16 @@ function wireStaticEvents() {
   // shouldn't have to wait out a possibly-already-doomed stale poll (see the
   // boardLoadGeneration comment above loadBoard) - jump straight to a fresh
   // one and restart the regular polling timer from that point.
+  // 19 Nov 2026 (speed log handover): a hidden tab or a locked/sleeping tablet stops asking for the board at all -
+  // every poll is one of the ~30 requests Shane's whole Google account can run at once, across every Daily Fruit app.
+  // pollTimer stays truthy ("logged in, paused") so the wake-up branch below restarts it with a fresh load.
   document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden' && pollTimer) {
+      clearInterval(pollTimer);
+      pollTimer = -1;
+      if (historyPollTimer) { clearInterval(historyPollTimer); historyPollTimer = null; }
+      return;
+    }
     if (document.visibilityState === 'visible' && pollTimer) {
       clearInterval(pollTimer);
       loadBoard(true);
@@ -5213,11 +5311,14 @@ function wireStaticEvents() {
     }
   });
 
+  document.getElementById('speed-refresh-btn').onclick = loadSpeedLog_;
+  document.getElementById('speed-csv-btn').onclick = speedCsv_;
   document.querySelectorAll('.admin-tab').forEach(tab => {
     tab.onclick = () => {
+      if (tab.getAttribute('data-tab') === 'speed') setTimeout(loadSpeedLog_, 0);
       document.querySelectorAll('.admin-tab').forEach(t => t.classList.remove('active'));
       tab.classList.add('active');
-      ['import', 'products', 'shifts', 'customer-shelf-life', 'label-batch-size', 'prep', 'packers', 'kitchen-managers', 'hidden-customers', 'users', 'settings'].forEach(name => {
+      ['import', 'products', 'shifts', 'customer-shelf-life', 'label-batch-size', 'prep', 'packers', 'kitchen-managers', 'hidden-customers', 'users', 'settings', 'speed'].forEach(name => {
         document.getElementById('tab-' + name).classList.toggle('hidden', name !== tab.getAttribute('data-tab'));
       });
     };
