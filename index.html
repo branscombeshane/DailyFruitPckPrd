@@ -1823,6 +1823,7 @@ let boardPollFailCount = 0;
 // instead of clobbering the fresh attempt's state or flashing the banner
 // right after a successful recovery.
 let boardLoadGeneration = 0;
+let lastFullBoardAt = 0;
 function loadBoard(isFirstLoad) {
   if (boardFetchInFlight && !isFirstLoad) return;
   boardFetchInFlight = true;
@@ -1851,10 +1852,16 @@ function loadBoard(isFirstLoad) {
   // ever shows when there's truly nothing on screen yet, while a wake-up
   // refresh (boardData already populated) stays silent like a normal poll.
   const showFullScreenLoader = isFirstLoad && !boardData;
-  apiGet('getBoard', {}, showFullScreenLoader ? { loadingLabel: 'Loading your board…' } : { silent: true }).then(data => {
+  // 20 Nov 2026 (speed log): a regular poll sends the board version this tablet already has; if nothing changed the
+  // server answers {unchanged:true} without reading any sheet. A full board is still fetched at least once a minute,
+  // on the first load / wake-up, and after this tablet's own actions (those change the version anyway).
+  const askSince = !isFirstLoad && boardData && boardData.boardVersion && (Date.now() - lastFullBoardAt) < 60000;
+  apiGet('getBoard', askSince ? { since: boardData.boardVersion } : {}, showFullScreenLoader ? { loadingLabel: 'Loading your board…' } : { silent: true }).then(data => {
     if (myGeneration !== boardLoadGeneration) return; // superseded by a newer poll (e.g. a wake-from-sleep refresh) - ignore this stale result
     boardFetchInFlight = false;
     boardPollFailCount = 0;
+    if (data && data.unchanged) return; // nothing new - keep what's on screen (ages still tick via the 15 s redraw)
+    lastFullBoardAt = Date.now();
     boardData = data;
     try {
       // Best-effort - private browsing/full storage can throw, and this is
