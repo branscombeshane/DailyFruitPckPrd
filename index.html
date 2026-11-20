@@ -1853,9 +1853,10 @@ function loadBoard(isFirstLoad) {
   // refresh (boardData already populated) stays silent like a normal poll.
   const showFullScreenLoader = isFirstLoad && !boardData;
   // 20 Nov 2026 (speed log): a regular poll sends the board version this tablet already has; if nothing changed the
-  // server answers {unchanged:true} without reading any sheet. A full board is still fetched at least once a minute,
+  // server answers {unchanged:true} without reading any sheet. A full board is still fetched at least every 3 minutes,
   // on the first load / wake-up, and after this tablet's own actions (those change the version anyway).
-  const askSince = !isFirstLoad && boardData && boardData.boardVersion && (Date.now() - lastFullBoardAt) < 60000;
+  // 20 Nov (2nd speed log): full fetch at least every 3 minutes (was every minute) - every real change bumps the version anyway.
+  const askSince = !isFirstLoad && boardData && boardData.boardVersion && (Date.now() - lastFullBoardAt) < 180000;
   apiGet('getBoard', askSince ? { since: boardData.boardVersion } : {}, showFullScreenLoader ? { loadingLabel: 'Loading your board…' } : { silent: true }).then(data => {
     if (myGeneration !== boardLoadGeneration) return; // superseded by a newer poll (e.g. a wake-from-sleep refresh) - ignore this stale result
     boardFetchInFlight = false;
