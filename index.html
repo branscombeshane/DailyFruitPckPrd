@@ -407,6 +407,15 @@
      actually shown is controlled by body[data-print-target], set the same way. */
   #print-slip{display:none;}
   #print-labels{display:none;}
+  #print-report{display:none;}
+  .prod-report-bar{display:flex;justify-content:flex-end;margin:0 0 10px;}
+  .pr-table{border-collapse:collapse;width:100%;font-size:13px;}
+  .pr-table th,.pr-table td{text-align:left;padding:4px 6px;border-bottom:1px solid #e5e5e5;vertical-align:top;}
+  .pr-table td.num,.pr-table th.num{text-align:right;white-space:nowrap;}
+  .pr-table tr.pr-prod td{font-weight:700;background:#f3f6fb;border-top:1px solid #c9d4e4;}
+  .pr-table tr.pr-total td{font-weight:700;border-bottom:2px solid #999;}
+  .pr-table tr.pr-grand td{font-weight:800;font-size:14px;border-top:2px solid #333;}
+  .pr-done{color:#1b6b34;font-weight:700;}
   @media print{
     /* Hiding the rest of the app with visibility:hidden (the previous
        approach here) does NOT remove those elements from layout - the whole
@@ -425,7 +434,14 @@
        children of <body> with no wrapper, so this hides every OTHER direct
        child instead - their own internal contents are never touched by this
        rule at all, so nothing needs its display re-declared. */
-    body > *:not(#print-slip):not(#print-labels){display:none!important;}
+    body > *:not(#print-slip):not(#print-labels):not(#print-report){display:none!important;}
+    body[data-print-target="report"] #print-report{display:block;font-family:Arial,Helvetica,sans-serif;color:#000;font-size:11px;}
+    body[data-print-target="report"] #print-report h1{font-size:17px;margin:0 0 2px;}
+    body[data-print-target="report"] #print-report .pr-sub{font-size:10.5px;margin:0 0 8px;}
+    body[data-print-target="report"] #print-report .pr-table{font-size:10.5px;}
+    body[data-print-target="report"] #print-report .pr-table th,body[data-print-target="report"] #print-report .pr-table td{padding:2px 5px;border-bottom:1px solid #bbb;}
+    body[data-print-target="report"] #print-report .pr-table tr{break-inside:avoid;}
+    body[data-print-target="report"] #print-report .pr-tick{display:inline-block;width:11px;height:11px;border:1px solid #000;}
     body[data-print-target="slip"] #print-slip{
       display:block;position:absolute;top:0;left:0;
       width:80mm;padding:3.5mm 4mm;
@@ -727,6 +743,7 @@
     <div class="empty-board hidden" id="prep-empty" style="padding:24px 20px;">No prep tiles for today yet. They are created automatically each morning - or tap Generate / recalculate. (Prep items and the products that use them are set up in Admin &gt; Prep.)</div>
   </div>
 
+  <div class="prod-report-bar"><button class="btn-secondary" id="prod-report-btn">🖨 Kitchen prep report</button></div>
   <div class="split-bar hidden" id="prod-split-bar"></div>
   <div class="section-heading" id="prod-needs-heading">Needs processing <span class="count" id="prod-needs-count">0</span></div>
   <!-- The prep stock tiles (#prep-grid) and the order tiles (#prod-needs-grid) share ONE grid, prep tiles first (display:contents on both). -->
@@ -903,6 +920,23 @@
 </div>
 
 <!-- ============ PREP: tile detail / "how it's calculated" ============ -->
+<div class="modal-overlay hidden" id="prod-report-modal">
+  <div class="modal-box" style="max-width:760px;">
+    <h2>Kitchen prep report</h2>
+    <div class="modal-sub">Every Production line for the orders delivering on the chosen day, by product - the same list as Sage's Sales By Item report, without prices.</div>
+    <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:8px 0 12px;">
+      <label for="prod-report-date" style="font-weight:700;">Delivery date</label>
+      <input type="date" id="prod-report-date" style="padding:8px 10px;border:1px solid #ccc;border-radius:8px;font-size:15px;">
+    </div>
+    <div id="prod-report-body" style="max-height:55vh;overflow:auto;"></div>
+    <div class="modal-actions">
+      <button class="btn-cancel" id="prod-report-close-btn" style="flex:1;">Close</button>
+      <button class="btn-secondary" id="prod-report-csv-btn" style="flex:1;" disabled>⬇ Download CSV</button>
+      <button class="btn-primary" id="prod-report-print-btn" style="flex:1;" disabled>🖨 Print</button>
+    </div>
+  </div>
+</div>
+
 <div class="modal-overlay hidden" id="prep-info-modal">
   <div class="modal-box" style="max-width:600px;">
     <h2 id="prep-info-title"></h2>
@@ -1230,6 +1264,9 @@
     <div class="result-box hidden" id="reset-order-data-result"></div>
   </div>
 </div>
+
+<!-- ============ PRINT KITCHEN PREP REPORT (A4) ============ -->
+<div id="print-report"></div>
 
 <!-- ============ PRINT SLIP ============ -->
 <div id="print-slip">
@@ -4297,11 +4334,85 @@ function prepGenerate_() {
   }).catch(err => alert(err.message));
 }
 
+/* ===================== KITCHEN PREP REPORT (23 Nov 2026) =====================
+   Replaces downloading Sage's "Sales By Item" report for the kitchen: GET getProductionReport (ProdReport.gs) = every
+   Production line of the orders delivering on a date, grouped by product with totals. Print (A4) or CSV. No money. */
+let prodReportData = null;
+function prodReportFmtDate_(iso) { const [y, m, d] = String(iso || '').split('-'); return d ? d + '/' + m + '/' + y : ''; }
+function prodReportQty_(n) { return String(Math.round(Number(n) * 1000) / 1000); } // plain like Sage (0.5, 1320)
+function prodReportTableHtml_(r, forPrint) {
+  if (!r.products.length) return '<p class="prep-meta">No Production lines for orders delivering on ' + escapeHtml(prodReportFmtDate_(r.date)) + '.</p>';
+  const head = '<tr><th>Date</th><th>Document No.</th><th>Customer</th><th class="num">Qty</th><th>' + (forPrint ? 'Done' : 'Status') + '</th></tr>';
+  let rows = '';
+  r.products.forEach(p => {
+    const name = (p.code ? p.code + ' - ' : '') + p.description;
+    rows += '<tr class="pr-prod"><td colspan="5">' + escapeHtml(name) + '</td></tr>';
+    p.lines.forEach(l => {
+      rows += '<tr><td>' + escapeHtml(prodReportFmtDate_(r.date)) + '</td><td>' + escapeHtml(l.sageRef) + '</td><td>' + escapeHtml(l.customer) + '</td><td class="num">' + escapeHtml(prodReportQty_(l.qty)) + (l.unit ? ' ' + escapeHtml(l.unit) : '') + '</td><td>'
+        + (forPrint ? '<span class="pr-tick"></span>' : (l.done ? '<span class="pr-done">✓ completed</span>' : '')) + '</td></tr>';
+    });
+    rows += '<tr class="pr-total"><td colspan="3">Total for ' + escapeHtml(name) + '</td><td class="num">' + escapeHtml(prodReportQty_(p.total)) + '</td><td></td></tr>';
+  });
+  rows += '<tr class="pr-grand"><td colspan="3">Grand Total (' + r.products.length + ' products, ' + r.orders + ' orders)</td><td class="num">' + escapeHtml(prodReportQty_(r.grandTotal)) + '</td><td></td></tr>';
+  return '<table class="pr-table">' + head + rows + '</table>';
+}
+function openProdReport_() {
+  const input = document.getElementById('prod-report-date');
+  if (!input.value) input.value = addDaysStr(todayDateStr(), 1);
+  document.getElementById('prod-report-modal').classList.remove('hidden');
+  loadProdReport_();
+}
+function loadProdReport_() {
+  const date = document.getElementById('prod-report-date').value;
+  const body = document.getElementById('prod-report-body');
+  const printBtn = document.getElementById('prod-report-print-btn'), csvBtn = document.getElementById('prod-report-csv-btn');
+  prodReportData = null; printBtn.disabled = true; csvBtn.disabled = true;
+  if (!date) { body.innerHTML = ''; return; }
+  body.innerHTML = '<p class="prep-meta">Loading…</p>';
+  apiGet('getProductionReport', { date: date }, { timeoutMs: 60000, loadingLabel: 'Building the prep report…' }).then(r => {
+    if (document.getElementById('prod-report-date').value !== date) return; // a newer date was picked meanwhile
+    prodReportData = r;
+    body.innerHTML = prodReportTableHtml_(r, false);
+    printBtn.disabled = !r.products.length; csvBtn.disabled = !r.products.length;
+  }).catch(err => { body.innerHTML = '<p class="prep-meta" style="color:#a11;">' + escapeHtml(err.message) + '</p>'; });
+}
+function printProdReport_() {
+  const r = prodReportData; if (!r) return;
+  document.getElementById('print-report').innerHTML = '<h1>Kitchen prep report - delivery ' + escapeHtml(fmtDateLong(r.date)) + '</h1>'
+    + '<div class="pr-sub">Printed ' + escapeHtml(fmtDateTimeFull(new Date())) + (userName ? ' by ' + escapeHtml(userName) : '') + ' · Production lines only, by product</div>'
+    + prodReportTableHtml_(r, true);
+  document.getElementById('print-page-style').textContent = '@page{ size:A4; margin:12mm; }';
+  document.body.setAttribute('data-print-target', 'report');
+  setTimeout(() => window.print(), 150);
+}
+function csvProdReport_() {
+  const r = prodReportData; if (!r) return;
+  const q = v => '"' + String(v === undefined || v === null ? '' : v).replace(/"/g, '""') + '"';
+  const lines = ['sep=,', ['Date', 'Document No.', 'Customer', 'Qty Sold', 'Unit', 'Production completed'].map(q).join(',')];
+  r.products.forEach(p => {
+    const name = (p.code ? p.code + ' - ' : '') + p.description;
+    lines.push(q(name) + ',,,,,');
+    p.lines.forEach(l => lines.push([prodReportFmtDate_(r.date), l.sageRef, l.customer, l.qty, l.unit, l.done ? 'Yes' : ''].map(q).join(',')));
+    lines.push([q('Total for ' + name), '', '', q(p.total), '', ''].join(','));
+  });
+  lines.push([q('Grand Total'), '', '', q(r.grandTotal), '', ''].join(','));
+  const blob = new Blob([lines.join('\r\n')], { type: 'text/csv' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'kitchen-prep-report-' + r.date + '.csv';
+  document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+}
+
 function wirePrepUi() {
   document.getElementById('prep-edit-cancel-btn').onclick = closePrepEditModal_;
   document.getElementById('prep-edit-submit-btn').onclick = submitPrepEdit_;
   document.getElementById('prep-edit-qty').addEventListener('keydown', e => { if (e.key === 'Enter') submitPrepEdit_(); });
   document.getElementById('prep-info-close-btn').onclick = () => document.getElementById('prep-info-modal').classList.add('hidden');
+  document.getElementById('prod-report-btn').onclick = openProdReport_;
+  document.getElementById('prod-report-date').onchange = loadProdReport_;
+  document.getElementById('prod-report-close-btn').onclick = () => document.getElementById('prod-report-modal').classList.add('hidden');
+  document.getElementById('prod-report-print-btn').onclick = printProdReport_;
+  document.getElementById('prod-report-csv-btn').onclick = csvProdReport_;
   document.getElementById('prep-generate-btn').onclick = prepGenerate_;
   document.getElementById('prep-why-btn').onclick = () => prepPreview_();
   document.getElementById('prep-add-btn').onclick = () => {
