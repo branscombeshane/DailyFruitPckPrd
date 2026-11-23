@@ -2468,9 +2468,10 @@ function renderProductionTally(orders) {
 }
 
 /* ===================== MONDAY SHIFT SPLIT (23 Nov 2026) =====================
-   Every Monday order known on Sunday has one owner: Sunday Day or Sunday Night (ShiftSplit.gs). A Sunday shift sees its
-   own orders first (earliest truck first), the other shift's orders greyed below them. Managers can move an order or
-   re-split. Packing and Production of an order always have the same owner. */
+   Every Monday order known on Sunday has one owner: Sunday Day or Sunday Night (ShiftSplit.gs). A Sunday Day / Sunday
+   Night floor login sees ONLY its own Monday orders (earliest truck first) plus orders with no owner - never the other
+   shift's (Shane, 23 Nov). Managers/Admins see everything and can move an order or re-split. Packing and Production of
+   an order always have the same owner. */
 const SPLIT_SHIFTS = ['Sunday Day', 'Sunday Night'];
 function splitIsOther_(o) { return !!o.ownerShift && SPLIT_SHIFTS.includes(userShift) && o.ownerShift !== userShift; }
 function splitRank_(o) {
@@ -2479,7 +2480,9 @@ function splitRank_(o) {
 }
 // Within each delivery date that has split orders: own shift first, then orders with no owner, then the other shift's;
 // each by usual truck departure (earliest first). Other delivery dates keep their order.
+function splitHidesOthers_() { return SPLIT_SHIFTS.includes(userShift) && !prepCanManage_(); }
 function splitArrange_(list) {
+  if (splitHidesOthers_()) list = list.filter(o => !splitIsOther_(o));
   const out = [];
   for (let i = 0; i < list.length;) {
     const d = list[i].deliveryDate || '';
@@ -2532,8 +2535,8 @@ function renderSplitBar_(elId) {
   info.forEach(s => {
     const mineLeft = userShift === SPLIT_SHIFTS[0] ? s.dayOrders : userShift === SPLIT_SHIFTS[1] ? s.nightOrders : null;
     html += `<div>👥 <b>${escapeHtml(fmtDateLong(s.forDay))} split:</b> `
-      + (mineLeft !== null ? `<b>your shift has ${mineLeft} order${mineLeft === 1 ? '' : 's'} left</b> · ` : '')
-      + `Sunday Day ${s.dayOrders} left · Sunday Night ${s.nightOrders} left (Night finishes by 03:00)`
+      + (mineLeft !== null ? `<b>your shift has ${mineLeft} order${mineLeft === 1 ? '' : 's'} left</b>` : '')
+      + (splitHidesOthers_() ? (userShift === SPLIT_SHIFTS[1] ? ' · finish by 03:00' : '') : (mineLeft !== null ? ' · ' : '') + `Sunday Day ${s.dayOrders} left · Sunday Night ${s.nightOrders} left (Night finishes by 03:00)`)
       + (s.madeAt ? ` · split ${escapeHtml(fmtTime(s.madeAt))}${s.madeBy ? ' by ' + escapeHtml(s.madeBy) : ''}` : '')
       + (manage ? ` <button class="btn-secondary" data-make-split="${escapeHtml(s.forDay)}">Re-split</button>` : '') + '</div>';
   });
