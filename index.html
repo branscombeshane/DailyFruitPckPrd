@@ -210,6 +210,14 @@
   .order-notes{font-size:12px;color:var(--ink);font-weight:600;margin-top:2px;}
   .order-arrived{font-size:12px;color:var(--muted);margin-top:2px;}
   .order-deliver{font-size:12px;color:var(--info);font-weight:700;margin-top:2px;}
+  /* Monday shift split (23 Nov 2026) */
+  .owner-line{font-size:12px;font-weight:700;margin-top:4px;padding:3px 8px;border-radius:6px;display:inline-block;background:#eef3fb;color:#1d4f91;}
+  .owner-line.own{background:#e3f4e8;color:#1b6b34;}
+  .owner-line.other{background:#f1f1f1;color:#666;}
+  .order-card.other-shift{opacity:.55;}
+  .move-shift-btn{margin-top:8px;font-size:12px;padding:6px 10px;}
+  .split-bar{background:#eef3fb;border:1px solid #c9d8ef;border-radius:10px;padding:10px 14px;margin:0 0 12px;font-size:14px;line-height:1.6;}
+  .split-bar .btn-secondary{margin-left:8px;padding:4px 10px;font-size:13px;}
   .order-overdue{font-size:12px;color:var(--crit);font-weight:700;margin-top:2px;}
   .order-amended{font-size:12px;font-weight:700;margin-top:4px;padding:4px 8px;border-radius:6px;background:#fff4d6;color:#7a4b00;border:1px solid #f0c36d;}
   .order-amended-detail{font-weight:500;margin-top:2px;white-space:normal;}
@@ -677,6 +685,7 @@
 
 <!-- ============ BOARD ============ -->
 <div id="board-view" class="hidden">
+  <div class="split-bar hidden" id="split-bar"></div>
   <div class="section-heading" id="unassigned-heading">Needs a packer <span class="count" id="unassigned-count">0</span></div>
   <div class="order-grid" id="unassigned-grid"></div>
   <div class="empty-board hidden" id="unassigned-empty">All caught up — no unassigned orders 🎉</div>
@@ -718,6 +727,7 @@
     <div class="empty-board hidden" id="prep-empty" style="padding:24px 20px;">No prep tiles for today yet. They are created automatically each morning - or tap Generate / recalculate. (Prep items and the products that use them are set up in Admin &gt; Prep.)</div>
   </div>
 
+  <div class="split-bar hidden" id="prod-split-bar"></div>
   <div class="section-heading" id="prod-needs-heading">Needs processing <span class="count" id="prod-needs-count">0</span></div>
   <!-- The prep stock tiles (#prep-grid) and the order tiles (#prod-needs-grid) share ONE grid, prep tiles first (display:contents on both). -->
   <div class="order-grid" id="prod-needs-wrap">
@@ -2173,6 +2183,9 @@ function renderBoard() {
       : queueAgeMinutes(b, b._packDate) - queueAgeMinutes(a, a._packDate);
   });
   scheduled.sort((a, b) => a._packDate !== b._packDate ? (a._packDate < b._packDate ? -1 : 1) : new Date(a.createdAt) - new Date(b.createdAt));
+  const needsPackerArranged = splitArrange_(needsPacker);
+  needsPacker.length = 0; needsPackerArranged.forEach(o => needsPacker.push(o));
+  renderSplitBar_('split-bar');
   printed.sort((a, b) => new Date(b.printedAt) - new Date(a.printedAt));
 
   // The packer dropdown's options are whoever actually printed something on
@@ -2209,7 +2222,7 @@ function renderBoard() {
     const deliverLine = overdue
       ? `<div class="order-overdue">⚠ Should've been packed ${fmtDateLong(o._packDate)}</div>`
       : (o.deliveryDate ? `<div class="order-deliver">Deliver ${fmtDateLong(o.deliveryDate)}</div>` : '');
-    return `<div class="order-card ${flagClass}" data-order-id="${o.orderId}" data-action="assign" data-search="${searchBlob(o)}">
+    return `<div class="order-card ${flagClass}${splitIsOther_(o) ? ' other-shift' : ''}" data-order-id="${o.orderId}" data-action="assign" data-search="${searchBlob(o)}">
       <div class="order-card-head">
         <div>
           <div class="order-ref">${escapeHtml(o.sageRef)}</div>
@@ -2217,10 +2230,12 @@ function renderBoard() {
           ${orderNotesLine(o)}
           <div class="order-arrived">Arrived ${fmtTime(o.createdAt)}</div>
           ${deliverLine}
+          ${ownerLineHtml_(o)}
         </div>
         <div class="age-badge">${fmtAge(age)}</div>
       </div>
       ${itemSummaryHtml(o.items)}
+      ${moveShiftBtnHtml_(o)}
       <button class="assign-btn">Assign</button>
     </div>`;
   }).join('');
@@ -2261,6 +2276,7 @@ function renderBoard() {
     </div>`).join('');
 
   attachCardHandlers();
+  attachMoveShiftHandlers_();
   renderQuickBar();
   applySearchFilter();
 }
@@ -2451,6 +2467,95 @@ function renderProductionTally(orders) {
   document.getElementById('production-tally').innerHTML = tallyGroupsHtml(groups);
 }
 
+/* ===================== MONDAY SHIFT SPLIT (23 Nov 2026) =====================
+   Every Monday order known on Sunday has one owner: Sunday Day or Sunday Night (ShiftSplit.gs). A Sunday shift sees its
+   own orders first (earliest truck first), the other shift's orders greyed below them. Managers can move an order or
+   re-split. Packing and Production of an order always have the same owner. */
+const SPLIT_SHIFTS = ['Sunday Day', 'Sunday Night'];
+function splitIsOther_(o) { return !!o.ownerShift && SPLIT_SHIFTS.includes(userShift) && o.ownerShift !== userShift; }
+function splitRank_(o) {
+  if (!SPLIT_SHIFTS.includes(userShift)) return o.ownerShift ? 0 : 1;
+  return o.ownerShift === userShift ? 0 : !o.ownerShift ? 1 : 2;
+}
+// Within each delivery date that has split orders: own shift first, then orders with no owner, then the other shift's;
+// each by usual truck departure (earliest first). Other delivery dates keep their order.
+function splitArrange_(list) {
+  const out = [];
+  for (let i = 0; i < list.length;) {
+    const d = list[i].deliveryDate || '';
+    let j = i;
+    while (j < list.length && (list[j].deliveryDate || '') === d) j++;
+    const grp = list.slice(i, j);
+    if (grp.some(o => o.ownerShift)) grp.sort((a, b) => splitRank_(a) - splitRank_(b) || (a.departAt || '99:99').localeCompare(b.departAt || '99:99'));
+    grp.forEach(o => out.push(o));
+    i = j;
+  }
+  return out;
+}
+function ownerLineHtml_(o) {
+  if (!o.ownerShift) return '';
+  const mine = o.ownerShift === userShift;
+  const other = splitIsOther_(o);
+  const extra = (o.departAt ? ' · truck usually leaves ' + escapeHtml(o.departAt) : '')
+    + (o.ownerSource === 'moved' ? ' · moved by ' + escapeHtml(o.ownerSetBy || 'a manager') : '')
+    + (o.ownerSource === 'late' ? ' · arrived after the split' : '');
+  return `<div class="owner-line${mine ? ' own' : other ? ' other' : ''}">👥 ${mine ? 'Your shift (' + escapeHtml(o.ownerShift) + ')' : escapeHtml(o.ownerShift)}${extra}</div>`;
+}
+function moveShiftBtnHtml_(o) {
+  if (!o.ownerShift || !prepCanManage_()) return '';
+  const to = o.ownerShift === SPLIT_SHIFTS[0] ? SPLIT_SHIFTS[1] : SPLIT_SHIFTS[0];
+  return `<button class="btn-secondary move-shift-btn" data-move-shift="${escapeHtml(o.orderId)}">↔ Move to ${escapeHtml(to)}</button>`;
+}
+function attachMoveShiftHandlers_() {
+  document.querySelectorAll('[data-move-shift]').forEach(btn => {
+    btn.onclick = (e) => {
+      e.stopPropagation();
+      const o = ((boardData && boardData.orders) || []).find(x => x.orderId === btn.getAttribute('data-move-shift'));
+      if (!o || !o.ownerShift) return;
+      const to = o.ownerShift === SPLIT_SHIFTS[0] ? SPLIT_SHIFTS[1] : SPLIT_SHIFTS[0];
+      if (!confirm('Move ' + o.sageRef + ' (' + (o.customerName || '') + ') from ' + o.ownerShift + ' to ' + to + '?')) return;
+      btn.disabled = true; btn.textContent = 'Moving…';
+      apiPost('moveOrderShift', { sageRef: o.sageRef, forDay: o.deliveryDate, shift: to })
+        .then(() => loadBoard(true))
+        .catch(err => { alert(err.message); btn.disabled = false; btn.textContent = '↔ Move to ' + to; });
+    };
+  });
+}
+function renderSplitBar_(elId) {
+  const el = document.getElementById(elId);
+  if (!el || !boardData) return;
+  const info = boardData.shiftSplit || [];
+  const today = todayDateStr();
+  const isSunday = parseDateOnlyLocal(today).getDay() === 0;
+  const manage = prepCanManage_();
+  let html = '';
+  info.forEach(s => {
+    const mineLeft = userShift === SPLIT_SHIFTS[0] ? s.dayOrders : userShift === SPLIT_SHIFTS[1] ? s.nightOrders : null;
+    html += `<div>👥 <b>${escapeHtml(fmtDateLong(s.forDay))} split:</b> `
+      + (mineLeft !== null ? `<b>your shift has ${mineLeft} order${mineLeft === 1 ? '' : 's'} left</b> · ` : '')
+      + `Sunday Day ${s.dayOrders} left · Sunday Night ${s.nightOrders} left (Night finishes by 03:00)`
+      + (s.madeAt ? ` · split ${escapeHtml(fmtTime(s.madeAt))}${s.madeBy ? ' by ' + escapeHtml(s.madeBy) : ''}` : '')
+      + (manage ? ` <button class="btn-secondary" data-make-split="${escapeHtml(s.forDay)}">Re-split</button>` : '') + '</div>';
+  });
+  if (!info.length && isSunday && manage) {
+    html = `<div>👥 Monday's orders are not split between Sunday Day and Sunday Night yet (it happens automatically early on Sunday). <button class="btn-secondary" data-make-split="${escapeHtml(addDaysStr(today, 1))}">Split now</button></div>`;
+  }
+  el.innerHTML = html;
+  el.classList.toggle('hidden', !html);
+  el.querySelectorAll('[data-make-split]').forEach(b => { b.onclick = () => makeShiftSplit_(b.getAttribute('data-make-split'), b); });
+}
+function makeShiftSplit_(forDay, btn) {
+  if (!confirm('Split the orders for ' + fmtDateLong(forDay) + ' between Sunday Day and Sunday Night now?\n\nEarliest trucks go to Sunday Day, the work is shared equally. Orders a manager moved by hand, and orders already started, keep their shift.')) return;
+  if (btn) { btn.disabled = true; btn.textContent = 'Splitting…'; }
+  apiPost('makeShiftSplit', { forDay: forDay }, { timeoutMs: 90000 }).then(r => {
+    loadBoard(true);
+    alert('Split done for ' + fmtDateLong(forDay) + ':\n\nSunday Day: ' + r.day.orders + ' orders, ' + r.day.prodKg + ' kg production, ' + r.day.packLines + ' packing lines (' + r.day.workPct + '% of the work)\n'
+      + 'Sunday Night: ' + r.night.orders + ' orders, ' + r.night.prodKg + ' kg production, ' + r.night.packLines + ' packing lines (' + r.night.workPct + '% of the work)'
+      + (r.kept ? '\n\n' + r.kept + ' order(s) kept their shift (moved by hand or already started).' : '')
+      + (r.noTruckHistory ? '\n' + r.noTruckHistory + ' order(s) have no truck history in Dispatch - they were put last.' : ''));
+  }).catch(err => { alert(err.message); if (btn) { btn.disabled = false; btn.textContent = 'Split now'; } });
+}
+
 function renderProductionBoard() {
   if (!boardData) return;
   renderPrepSection();
@@ -2498,6 +2603,9 @@ function renderProductionBoard() {
   });
   scheduled.sort((a, b) => a._packDate !== b._packDate ? (a._packDate < b._packDate ? -1 : 1) : new Date(a.createdAt) - new Date(b.createdAt));
   completed.sort((a, b) => new Date(b.productionCompletedAt) - new Date(a.productionCompletedAt));
+  const needsProcessingArranged = splitArrange_(needsProcessing);
+  needsProcessing.length = 0; needsProcessingArranged.forEach(o => needsProcessing.push(o));
+  renderSplitBar_('prod-split-bar');
 
   renderProductionTally(needsProcessing);
 
@@ -2518,7 +2626,7 @@ function renderProductionBoard() {
       ? `<div class="order-overdue">⚠ Should've been processed ${fmtDateLong(o._packDate)}</div>`
       : (o.deliveryDate ? `<div class="order-deliver">Deliver ${fmtDateLong(o.deliveryDate)}</div>` : '');
     const printedNote = productionPrintNotesHtml(o);
-    return `<div class="order-card ${flagClass}" data-order-id="${o.orderId}" data-search="${searchBlob(o)}">
+    return `<div class="order-card ${flagClass}${splitIsOther_(o) ? ' other-shift' : ''}" data-order-id="${o.orderId}" data-search="${searchBlob(o)}">
       <div class="order-card-head">
         <div>
           <div class="order-ref">${escapeHtml(o.sageRef)}</div>
@@ -2526,11 +2634,13 @@ function renderProductionBoard() {
           ${orderNotesLine(o)}
           <div class="order-arrived">Arrived ${fmtTime(o.createdAt)}</div>
           ${deliverLine}
+          ${ownerLineHtml_(o)}
           ${printedNote}
         </div>
         <div class="age-badge">${fmtAge(age)}</div>
       </div>
       ${itemSummaryHtml(o.items, 'Production')}
+      ${moveShiftBtnHtml_(o)}
       ${productionProgressHtml(o)}
       <div class="prod-actions">
         <button class="btn-secondary" data-prod-print-slip="${o.orderId}">🖨 Slip</button>
@@ -2584,6 +2694,7 @@ function renderProductionBoard() {
     </div>`).join('');
 
   attachProductionCardHandlers();
+  attachMoveShiftHandlers_();
   renderQuickBar();
   applySearchFilter();
 }
