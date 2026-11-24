@@ -146,6 +146,23 @@
   .shift-grand-total.other{background:var(--info-bg);}
   .shift-grand-total.other .sgt-value{color:var(--info);}
   .shift-grand-total.other.selected{border-color:var(--info);}
+  /* Compact Production totals (Dashboard + Data History, 24 Nov 2026 - Shane: the cards took too much space).
+     One line per product family in newspaper columns, variants as small indented lines; totals as slim chips. */
+  .tally-shift-group.compact{padding:10px 14px;margin-bottom:12px;}
+  .tally-shift-group.compact .tally-shift-heading{flex-wrap:wrap;align-items:center;padding:0 0 8px;margin-bottom:8px;border-bottom-width:1px;}
+  .tc-head-left{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;}
+  .tc-chips{display:flex;gap:6px;flex-wrap:wrap;}
+  .tally-shift-group.compact .shift-grand-total{padding:3px 10px;border-radius:999px;display:flex;align-items:baseline;gap:6px;}
+  .tally-shift-group.compact .shift-grand-total .sgt-label{font-size:11px;}
+  .tally-shift-group.compact .shift-grand-total .sgt-value{font-size:15px;margin-top:0;}
+  .tally-compact{columns:230px;column-gap:28px;}
+  .tc-fam{break-inside:avoid;padding:3px 0 4px;border-bottom:1px solid var(--line);}
+  .tc-row{display:flex;justify-content:space-between;align-items:baseline;gap:10px;font-size:14px;line-height:1.35;}
+  .tc-row .tc-name{font-weight:700;}
+  .tc-row .tc-qty{font-weight:800;color:var(--green-dark);white-space:nowrap;font-variant-numeric:tabular-nums;}
+  .tc-row.tc-var{font-size:12.5px;color:var(--muted);padding-left:12px;}
+  .tc-row.tc-var .tc-name{font-weight:400;}
+  .tc-row.tc-var .tc-qty{font-weight:600;color:var(--muted);}
   .prod-actions{display:flex;gap:8px;margin-top:12px;}
   .prod-actions .btn-secondary{flex:1;margin-top:0;}
   .prod-actions .btn-primary{flex:1;margin-top:0;}
@@ -3221,6 +3238,20 @@ function renderDashboard() {
 // re-running computeProductionTally with the bucket filter (rather than
 // picking through the already-built unfiltered `groups`) is what keeps this
 // exactly matching the tile's own total - see that function's comment.
+// Compact list version of tallyGroupsHtml (Dashboard + Data History only; the live Production board keeps the cards).
+function tallyGroupsCompactHtml_(groups) {
+  return '<div class="tally-compact">' + groups.map(g => {
+    const single = g.variants.length === 1;
+    const headerLabel = single ? g.variants[0].description : g.family;
+    const prefix = g.family + ' - ';
+    const vars = single ? '' : g.variants.slice().sort((a, b) => a.description.localeCompare(b.description)).map(v => {
+      const short = v.description.indexOf(prefix) === 0 ? v.description.slice(prefix.length) : v.description;
+      return `<div class="tc-row tc-var"><span class="tc-name">${escapeHtml(short)}</span><span class="tc-qty">${formatQty(v.qty)}${v.unit ? ' ' + escapeHtml(v.unit) : ''}</span></div>`;
+    }).join('');
+    return `<div class="tc-fam"><div class="tc-row"><span class="tc-name">${escapeHtml(headerLabel)}</span><span class="tc-qty">${formatQty(g.total)}${g.unit ? ' ' + escapeHtml(g.unit) : ''}</span></div>${vars}</div>`;
+  }).join('') + '</div>';
+}
+
 function renderProductionTallyInto_(containerEl, completedOrders, getSelected, setSelected) {
   const shiftGroups = groupOrdersByShift_(completedOrders);
   containerEl.innerHTML = shiftGroups.map(sg => {
@@ -3235,16 +3266,18 @@ function renderProductionTallyInto_(containerEl, completedOrders, getSelected, s
       ? computeProductionTally(sg.orders, selected.bucket)
       : groups;
     const tallyPanelHtml = visibleGroups.length
-      ? tallyGroupsHtml(visibleGroups)
+      ? tallyGroupsCompactHtml_(visibleGroups)
       : (filteredForThisShift ? `<div style="color:var(--muted);font-size:14px;padding:8px 2px;">Nothing in this shift's ${escapeHtml(selected.bucket)} total right now.</div>` : '');
-    return `<div class="tally-shift-group">
-      <div class="tally-shift-heading"><span>${escapeHtml(label)}</span><span class="tally-shift-count">${sg.orders.length} order${sg.orders.length === 1 ? '' : 's'} completed</span></div>
-      <div class="shift-grand-totals">
-        <div class="shift-grand-total${isSelected('KG') ? ' selected' : ''}" data-shift-key="${escapeHtml(shiftKey)}" data-bucket="KG"><div class="sgt-label">Total KG</div><div class="sgt-value">${formatQty(bucketTotals.KG)} KG</div></div>
-        <div class="shift-grand-total${isSelected('EACH') ? ' selected' : ''}" data-shift-key="${escapeHtml(shiftKey)}" data-bucket="EACH"><div class="sgt-label">Total EACH</div><div class="sgt-value">${formatQty(bucketTotals.EACH)} EACH</div></div>
-        <div class="shift-grand-total other${isSelected('Other') ? ' selected' : ''}" data-shift-key="${escapeHtml(shiftKey)}" data-bucket="Other"><div class="sgt-label">Other</div><div class="sgt-value">${formatQty(bucketTotals.Other)}</div></div>
+    return `<div class="tally-shift-group compact">
+      <div class="tally-shift-heading">
+        <span class="tc-head-left"><span>${escapeHtml(label)}</span><span class="tally-shift-count">${sg.orders.length} order${sg.orders.length === 1 ? '' : 's'} completed</span></span>
+        <span class="tc-chips">
+          <span class="shift-grand-total${isSelected('KG') ? ' selected' : ''}" data-shift-key="${escapeHtml(shiftKey)}" data-bucket="KG" title="Show only products sold by the KG"><span class="sgt-label">KG</span><span class="sgt-value">${formatQty(bucketTotals.KG)}</span></span>
+          <span class="shift-grand-total${isSelected('EACH') ? ' selected' : ''}" data-shift-key="${escapeHtml(shiftKey)}" data-bucket="EACH" title="Show only products sold EACH"><span class="sgt-label">Each</span><span class="sgt-value">${formatQty(bucketTotals.EACH)}</span></span>
+          <span class="shift-grand-total other${isSelected('Other') ? ' selected' : ''}" data-shift-key="${escapeHtml(shiftKey)}" data-bucket="Other" title="Show only other units"><span class="sgt-label">Other</span><span class="sgt-value">${formatQty(bucketTotals.Other)}</span></span>
+        </span>
       </div>
-      <div class="tally-panel">${tallyPanelHtml}</div>
+      <div>${tallyPanelHtml}</div>
     </div>`;
   }).join('');
   containerEl.querySelectorAll('.shift-grand-total').forEach(tile => {
