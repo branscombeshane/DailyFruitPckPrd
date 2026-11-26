@@ -903,7 +903,7 @@
     <h2 id="assign-modal-ref"></h2>
     <div class="modal-sub" id="assign-modal-customer"></div>
     <ul class="item-list" id="assign-modal-items"></ul>
-    <div class="modal-sub" style="margin:16px 0 8px;font-weight:700;color:var(--ink);">Who's packing this?</div>
+    <div class="modal-sub" id="assign-modal-question" style="margin:16px 0 8px;font-weight:700;color:var(--ink);">Who's packing this?</div>
     <div class="tile-grid" id="assign-modal-packer-grid" style="grid-template-columns:repeat(auto-fill,minmax(130px,1fr));"></div>
     <div class="empty-note hidden" id="assign-modal-no-packers" style="text-align:left;padding:10px 0;">
       No active packers yet. Tap the ⚙ icon to add packers in Admin.
@@ -2374,7 +2374,7 @@ function renderBoard() {
       </div>
       ${itemSummaryHtml(o.items)}
       ${moveShiftBtnHtml_(o)}
-      <button class="assign-btn">Assign</button>
+      <button class="assign-btn">${isBlendid_() ? '🖨 Print slip' : 'Assign'}</button>
     </div>`;
   }).join('');
 
@@ -3618,6 +3618,20 @@ function openAssignModal(order) {
 
   const grid = document.getElementById('assign-modal-packer-grid');
   const note = document.getElementById('assign-modal-no-packers');
+  // Blendid (Shane, 27 Nov 2026): orders are put together by teams, nobody is assigned - one "Print slip" button that
+  // records the shift (assignOrder with the shift name) and prints, exactly like picking a packer does.
+  document.getElementById('assign-modal-question').textContent = isBlendid_() ? 'Ready to print?' : "Who's packing this?";
+  if (isBlendid_()) {
+    note.classList.add('hidden');
+    grid.innerHTML = '';
+    const btn = document.createElement('button');
+    btn.className = 'packer-tile';
+    btn.textContent = '🖨 Print slip';
+    btn.onclick = () => assignOrderTo(order.orderId, userShift || 'Blendid', btn);
+    grid.appendChild(btn);
+    document.getElementById('assign-modal').classList.remove('hidden');
+    return;
+  }
   const packers = (boardData && boardData.packers) || [];
   note.classList.toggle('hidden', packers.length > 0);
   grid.innerHTML = '';
