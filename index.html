@@ -426,6 +426,18 @@
   #print-labels{display:none;}
   #print-report{display:none;}
   .prod-report-bar{display:flex;justify-content:flex-end;margin:0 0 10px;}
+  /* Rev counter (26 Nov 2026): staff on duty vs work left, managers only */
+  .rev-bar{display:grid;grid-template-columns:repeat(auto-fit,minmax(330px,1fr));gap:12px;margin:0 0 12px;}
+  .rev-card{background:var(--card);border:2px solid var(--line);border-radius:14px;padding:10px 14px;display:flex;gap:12px;align-items:center;cursor:pointer;}
+  .rev-card:hover{border-color:var(--ink);}
+  .rev-card svg{flex:0 0 150px;width:150px;height:88px;}
+  .rev-info{flex:1;min-width:0;font-size:13px;line-height:1.45;color:var(--muted);}
+  .rev-title{display:flex;align-items:baseline;gap:8px;font-size:15px;font-weight:800;color:var(--ink);}
+  .rev-pct{font-size:22px;font-weight:800;}
+  .rev-ok{color:#1b7a3a;} .rev-warn{color:#b26a00;} .rev-bad{color:#b3261e;}
+  .rev-msg{font-weight:700;margin-top:2px;}
+  .rev-foot{grid-column:1/-1;display:flex;justify-content:space-between;gap:10px;font-size:12px;color:var(--muted);margin-top:-4px;}
+  .rev-foot button{font-size:12px;padding:3px 10px;}
   .pr-table{border-collapse:collapse;width:100%;font-size:13px;}
   .pr-table th,.pr-table td{text-align:left;padding:4px 6px;border-bottom:1px solid #e5e5e5;vertical-align:top;}
   .pr-table td.num,.pr-table th.num{text-align:right;white-space:nowrap;}
@@ -718,6 +730,7 @@
 
 <!-- ============ BOARD ============ -->
 <div id="board-view" class="hidden">
+  <div class="rev-bar hidden" id="rev-bar"></div>
   <div class="split-bar hidden" id="split-bar"></div>
   <div class="section-heading" id="unassigned-heading">Needs a packer <span class="count" id="unassigned-count">0</span></div>
   <div class="order-grid" id="unassigned-grid"></div>
@@ -760,6 +773,7 @@
     <div class="empty-board hidden" id="prep-empty" style="padding:24px 20px;">No prep tiles for today yet. They are created automatically each morning - or tap Generate / recalculate. (Prep items and the products that use them are set up in Admin &gt; Prep.)</div>
   </div>
 
+  <div class="rev-bar hidden" id="prod-rev-bar"></div>
   <div class="prod-report-bar"><button class="btn-secondary" id="prod-report-btn">🖨 Kitchen prep report</button></div>
   <div class="split-bar hidden" id="prod-split-bar"></div>
   <div class="section-heading" id="prod-needs-heading">Needs processing <span class="count" id="prod-needs-count">0</span></div>
@@ -2237,6 +2251,7 @@ function renderBoard() {
       : queueAgeMinutes(b, b._packDate) - queueAgeMinutes(a, a._packDate);
   });
   scheduled.sort((a, b) => a._packDate !== b._packDate ? (a._packDate < b._packDate ? -1 : 1) : new Date(a.createdAt) - new Date(b.createdAt));
+  loadRev_(false);
   const needsPackerArranged = splitArrange_(needsPacker);
   needsPacker.length = 0; needsPackerArranged.forEach(o => needsPacker.push(o));
   renderSplitBar_('split-bar');
@@ -2660,6 +2675,7 @@ function renderProductionBoard() {
   });
   scheduled.sort((a, b) => a._packDate !== b._packDate ? (a._packDate < b._packDate ? -1 : 1) : new Date(a.createdAt) - new Date(b.createdAt));
   completed.sort((a, b) => new Date(b.productionCompletedAt) - new Date(a.productionCompletedAt));
+  loadRev_(false);
   const needsProcessingArranged = splitArrange_(needsProcessing);
   needsProcessing.length = 0; needsProcessingArranged.forEach(o => needsProcessing.push(o));
   renderSplitBar_('prod-split-bar');
@@ -4365,6 +4381,81 @@ function prepGenerate_() {
     const head = `Created ${r.created} new tile${r.created === 1 ? '' : 's'}, refreshed ${r.updated}, left ${r.unchanged} untouched${r.retired ? ', cleared ' + r.retired + ' old tile' + (r.retired === 1 ? '' : 's') + ' nobody had logged anything on' : ''}. Tiles that already have progress logged, or that a manager adjusted, are never changed.`;
     showPrepPlan_(r, 'Prep tiles updated', head);
   }).catch(err => alert(err.message));
+}
+
+/* ===================== REV COUNTER (26 Nov 2026) =====================
+   Managers: two gauges at the top of both boards - Kitchen (production kg left vs kitchen staff clocked in) and
+   Packing (orders to pack vs packers clocked in). Staff come from the Financials app's BioTime clock-ins
+   (RevCounter.gs). 100% = the people on duty can just finish before their shifts end. Refreshed every 5 minutes;
+   tap a gauge for the people and orders behind it. */
+let revData = null, revLoading = false, revLastAt = 0, revErr = '';
+const REV_REFRESH_MS = 5 * 60 * 1000;
+function loadRev_(manual) {
+  if (!prepCanManage_()) { ['rev-bar', 'prod-rev-bar'].forEach(id => { const el = document.getElementById(id); if (el) el.classList.add('hidden'); }); return; }
+  if (revLoading) return;
+  if (!manual && revLastAt && Date.now() - revLastAt < REV_REFRESH_MS) { renderRev_(); return; }
+  revLoading = true; revLastAt = Date.now(); renderRev_();
+  apiGet('getRevCounter', {}, manual ? { loadingLabel: 'Checking who is on duty…', timeoutMs: 60000 } : { silent: true, timeoutMs: 60000 })
+    .then(d => { revData = d; revErr = ''; })
+    .catch(err => { revErr = err.message || String(err); })
+    .finally(() => { revLoading = false; renderRev_(); });
+}
+function revClass_(pct) { return pct === null || pct > 100 ? 'rev-bad' : pct >= 80 ? 'rev-warn' : 'rev-ok'; }
+function revGaugeSvg_(pct) {
+  const max = 150, cx = 75, cy = 78, r = 62;
+  const pt = (v, rad) => { const a = Math.PI * (1 - Math.min(max, Math.max(0, v)) / max); return [cx + rad * Math.cos(a), cy - rad * Math.sin(a)]; };
+  const arc = (from, to, color) => { const [x1, y1] = pt(from, r), [x2, y2] = pt(to, r); return `<path d="M${x1.toFixed(1)} ${y1.toFixed(1)} A${r} ${r} 0 0 1 ${x2.toFixed(1)} ${y2.toFixed(1)}" fill="none" stroke="${color}" stroke-width="13"/>`; };
+  const v = pct === null ? max : pct;
+  const [nx, ny] = pt(v, r - 10);
+  return `<svg viewBox="0 0 150 88" role="img" aria-label="${pct === null ? 'No staff clocked in' : pct + '% of what the people on duty can do'}">`
+    + arc(0, 80, '#58b368') + arc(80, 100, '#f0a830') + arc(100, 150, '#d9534f')
+    + `<line x1="${cx}" y1="${cy}" x2="${nx.toFixed(1)}" y2="${ny.toFixed(1)}" stroke="#222" stroke-width="4" stroke-linecap="round"/><circle cx="${cx}" cy="${cy}" r="6" fill="#222"/>`
+    + `<text x="8" y="86" font-size="9" fill="#888">0</text><text x="${pt(100, r + 9)[0] - 8}" y="${pt(100, r + 9)[1]}" font-size="9" fill="#888">100%</text></svg>`;
+}
+function revCardHtml_(key, title, n, unit, staffWord) {
+  const cls = revClass_(n.pct);
+  const fmt = v => Number(v).toLocaleString('en-US', { maximumFractionDigits: 1 });
+  const word = (c, w) => c === 1 ? w.replace(/s$/, '') : w;
+  const msg = n.pct === null ? `No ${staffWord} clocked in - ${fmt(n.work)} ${unit} waiting`
+    : n.pct > 100 ? `Under pressure: about ${n.needMore} more ${n.needMore === 1 ? staffWord.replace(/s$/, '') : staffWord} needed`
+    : n.pct >= 80 ? 'Tight - little room for problems' : 'On track';
+  return `<div class="rev-card" data-rev="${key}">${revGaugeSvg_(n.pct)}<div class="rev-info">
+    <div class="rev-title">${escapeHtml(title)} <span class="rev-pct ${cls}">${n.pct === null ? '—' : n.pct + '%'}</span></div>
+    <div class="rev-msg ${cls}">${escapeHtml(msg)}</div>
+    <div>${fmt(n.work)} ${escapeHtml(unit)} left · ${n.onDuty} ${escapeHtml(word(n.onDuty, staffWord))} on duty${n.onDuty ? ' · ~' + fmt(n.hoursLeftAvg) + ' h left each' : ''}</div>
+    <div>Normal: ${fmt(n.ratePerHour)} ${escapeHtml(unit)} per person per hour</div></div></div>`;
+}
+function renderRev_() {
+  const html = !prepCanManage_() ? '' : (revData
+    ? revCardHtml_('kitchen', '🔪 Kitchen', revData.kitchen, 'kg', 'kitchen staff') + revCardHtml_('packing', '📦 Packing', revData.packing, 'orders', 'packers')
+      + `<div class="rev-foot"><span>Staff on duty from the clock-in machines${revData.lastSync ? ' (up to ' + escapeHtml(String(revData.lastSync).slice(11, 16)) + ')' : ''} · work left for the shift on duty · updated ${escapeHtml(String(revData.now).slice(11, 16))}${revErr ? ' · last refresh failed: ' + escapeHtml(revErr) : ''}</span><button class="btn-secondary" data-rev-refresh>${revLoading ? 'Refreshing…' : '↻ Refresh'}</button></div>`
+    : `<div class="rev-foot"><span>${revLoading ? 'Checking who is on duty…' : escapeHtml(revErr ? 'Rev counter unavailable: ' + revErr : '')}</span>${revLoading ? '' : '<button class="btn-secondary" data-rev-refresh>↻ Try again</button>'}</div>`);
+  ['rev-bar', 'prod-rev-bar'].forEach(id => {
+    const el = document.getElementById(id); if (!el) return;
+    el.innerHTML = html; el.classList.toggle('hidden', !html);
+    el.querySelectorAll('[data-rev]').forEach(c => { c.onclick = () => openRevDetail_(c.getAttribute('data-rev')); });
+    el.querySelectorAll('[data-rev-refresh]').forEach(b => { b.disabled = revLoading; b.onclick = () => loadRev_(true); });
+  });
+}
+function openRevDetail_(key) {
+  const d = revData; if (!d) return;
+  const n = key === 'kitchen' ? d.kitchen : d.packing;
+  const unit = key === 'kitchen' ? 'kg' : 'orders';
+  const t = (cols, rows) => rows.length ? '<div style="overflow-x:auto;"><table class="prep-table"><tr>' + cols.map(c => '<th' + (c[2] ? ' class="num"' : '') + '>' + escapeHtml(c[1]) + '</th>').join('') + '</tr>'
+    + rows.map(r => '<tr>' + cols.map(c => '<td' + (c[2] ? ' class="num"' : '') + '>' + escapeHtml(String(r[c[0]] === undefined || r[c[0]] === null ? '' : r[c[0]])) + '</td>').join('') + '</tr>').join('') + '</table></div>' : '<p class="prep-meta">None.</p>';
+  const people = n.people.map(p => ({ name: p.name, dept: p.department, arrived: String(p.arrived).slice(11, 16), end: p.shiftEnd ? String(p.shiftEnd).slice(11, 16) + (p.overtime ? ' (overtime)' : '') : 'no shift', left: p.hoursLeft }));
+  const orders = n.orders.map(o => ({ ref: o.sageRef, customer: o.customer, deliver: o.deliveryDate ? fmtDateLong(o.deliveryDate) : '', owner: o.owner, kg: o.kgLeft, counts: o.counts === 1 ? 'all' : Math.round(o.counts * 100) + '%' }));
+  const rates = d.rates || {};
+  const rateLine = ['Veg Day', 'Veg Night'].map(dep => { const r = rates[dep] || {}; return dep + ': ' + (key === 'kitchen' ? (Math.round((r.kgPerKitchenHour || 0) * 10) / 10) + ' kg per kitchen person per hour (' + (r.kg || 0) + ' kg / ' + (r.kitchenHours || 0) + ' h)' : (Math.round((r.ordersPerPackerHour || 0) * 10) / 10) + ' orders per packer per hour (' + (r.orders || 0) + ' orders / ' + (r.packerHours || 0) + ' h)'); }).join(' · ');
+  document.getElementById('prep-info-title').textContent = (key === 'kitchen' ? 'Kitchen' : 'Packing') + ' rev counter: ' + (n.pct === null ? 'no staff on duty' : n.pct + '%');
+  document.getElementById('prep-info-sub').textContent = 'Work left ' + n.work + ' ' + unit + ' · the people on duty can do about ' + n.capacity + ' ' + unit + ' before their shifts end';
+  document.getElementById('prep-info-body').innerHTML =
+    '<h3 style="margin:10px 0 4px;">On duty (' + n.onDuty + ')</h3>' + t([['name', 'Name'], ['dept', 'Department'], ['arrived', 'Clocked in'], ['end', 'Shift ends'], ['left', 'Hours left', 1]], people)
+    + '<h3 style="margin:14px 0 4px;">Work counted (' + orders.length + ' orders)</h3>'
+    + t(key === 'kitchen' ? [['ref', 'Invoice'], ['customer', 'Customer'], ['deliver', 'Delivery'], ['owner', 'Split owner'], ['kg', 'kg left', 1], ['counts', 'Counted']] : [['ref', 'Invoice'], ['customer', 'Customer'], ['deliver', 'Delivery'], ['owner', 'Split owner'], ['counts', 'Counted']], orders)
+    + '<p class="prep-meta" style="margin-top:12px;">How it works: work left = open orders packed today or earlier' + (key === 'kitchen' ? ' (production kg not yet done, lines sold by the kg)' : ' (slips not yet printed)')
+    + '. Monday split orders count only for their own shift. While only the Day team is on, orders for a later delivery day count at the Day team\'s usual share of that weekday (' + Math.round(((d.dayShare || {})[key === 'kitchen' ? 'kitchen' : 'packing'] || 0) * 100) + '%); the Night team does the rest. Normal speed over the last 4 weeks (since ' + escapeHtml(d.since || '') + '): ' + escapeHtml(rateLine) + '. 100% = the people on duty can just finish before their shifts end.</p>';
+  document.getElementById('prep-info-modal').classList.remove('hidden');
 }
 
 /* ===================== KITCHEN PREP REPORT (23 Nov 2026) =====================
