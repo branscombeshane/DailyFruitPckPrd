@@ -4456,7 +4456,7 @@ function openRevDetail_(key) {
   const notIn = (n.notIn || []).map(p => ({ name: p.name, dept: p.department, start: hm(p.shiftStart), end: hm(p.shiftEnd) }));
   const orders = n.orders.map(o => ({ ref: o.sageRef, customer: o.customer, deliver: o.deliveryDate ? fmtDateLong(o.deliveryDate) : '', due: o.dueToday ? 'DUE TODAY' : '', owner: o.owner, kg: o.kgLeft }));
   const rates = d.rates || {};
-  const rateLine = ['Veg Day', 'Veg Night'].map(dep => { const r = rates[dep] || {}; return dep + ': ' + (key === 'kitchen' ? (Math.round((r.kgPerKitchenHour || 0) * 10) / 10) + ' kg per kitchen person per hour (' + (r.kg || 0) + ' kg / ' + (r.kitchenHours || 0) + ' h)' : (Math.round((r.ordersPerPackerHour || 0) * 10) / 10) + ' orders per packer per hour (' + (r.orders || 0) + ' orders / ' + (r.packerHours || 0) + ' h)'); }).join(' · ');
+  const rateLine = ['Veg Day', 'Veg Night'].map(dep => { const r = rates[dep] || {}; return dep + ': ' + (key === 'kitchen' ? (Math.round((r.kgPerKitchenHour || 0) * 10) / 10) + ' kg per kitchen person per hour (' + (r.kg || 0) + ' kg' + (r.prepKg ? ', of which ' + r.prepKg + ' kg prep stock' : '') + ' / ' + (r.kitchenHours || 0) + ' h)' : (Math.round((r.ordersPerPackerHour || 0) * 10) / 10) + ' orders per packer per hour (' + (r.orders || 0) + ' orders / ' + (r.packerHours || 0) + ' h)'); }).join(' · ');
   document.getElementById('prep-info-title').textContent = (key === 'kitchen' ? 'Kitchen' : 'Packing') + ' rev counter: ' + (n.pct === null ? 'no staff on duty' : n.pct + '%');
   document.getElementById('prep-info-sub').textContent = 'Work left ' + n.work + ' ' + unit + ' · the people on duty and still coming in today can do about ' + n.capacity + ' ' + unit + ' by ' + (d.dayEnd ? hm(d.dayEnd) : 'the end of the day');
   document.getElementById('prep-info-body').innerHTML =
@@ -4465,7 +4465,7 @@ function openRevDetail_(key) {
     + '<h3 style="margin:14px 0 4px;">Work counted (' + orders.length + ' orders)</h3>'
     + t(key === 'kitchen' ? [['ref', 'Invoice'], ['customer', 'Customer'], ['deliver', 'Delivery'], ['due', ''], ['owner', 'Split owner'], ['kg', 'kg left', 1]] : [['ref', 'Invoice'], ['customer', 'Customer'], ['deliver', 'Delivery'], ['due', ''], ['owner', 'Split owner']], orders)
     + '<p class="prep-meta" style="margin-top:12px;">How it works: work left = open orders packed today or earlier' + (key === 'kitchen' ? ' (production kg not yet done, lines sold by the kg)' : ' (slips not yet printed)')
-    + ' (kg logged with Log progress is taken off). Measured to the end of today\'s production: the people on duty (hours left in their shift) plus those rostered to start later today (their whole shift). Normal speed over the last 4 weeks (since ' + escapeHtml(d.since || '') + '): ' + escapeHtml(rateLine) + '. 100% = today\'s team can just finish today\'s production.</p>';
+    + ' (kg logged with Log progress is taken off; prep stock still to make today counts too). Measured to the end of today\'s production: the people on duty (hours left in their shift) plus those rostered to start later today (their whole shift). Normal speed over the last 4 weeks (since ' + escapeHtml(d.since || '') + '): ' + escapeHtml(rateLine) + '. 100% = today\'s team can just finish today\'s production.</p>';
   document.getElementById('prep-info-modal').classList.remove('hidden');
 }
 
