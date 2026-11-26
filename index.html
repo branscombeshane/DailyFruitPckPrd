@@ -754,7 +754,7 @@
 <!-- ============ PRODUCTION BOARD ============ -->
 <div id="production-view" class="hidden">
   <div class="section-heading">Prep totals <span class="count" id="tally-count">0</span></div>
-  <div class="tally-panel" id="production-tally"></div>
+  <div class="tally-shift-group compact" id="production-tally"></div>
   <div class="empty-board hidden" id="tally-empty">Nothing to prep right now.</div>
 
   <!-- Prep for the next shift: tiles created by PrepPlan.gs (no Sage involved) so each shift
@@ -2533,7 +2533,10 @@ function renderProductionTally(orders) {
   const groups = computeProductionTally(orders);
   document.getElementById('tally-count').textContent = groups.length;
   document.getElementById('tally-empty').classList.toggle('hidden', groups.length > 0);
-  document.getElementById('production-tally').innerHTML = tallyGroupsHtml(groups);
+  // 26 Nov 2026 (Shane): same compact list as the Dashboard / Data History Production totals.
+  const panel = document.getElementById('production-tally');
+  panel.innerHTML = groups.length ? tallyGroupsCompactHtml_(groups) : '';
+  panel.classList.toggle('hidden', !groups.length);
 }
 
 /* ===================== MONDAY SHIFT SPLIT (23 Nov 2026) =====================
