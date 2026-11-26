@@ -753,6 +753,10 @@
   <div class="order-grid" id="unassigned-grid"></div>
   <div class="empty-board hidden" id="unassigned-empty">All caught up — no unassigned orders 🎉</div>
 
+  <!-- Blendid only (27 Nov 2026): slip printed, waiting for labels + Complete -->
+  <div class="section-heading hidden" id="tocomplete-heading">To complete <span class="count" id="tocomplete-count">0</span></div>
+  <div class="order-grid hidden" id="tocomplete-grid"></div>
+
   <div class="section-heading" id="scheduled-heading">Scheduled <span class="count" id="scheduled-count">0</span></div>
   <div class="order-grid" id="scheduled-grid"></div>
   <div class="empty-board hidden" id="scheduled-empty">Nothing loaded ahead of time right now.</div>
@@ -2251,6 +2255,7 @@ function jumpToSection(id) {
 function renderQuickBar() {
   const packing = [
     [isBlendid_() ? 'To print' : 'Needs a packer', 'unassigned-heading', document.getElementById('unassigned-count').textContent],
+    ...(isBlendid_() ? [['To complete', 'tocomplete-heading', document.getElementById('tocomplete-count').textContent]] : []),
     ['Scheduled', 'scheduled-heading', document.getElementById('scheduled-count').textContent],
     ['Printed', 'printed-heading', document.getElementById('printed-count').textContent]
   ];
@@ -2345,7 +2350,32 @@ function renderBoard() {
   if (printedPackerFilter && !packerNames.includes(printedPackerFilter)) printedPackerFilter = '';
   packerFilterEl.value = printedPackerFilter;
 
-  const printedFiltered = printedPackerFilter ? printed.filter(o => o.assignedTo === printedPackerFilter) : printed;
+  let printedFiltered = printedPackerFilter ? printed.filter(o => o.assignedTo === printedPackerFilter) : printed;
+  // Blendid (27 Nov 2026): Print slip -> Labels -> Complete. Orders with the slip printed but not completed sit in
+  // "To complete" (from the live board) and are left out of Printed so they don't show twice.
+  const toComplete = isBlendid_() ? boardData.orders.filter(o => o.assignedTo && !o.productionCompletedAt)
+    .sort((a, b) => (a.deliveryDate || '') < (b.deliveryDate || '') ? -1 : (a.deliveryDate || '') > (b.deliveryDate || '') ? 1 : new Date(a.printedAt) - new Date(b.printedAt)) : [];
+  if (isBlendid_()) { const open = new Set(toComplete.map(o => o.orderId)); printedFiltered = printedFiltered.filter(o => !open.has(o.orderId)); }
+  ['tocomplete-heading', 'tocomplete-grid'].forEach(id => document.getElementById(id).classList.toggle('hidden', !isBlendid_()));
+  document.getElementById('tocomplete-count').textContent = toComplete.length;
+  document.getElementById('tocomplete-grid').innerHTML = toComplete.map(o => `
+    <div class="order-card assigned" data-order-id="${o.orderId}" data-action="view" data-search="${searchBlob(o)}">
+      <div class="order-card-head">
+        <div>
+          <div class="order-ref">${escapeHtml(o.sageRef)}</div>
+          <div class="order-customer">${escapeHtml(o.customerName || '')}</div>
+          ${orderNotesLine(o)}
+          ${o.deliveryDate ? `<div class="order-deliver">Deliver ${fmtDateLong(o.deliveryDate)}</div>` : ''}
+        </div>
+      </div>
+      ${itemSummaryHtml(o.items)}
+      ${blendidStampsHtml_(o)}
+      <div class="card-actions">
+        <button class="btn-secondary" data-reprint="${o.orderId}">🖨 Reprint</button>
+        <button class="btn-secondary" data-print-packing-labels="${o.orderId}">🏷 Labels</button>
+        <button class="btn-primary" data-blendid-complete="${o.orderId}">✓ Complete</button>
+      </div>
+    </div>`).join('');
 
   document.getElementById('unassigned-count').textContent = needsPacker.length;
   document.getElementById('unassigned-label').textContent = isBlendid_() ? 'To print' : 'Needs a packer'; // Blendid has no packers (27 Nov 2026)
@@ -2413,10 +2443,10 @@ function renderBoard() {
           ${o.deliveryDate ? `<div class="order-deliver">Deliver ${fmtDateLong(o.deliveryDate)}</div>` : ''}
         </div>
       </div>
-      <div class="assigned-strip"><span>✅ ${escapeHtml(o.assignedTo)}</span><span>printed ${fmtTime(o.printedAt)}</span></div>
+      ${isBlendid_() ? blendidStampsHtml_(o) : `<div class="assigned-strip"><span>✅ ${escapeHtml(o.assignedTo)}</span><span>printed ${fmtTime(o.printedAt)}</span></div>`}
       <div class="card-actions">
         <button class="btn-secondary" data-reprint="${o.orderId}">🖨 Reprint</button>
-        ${isBlendid_() ? '' : `<button class="btn-secondary" data-print-packing-labels="${o.orderId}">🏷 Labels</button>`}
+        <button class="btn-secondary" data-print-packing-labels="${o.orderId}">🏷 Labels</button>
       </div>
     </div>`).join('');
 
@@ -2426,7 +2456,23 @@ function renderBoard() {
   applySearchFilter();
 }
 
+// Blendid time stamps (27 Nov 2026): slip printed / labels printed / completed, each with when and by whom (shift for the
+// slip, the logged-in name for labels and Complete) - the same columns Daily Fruit records.
+function blendidStampsHtml_(o) {
+  const line = (icon, what, at, by) => `<div class="order-arrived" style="margin-top:3px;">${icon} ${what} ${at ? fmtTime(at) + (by ? ' · ' + escapeHtml(by) : '') : '<i>not yet</i>'}</div>`;
+  return `<div style="margin:8px 0 4px;">${line('🖨', 'Slip', o.printedAt, o.assignedTo)}${line('🏷', 'Labels', o.packingLabelsPrintedAt, o.packingLabelsPrintedBy)}${line('✓', 'Completed', o.productionCompletedAt, o.productionCompletedBy)}</div>`;
+}
+function markBlendidComplete_(orderId) {
+  apiPost('markProductionComplete', { orderId: orderId, kitchenManagerName: userName }, { loadingLabel: 'Completing…' }).then(() => {
+    loadBoard(false);
+    if (printedDate === todayDateStr()) loadPrintedHistory(todayDateStr(), { silent: true });
+  }).catch(err => alert(err.message));
+}
+
 function attachCardHandlers() {
+  document.querySelectorAll('#board-view [data-blendid-complete]').forEach(btn => {
+    btn.onclick = (e) => { e.stopPropagation(); btn.disabled = true; markBlendidComplete_(btn.getAttribute('data-blendid-complete')); };
+  });
   document.querySelectorAll('#board-view .order-card').forEach(card => {
     card.onclick = (e) => {
       const orderId = card.getAttribute('data-order-id');
@@ -3108,9 +3154,43 @@ async function printProductionLabelsForOrder(order) {
 // (see getOrCreatePackingBatchNo_/markPackingLabelsPrinted_ in Code.gs) so
 // printing Packing labels can never collide with or overwrite a Production
 // batch number already assigned to the same order.
+// Blendid labels (27 Nov 2026, interim until Shane's per-customer label designs): BLENDID wordmark, product + qty, customer,
+// invoice, batch no., packed date (delivery date, as for Daily Fruit), best before only when Settings BlendidShelfLifeDays
+// is set, "keep frozen". Same 58x43 mm labels, same markPackingLabelsPrinted time stamp afterwards.
+function printBlendidLabels_(order, packItems, batchNo) {
+  const packedStr = order.deliveryDate || dateOnlyStr(new Date());
+  const days = Number(boardData && boardData.settings && boardData.settings.blendidShelfLifeDays) || 0;
+  document.getElementById('print-labels-body').innerHTML = packItems.map(it => `
+        <div class="label-page">
+          <div class="label-logo-row" style="font-weight:700;letter-spacing:3px;font-size:13px;">BLENDID</div>
+          <div class="label-product">${escapeHtml(formatQty(it.qty))}${it.unit ? escapeHtml(' ' + it.unit) : ''} ${escapeHtml(it.description)}</div>
+          <div class="label-details">
+            <div class="label-row"><span>Customer</span><b>${escapeHtml(order.customerName || '')}</b></div>
+            <div class="label-row"><span>Invoice</span><b>${escapeHtml(order.sageRef)}</b></div>
+            <div class="label-row"><span>Batch No.</span><b>${escapeHtml(batchNo)}</b></div>
+            <div class="label-row"><span>Packed</span><b>${escapeHtml(fmtDateLong(packedStr))}</b></div>
+            ${days > 0 ? `<div class="label-row"><span>Best before</span><b>${escapeHtml(fmtDateLong(addDaysStr(packedStr, days)))}</b></div>` : ''}
+          </div>
+          <div class="label-notice">Keep frozen at -18 °C or below.</div>
+        </div>`).join('');
+  document.getElementById('print-page-style').textContent = '@page{ size:58mm 43mm; margin:0; }';
+  document.body.setAttribute('data-print-target', 'labels');
+  const onAfterPrint = () => {
+    window.removeEventListener('afterprint', onAfterPrint);
+    document.getElementById('print-page-style').textContent = '@page{ size:80mm auto; margin:0; }';
+    document.body.setAttribute('data-print-target', 'slip');
+    apiPost('markPackingLabelsPrinted', { orderId: order.orderId }).then(() => {
+      loadBoard(false);
+      if (printedDate === todayDateStr()) loadPrintedHistory(todayDateStr(), { silent: true });
+    }).catch(() => {});
+  };
+  window.addEventListener('afterprint', onAfterPrint);
+  setTimeout(() => window.print(), 150);
+}
 async function printPackingLabelsForOrder(order) {
   const packItems = order.items.filter(it => it.department === 'Packing');
   if (!packItems.length) { alert('This order has no Packing items to label.'); return; }
+  const blendidLabel = isBlendid_() || order.business === 'Blendid';
 
   let batchNo = '';
   try {
@@ -3121,6 +3201,7 @@ async function printPackingLabelsForOrder(order) {
     return;
   }
 
+  if (blendidLabel) { printBlendidLabels_(order, packItems, batchNo); return; }
   const shelfDays = shelfLifeDaysForOrder(order);
   // "Produced" shows the order's DELIVERY date, not the actual date/time the
   // label is printed (Shane's request) - falls back to today for an order
