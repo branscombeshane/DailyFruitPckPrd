@@ -75,6 +75,9 @@
     position:sticky;top:0;z-index:20;
   }
   #topbar .title{font-size:20px;font-weight:700;letter-spacing:.3px;}
+  /* Blendid (27 Nov 2026): same app, its own colour so nobody mistakes which business's board they are on */
+  body.biz-blendid #topbar{background:#5b2a86;}
+  .biz-tag{display:inline-block;background:#efe4f7;color:#5b2a86;border-radius:6px;padding:1px 7px;font-size:12px;font-weight:700;margin-left:6px;}
   #topbar .sub{font-size:13px;opacity:.85;font-weight:400;}
   #topbar .right{display:flex;align-items:center;gap:10px;}
   .pill-btn{
@@ -722,6 +725,7 @@
       <button class="view-toggle-btn hidden" data-view="dashboard" id="view-toggle-dashboard">Dashboard</button>
       <button class="view-toggle-btn hidden" data-view="history" id="view-toggle-history">Data History</button>
     </div>
+    <button class="pill-btn hidden" id="biz-switch-btn" title="Switch business"></button>
     <span class="pill-btn" id="topbar-user-label"></span>
     <button class="icon-btn" id="logout-btn" title="Log out">⎋</button>
     <button class="icon-btn hidden" id="admin-gear-btn" title="Admin">⚙</button>
@@ -1076,6 +1080,10 @@
       <label>Add a shift</label>
       <input type="text" id="new-shift-name" placeholder="e.g. Day, Afternoon, Night">
     </div>
+    <div class="field">
+      <label>Business</label>
+      <select id="new-shift-business"><option value="">Daily Fruit</option><option value="Blendid">Blendid</option></select>
+    </div>
     <button class="btn-primary" id="add-shift-btn">Add shift</button>
   </div>
 
@@ -1247,6 +1255,10 @@
         <option>Admin</option>
       </select>
     </div>
+    <div class="field">
+      <label>Business</label>
+      <select id="new-user-business"><option value="">Daily Fruit</option><option value="Blendid">Blendid</option></select>
+    </div>
     <button class="btn-primary" id="add-user-btn">Add user</button>
     <div class="result-box hidden" id="users-result"></div>
   </div>
@@ -1380,7 +1392,13 @@ let pendingAssignOrderId = null;
 let userName = sessionStorage.getItem('df_user_name') || '';
 let userPin = sessionStorage.getItem('df_user_pin') || '';
 let userRole = sessionStorage.getItem('df_user_role') || '';
-let userShift = sessionStorage.getItem('df_user_shift') || ''; // '' = no shift restriction (sees/is seen by everyone) - see shiftVisible_ in Code.gs
+let userShift = sessionStorage.getItem('df_user_shift') || '';
+// Business (27 Nov 2026): '' = Daily Fruit, 'Blendid' = Blendid. Fixed by the login; an Admin picks it after signing in
+// and can switch from the top bar. Sent on every request as userBusiness (the server ignores it for non-Admins).
+let userBusiness = sessionStorage.getItem('df_user_business') || '';
+let canSwitchBusiness = sessionStorage.getItem('df_can_switch_business') === '1';
+function isBlendid_() { return userBusiness === 'Blendid'; }
+function businessName_() { return isBlendid_() ? 'Blendid' : ((boardData && boardData.settings && boardData.settings.companyName) || 'Daily Fruit'); } // '' = no shift restriction (sees/is seen by everyone) - see shiftVisible_ in Code.gs
 let printedDate = todayDateStr(); // date shown in the "Printed" section - defaults to today
 let printedHistoryOrders = []; // always fetched via getOrdersForDate (today included - see refreshTodayHistories) - the live board payload no longer carries done orders at all
 let printedPackerFilter = ''; // '' = all packers; otherwise only show this packer's printed orders
@@ -1593,6 +1611,7 @@ function apiGet(action, params, opts) {
   url.searchParams.set('userName', userName);
   url.searchParams.set('userPin', userPin);
   url.searchParams.set('userShift', userShift);
+  url.searchParams.set('userBusiness', userBusiness);
   Object.keys(params || {}).forEach(k => url.searchParams.set(k, params[k]));
   const t0 = Date.now();
   const req = fetchJsonWithRetry_(url.toString(), undefined, opts && opts.timeoutMs)
@@ -1609,7 +1628,7 @@ function apiPost(action, payload, opts) {
   return fetchJsonWithRetry_(APP_CONFIG.API_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-    body: JSON.stringify(Object.assign({ action: action, userName: userName, userPin: userPin, userShift: userShift }, payload || {}))
+    body: JSON.stringify(Object.assign({ action: action, userName: userName, userPin: userPin, userShift: userShift, userBusiness: userBusiness }, payload || {}))
   }, opts && opts.timeoutMs, 3)
     .then(res => { perfClientNote_(action, 'POST', t0, res, null); return res; }, err => { perfClientNote_(action, 'POST', t0, null, err); throw err; })
     .then(handleApiResponse).catch(err => {
@@ -1710,7 +1729,8 @@ function hideConnBanner() { document.getElementById('conn-banner').classList.add
 
 /* ===================== LOGIN ===================== */
 function logoutUser(message) {
-  userName = ''; userPin = ''; userRole = ''; userShift = '';
+  userName = ''; userPin = ''; userRole = ''; userShift = ''; userBusiness = ''; canSwitchBusiness = false;
+  document.body.classList.remove('biz-blendid');
   // Cleared so the NEXT login's first loadBoard() correctly treats the board
   // as empty again (see loadBoard's showFullScreenLoader) - on a shared
   // tablet where one person logs out and another logs straight back in
@@ -1728,6 +1748,8 @@ function logoutUser(message) {
   sessionStorage.removeItem('df_user_pin');
   sessionStorage.removeItem('df_user_role');
   sessionStorage.removeItem('df_user_shift');
+  sessionStorage.removeItem('df_user_business');
+  sessionStorage.removeItem('df_can_switch_business');
   if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
   document.getElementById('board-view').classList.add('hidden');
   document.getElementById('production-view').classList.add('hidden');
@@ -1773,6 +1795,10 @@ function submitLogin() {
     sessionStorage.setItem('df_user_name', userName);
     sessionStorage.setItem('df_user_pin', userPin);
     sessionStorage.setItem('df_user_role', userRole);
+    userBusiness = res.data.business || '';
+    canSwitchBusiness = !!res.data.canSwitchBusiness;
+    sessionStorage.setItem('df_user_business', userBusiness);
+    sessionStorage.setItem('df_can_switch_business', canSwitchBusiness ? '1' : '');
     document.getElementById('lock-screen').classList.add('hidden');
     // Shift is picked fresh on every login now, not stored on the account -
     // show the picker (built from whatever's in Admin > Shifts right now) and
@@ -1782,7 +1808,9 @@ function submitLogin() {
     // default, so there's nothing for an Admin to pick. Same skip applies
     // when there are no shifts defined at all yet - nothing to pick from.
     const shiftNames = res.data.shiftNames || [];
-    if (userRole !== 'Admin' && shiftNames.length) {
+    if (userRole === 'Admin' && canSwitchBusiness) {
+      showBusinessSelectScreen_();
+    } else if (userRole !== 'Admin' && shiftNames.length) {
       showShiftSelectScreen(shiftNames);
     } else {
       selectLoginShift('');
@@ -1805,6 +1833,7 @@ function submitLogin() {
 // cleared on logout) - it's never written back to the account, so the same
 // person picks again next time they sign in.
 function showShiftSelectScreen(shiftNames) {
+  document.getElementById('shift-select-heading').textContent = 'Which shift are you on?';
   const grid = document.getElementById('shift-select-grid');
   grid.innerHTML = '';
   shiftNames.forEach(name => {
@@ -1815,6 +1844,31 @@ function showShiftSelectScreen(shiftNames) {
     grid.appendChild(btn);
   });
   document.getElementById('shift-select-screen').classList.remove('hidden');
+}
+// Admin only (27 Nov 2026): Daily Fruit or Blendid, once Blendid has a shift or a login. Same tap-tile screen.
+function showBusinessSelectScreen_() {
+  document.getElementById('shift-select-heading').textContent = 'Which business?';
+  const grid = document.getElementById('shift-select-grid');
+  grid.innerHTML = '';
+  [['', 'Daily Fruit'], ['Blendid', 'Blendid']].forEach(b => {
+    const btn = document.createElement('button');
+    btn.className = 'packer-tile';
+    btn.textContent = b[1];
+    btn.onclick = () => { userBusiness = b[0]; sessionStorage.setItem('df_user_business', userBusiness); selectLoginShift(''); };
+    grid.appendChild(btn);
+  });
+  document.getElementById('shift-select-screen').classList.remove('hidden');
+}
+// Admin top-bar switch: drops this business's board and loads the other one.
+function switchBusiness_() {
+  userBusiness = isBlendid_() ? '' : 'Blendid';
+  sessionStorage.setItem('df_user_business', userBusiness);
+  boardData = null;
+  printedHistoryOrders = [];
+  try { localStorage.removeItem(BOARD_LOCAL_CACHE_KEY); } catch (e) { /* ignore */ }
+  applyRoleUI();
+  loadBoard(true);
+  refreshTodayHistories();
 }
 function selectLoginShift(shift) {
   userShift = shift || '';
@@ -1855,6 +1909,14 @@ function applyRoleUI() {
   document.getElementById('view-toggle-history').classList.toggle('hidden', !canSeeDashboard);
   document.getElementById('admin-gear-btn').classList.toggle('hidden', userRole !== 'Admin');
   document.getElementById('topbar-user-label').textContent = userName + ' (' + userRole + (userShift ? ' · ' + userShift : '') + ')';
+  // Blendid: packing only for now (no Production, prep, rev counter or Sunday split).
+  document.body.classList.toggle('biz-blendid', isBlendid_());
+  document.getElementById('view-toggle-production').classList.toggle('hidden', isBlendid_());
+  if (isBlendid_() && boardView === 'production') setBoardView('packing');
+  const sw = document.getElementById('biz-switch-btn');
+  sw.classList.toggle('hidden', !(userRole === 'Admin' && canSwitchBusiness));
+  sw.textContent = '⇄ ' + (isBlendid_() ? 'Daily Fruit' : 'Blendid');
+  document.getElementById('slip-company').textContent = businessName_();
   if ((boardView === 'dashboard' || boardView === 'history') && !canSeeDashboard) setBoardView('packing');
 }
 
@@ -1870,7 +1932,7 @@ function applyBoardView() {
   document.getElementById('quick-bar').classList.toggle('hidden', boardView === 'dashboard' || boardView === 'history');
   document.getElementById('quick-pills-packing').classList.toggle('hidden', boardView !== 'packing');
   document.getElementById('quick-pills-production').classList.toggle('hidden', boardView !== 'production');
-  const companyName = (boardData && boardData.settings.companyName) || 'Daily Fruit';
+  const companyName = businessName_();
   const viewLabel = boardView === 'production' ? ' — Production' : boardView === 'dashboard' ? ' — Dashboard' : boardView === 'history' ? ' — Data History' : ' — Packing';
   document.getElementById('company-title').textContent = companyName + viewLabel;
   if (boardView === 'dashboard') renderDashboard();
@@ -1953,9 +2015,9 @@ function loadBoard(isFirstLoad) {
       // Best-effort - private browsing/full storage can throw, and this is
       // purely a "redraw instantly on the next resume" convenience (see
       // hydrateBoardFromLocalCache_), never load-bearing for the board itself.
-      localStorage.setItem(BOARD_LOCAL_CACHE_KEY, JSON.stringify({ userName: userName, data: data }));
+      localStorage.setItem(BOARD_LOCAL_CACHE_KEY, JSON.stringify({ userName: userName, business: userBusiness, data: data }));
     } catch (e) { /* ignore */ }
-    document.getElementById('slip-company').textContent = data.settings.companyName || 'Daily Fruit';
+    document.getElementById('slip-company').textContent = businessName_();
     if (data.settings.boardRefreshSeconds && pollTimer && document.visibilityState !== 'hidden') {
       clearInterval(pollTimer);
       pollTimer = setInterval(() => loadBoard(false), Math.max(3, data.settings.boardRefreshSeconds) * 1000);
@@ -2347,7 +2409,7 @@ function renderBoard() {
       <div class="assigned-strip"><span>✅ ${escapeHtml(o.assignedTo)}</span><span>printed ${fmtTime(o.printedAt)}</span></div>
       <div class="card-actions">
         <button class="btn-secondary" data-reprint="${o.orderId}">🖨 Reprint</button>
-        <button class="btn-secondary" data-print-packing-labels="${o.orderId}">🏷 Labels</button>
+        ${isBlendid_() ? '' : `<button class="btn-secondary" data-print-packing-labels="${o.orderId}">🏷 Labels</button>`}
       </div>
     </div>`).join('');
 
@@ -4401,7 +4463,7 @@ function prepGenerate_() {
 let revData = null, revLoading = false, revLastAt = 0, revErr = '';
 const REV_REFRESH_MS = 5 * 60 * 1000;
 function loadRev_(manual) {
-  if (!prepCanManage_()) { ['rev-bar', 'prod-rev-bar'].forEach(id => { const el = document.getElementById(id); if (el) el.classList.add('hidden'); }); return; }
+  if (!prepCanManage_() || isBlendid_()) { ['rev-bar', 'prod-rev-bar'].forEach(id => { const el = document.getElementById(id); if (el) el.classList.add('hidden'); }); return; }
   if (revLoading) return;
   if (!manual && revLastAt && Date.now() - revLastAt < REV_REFRESH_MS) { renderRev_(); return; }
   revLoading = true; revLastAt = Date.now(); renderRev_();
@@ -5086,7 +5148,7 @@ function renderShiftsAdmin(shifts) {
   if (!shifts.length) { list.innerHTML = '<div class="log-row">No shifts defined yet - add one below.</div>'; return; }
   list.innerHTML = shifts.map(s => `
     <div class="packer-row">
-      <span>${escapeHtml(s.name)}</span>
+      <span>${escapeHtml(s.name)}${s.business === 'Blendid' ? '<span class="biz-tag">Blendid</span>' : ''}</span>
       <div style="display:flex;align-items:center;gap:10px;">
         <button class="toggle ${s.active ? 'on' : ''}" data-name="${escapeHtml(s.name)}" data-active="${s.active}"><span class="knob"></span></button>
         <button class="icon-btn" style="background:#f3d6d6;color:#a11;width:32px;height:32px;font-size:14px;" data-delete-name="${escapeHtml(s.name)}" title="Delete shift">✕</button>
@@ -5317,6 +5379,10 @@ function renderUsersAdmin(users) {
       <select class="user-role-select">
         ${['Factory Floor', 'Production Manager', 'Admin'].map(r => `<option ${r === u.role ? 'selected' : ''}>${r}</option>`).join('')}
       </select>
+      <select class="user-business-select" title="Business (Admins switch between both)">
+        <option value="" ${u.business === 'Blendid' ? '' : 'selected'}>Daily Fruit</option>
+        <option value="Blendid" ${u.business === 'Blendid' ? 'selected' : ''}>Blendid</option>
+      </select>
       <div class="user-row-actions">
         <button class="toggle ${u.active ? 'on' : ''}" data-active="${u.active}" title="Active"><span class="knob"></span></button>
         <button class="icon-btn" style="background:#f3d6d6;color:#a11;width:32px;height:32px;font-size:14px;flex-shrink:0;" data-delete-user title="Delete user">✕</button>
@@ -5328,6 +5394,7 @@ function renderUsersAdmin(users) {
     const nameInput = row.querySelector('.user-name-input');
     const pinInput = row.querySelector('.user-pin-input');
     const roleSelect = row.querySelector('.user-role-select');
+    const businessSelect = row.querySelector('.user-business-select');
     const toggleBtn = row.querySelector('.toggle');
     const deleteBtn = row.querySelector('[data-delete-user]');
 
@@ -5336,7 +5403,7 @@ function renderUsersAdmin(users) {
       const newName = nameInput.value.trim();
       const newPin = pinInput.value.trim();
       const newRole = roleSelect.value;
-      apiPost('saveUser', { originalName: originalName, name: newName, pin: newPin, role: newRole, active: active })
+      apiPost('saveUser', { originalName: originalName, name: newName, pin: newPin, role: newRole, active: active, business: businessSelect.value })
         .then(users => {
           // Editing your OWN account (renaming yourself, changing your own PIN,
           // or role) would otherwise sign this device out on its very next
@@ -5358,6 +5425,7 @@ function renderUsersAdmin(users) {
     nameInput.addEventListener('change', doSave);
     pinInput.addEventListener('change', doSave);
     roleSelect.addEventListener('change', doSave);
+    businessSelect.addEventListener('change', doSave);
     toggleBtn.onclick = () => {
       toggleBtn.setAttribute('data-active', toggleBtn.getAttribute('data-active') !== 'true');
       toggleBtn.classList.toggle('on');
@@ -5661,6 +5729,7 @@ function doResetOrderData() {
 /* ===================== EVENT WIRING ===================== */
 function wireStaticEvents() {
   document.getElementById('admin-gear-btn').onclick = openAdmin;
+  document.getElementById('biz-switch-btn').onclick = switchBusiness_;
   document.getElementById('admin-close-btn').onclick = closeAdmin;
   document.getElementById('logout-btn').onclick = () => { if (confirm('Log out?')) logoutUser(); };
 
@@ -5758,7 +5827,7 @@ function wireStaticEvents() {
     const btn = document.getElementById('add-shift-btn');
     btn.disabled = true;
     btn.textContent = 'Adding…';
-    apiPost('addShift', { name: name }).then(shifts => {
+    apiPost('addShift', { name: name, business: document.getElementById('new-shift-business').value }).then(shifts => {
       input.value = '';
       renderShiftsAdmin(shifts);
     }).catch(err => alert(err.message)).finally(() => {
@@ -5854,7 +5923,7 @@ function wireStaticEvents() {
     if (!name || !pin) return;
     const btn = document.getElementById('add-user-btn');
     btn.disabled = true;
-    apiPost('saveUser', { originalName: null, name: name, pin: pin, role: role, active: true }).then(users => {
+    apiPost('saveUser', { originalName: null, name: name, pin: pin, role: role, active: true, business: document.getElementById('new-user-business').value }).then(users => {
       document.getElementById('new-user-name').value = '';
       document.getElementById('new-user-pin').value = '';
       resultBox.className = 'result-box';
@@ -6103,9 +6172,9 @@ function hydrateBoardFromLocalCache_() {
     // Only ever restore THIS signed-in person's own last board - never show
     // a stale snapshot left behind by whoever used this device/browser
     // before them.
-    if (!cached || !cached.data || cached.userName !== userName) return;
+    if (!cached || !cached.data || cached.userName !== userName || (cached.business || '') !== userBusiness) return;
     boardData = cached.data;
-    document.getElementById('slip-company').textContent = boardData.settings.companyName || 'Daily Fruit';
+    document.getElementById('slip-company').textContent = businessName_();
     applyBoardView();
     renderBoard();
     renderProductionBoard();
