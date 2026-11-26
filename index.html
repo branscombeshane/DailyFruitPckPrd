@@ -4425,13 +4425,14 @@ function revCardHtml_(key, title, n, unit, staffWord) {
   return `<div class="rev-card" data-rev="${key}">${revGaugeSvg_(n.pct)}<div class="rev-info">
     <div class="rev-title">${escapeHtml(title)} <span class="rev-pct ${cls}">${n.pct === null ? '—' : n.pct + '%'}</span></div>
     <div class="rev-msg ${cls}">${escapeHtml(msg)}</div>
-    <div>${fmt(n.work)} ${escapeHtml(unit)} left · ${n.onDuty} ${escapeHtml(word(n.onDuty, staffWord))} on duty${n.onDuty ? ' · ~' + fmt(n.hoursLeftAvg) + ' h left each' : ''}</div>
+    <div>${fmt(n.work)} ${escapeHtml(unit)} left${n.dueToday ? ` <b class="rev-bad">(${fmt(n.dueToday)} due today, not done)</b>` : ''}</div>
+    <div>${n.onDuty} ${escapeHtml(word(n.onDuty, staffWord))} on duty${n.rosteredLater ? ' + ' + n.rosteredLater + ' coming in later' : ''}</div>
     <div>Normal: ${fmt(n.ratePerHour)} ${escapeHtml(unit)} per person per hour</div></div></div>`;
 }
 function renderRev_() {
   const html = !prepCanManage_() ? '' : (revData
     ? revCardHtml_('kitchen', '🔪 Kitchen', revData.kitchen, 'kg', 'kitchen staff') + revCardHtml_('packing', '📦 Packing', revData.packing, 'orders', 'packers')
-      + `<div class="rev-foot"><span>Staff on duty from the clock-in machines${revData.lastSync ? ' (up to ' + escapeHtml(String(revData.lastSync).slice(11, 16)) + ')' : ''} · work left for the shift on duty · updated ${escapeHtml(String(revData.now).slice(11, 16))}${revErr ? ' · last refresh failed: ' + escapeHtml(revErr) : ''}</span><button class="btn-secondary" data-rev-refresh>${revLoading ? 'Refreshing…' : '↻ Refresh'}</button></div>`
+      + `<div class="rev-foot"><span>Staff on duty from the clock-in machines${revData.lastSync ? ' (up to ' + escapeHtml(String(revData.lastSync).slice(11, 16)) + ')' : ''} · work left for today's production${revData.dayEnd ? ' (until ' + escapeHtml(String(revData.dayEnd).slice(11, 16)) + ')' : ''} · updated ${escapeHtml(String(revData.now).slice(11, 16))}${revErr ? ' · last refresh failed: ' + escapeHtml(revErr) : ''}</span><button class="btn-secondary" data-rev-refresh>${revLoading ? 'Refreshing…' : '↻ Refresh'}</button></div>`
     : `<div class="rev-foot"><span>${revLoading ? 'Checking who is on duty…' : escapeHtml(revErr ? 'Rev counter unavailable: ' + revErr : '')}</span>${revLoading ? '' : '<button class="btn-secondary" data-rev-refresh>↻ Try again</button>'}</div>`);
   ['rev-bar', 'prod-rev-bar'].forEach(id => {
     const el = document.getElementById(id); if (!el) return;
@@ -4446,18 +4447,21 @@ function openRevDetail_(key) {
   const unit = key === 'kitchen' ? 'kg' : 'orders';
   const t = (cols, rows) => rows.length ? '<div style="overflow-x:auto;"><table class="prep-table"><tr>' + cols.map(c => '<th' + (c[2] ? ' class="num"' : '') + '>' + escapeHtml(c[1]) + '</th>').join('') + '</tr>'
     + rows.map(r => '<tr>' + cols.map(c => '<td' + (c[2] ? ' class="num"' : '') + '>' + escapeHtml(String(r[c[0]] === undefined || r[c[0]] === null ? '' : r[c[0]])) + '</td>').join('') + '</tr>').join('') + '</table></div>' : '<p class="prep-meta">None.</p>';
-  const people = n.people.map(p => ({ name: p.name, dept: p.department, arrived: String(p.arrived).slice(11, 16), end: p.shiftEnd ? String(p.shiftEnd).slice(11, 16) + (p.overtime ? ' (overtime)' : '') : 'no shift', left: p.hoursLeft }));
-  const orders = n.orders.map(o => ({ ref: o.sageRef, customer: o.customer, deliver: o.deliveryDate ? fmtDateLong(o.deliveryDate) : '', owner: o.owner, kg: o.kgLeft, counts: o.counts === 1 ? 'all' : Math.round(o.counts * 100) + '%' }));
+  const hm = v => v ? String(v).slice(11, 16) : '';
+  const people = n.people.map(p => ({ name: p.name, dept: p.department, status: p.status, arrived: p.arrived ? hm(p.arrived) : 'starts ' + hm(p.shiftStart), end: p.shiftEnd ? hm(p.shiftEnd) + (p.overtime ? ' (overtime)' : '') : 'no shift', left: p.hoursLeft }));
+  const notIn = (n.notIn || []).map(p => ({ name: p.name, dept: p.department, start: hm(p.shiftStart), end: hm(p.shiftEnd) }));
+  const orders = n.orders.map(o => ({ ref: o.sageRef, customer: o.customer, deliver: o.deliveryDate ? fmtDateLong(o.deliveryDate) : '', due: o.dueToday ? 'DUE TODAY' : '', owner: o.owner, kg: o.kgLeft }));
   const rates = d.rates || {};
   const rateLine = ['Veg Day', 'Veg Night'].map(dep => { const r = rates[dep] || {}; return dep + ': ' + (key === 'kitchen' ? (Math.round((r.kgPerKitchenHour || 0) * 10) / 10) + ' kg per kitchen person per hour (' + (r.kg || 0) + ' kg / ' + (r.kitchenHours || 0) + ' h)' : (Math.round((r.ordersPerPackerHour || 0) * 10) / 10) + ' orders per packer per hour (' + (r.orders || 0) + ' orders / ' + (r.packerHours || 0) + ' h)'); }).join(' · ');
   document.getElementById('prep-info-title').textContent = (key === 'kitchen' ? 'Kitchen' : 'Packing') + ' rev counter: ' + (n.pct === null ? 'no staff on duty' : n.pct + '%');
-  document.getElementById('prep-info-sub').textContent = 'Work left ' + n.work + ' ' + unit + ' · the people on duty can do about ' + n.capacity + ' ' + unit + ' before their shifts end';
+  document.getElementById('prep-info-sub').textContent = 'Work left ' + n.work + ' ' + unit + ' · the people on duty and still coming in today can do about ' + n.capacity + ' ' + unit + ' by ' + (d.dayEnd ? hm(d.dayEnd) : 'the end of the day');
   document.getElementById('prep-info-body').innerHTML =
-    '<h3 style="margin:10px 0 4px;">On duty (' + n.onDuty + ')</h3>' + t([['name', 'Name'], ['dept', 'Department'], ['arrived', 'Clocked in'], ['end', 'Shift ends'], ['left', 'Hours left', 1]], people)
+    '<h3 style="margin:10px 0 4px;">On duty (' + n.onDuty + ') and coming in later today (' + n.rosteredLater + ')</h3>' + t([['name', 'Name'], ['dept', 'Department'], ['status', 'Status'], ['arrived', 'Clocked in'], ['end', 'Shift ends'], ['left', 'Hours counted', 1]], people)
+    + (notIn.length ? '<h3 style="margin:14px 0 4px;">Shift started, not clocked in (' + notIn.length + ') - not counted</h3>' + t([['name', 'Name'], ['dept', 'Department'], ['start', 'Shift start'], ['end', 'Shift end']], notIn) : '')
     + '<h3 style="margin:14px 0 4px;">Work counted (' + orders.length + ' orders)</h3>'
-    + t(key === 'kitchen' ? [['ref', 'Invoice'], ['customer', 'Customer'], ['deliver', 'Delivery'], ['owner', 'Split owner'], ['kg', 'kg left', 1], ['counts', 'Counted']] : [['ref', 'Invoice'], ['customer', 'Customer'], ['deliver', 'Delivery'], ['owner', 'Split owner'], ['counts', 'Counted']], orders)
+    + t(key === 'kitchen' ? [['ref', 'Invoice'], ['customer', 'Customer'], ['deliver', 'Delivery'], ['due', ''], ['owner', 'Split owner'], ['kg', 'kg left', 1]] : [['ref', 'Invoice'], ['customer', 'Customer'], ['deliver', 'Delivery'], ['due', ''], ['owner', 'Split owner']], orders)
     + '<p class="prep-meta" style="margin-top:12px;">How it works: work left = open orders packed today or earlier' + (key === 'kitchen' ? ' (production kg not yet done, lines sold by the kg)' : ' (slips not yet printed)')
-    + '. Monday split orders count only for their own shift. While only the Day team is on, orders for a later delivery day count at the Day team\'s usual share of that weekday (' + Math.round(((d.dayShare || {})[key === 'kitchen' ? 'kitchen' : 'packing'] || 0) * 100) + '%); the Night team does the rest. Normal speed over the last 4 weeks (since ' + escapeHtml(d.since || '') + '): ' + escapeHtml(rateLine) + '. 100% = the people on duty can just finish before their shifts end.</p>';
+    + ' (kg logged with Log progress is taken off). Measured to the end of today\'s production: the people on duty (hours left in their shift) plus those rostered to start later today (their whole shift). Normal speed over the last 4 weeks (since ' + escapeHtml(d.since || '') + '): ' + escapeHtml(rateLine) + '. 100% = today\'s team can just finish today\'s production.</p>';
   document.getElementById('prep-info-modal').classList.remove('hidden');
 }
 
