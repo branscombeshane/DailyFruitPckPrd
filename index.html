@@ -76,8 +76,14 @@
   }
   #topbar .title{font-size:20px;font-weight:700;letter-spacing:.3px;}
   /* Blendid (27 Nov 2026): same app, its own colour so nobody mistakes which business's board they are on */
-  body.biz-blendid #topbar{background:#5b2a86;}
-  .biz-tag{display:inline-block;background:#efe4f7;color:#5b2a86;border-radius:6px;padding:1px 7px;font-size:12px;font-weight:700;margin-left:6px;}
+  /* Blendid brand (blendid.co.za, Shane 27 Nov 2026): black and white, champagne accent from the packaging, spaced
+     capitals. Overrides the brand variables, so every button / active tab / heading follows. Late/urgent colours stay. */
+  body.biz-blendid{--green:#111111;--green-dark:#000000;--bg:#ffffff;--ink:#111111;--muted:#77706a;--line:#e7e2d9;}
+  body.biz-blendid #topbar{background:#000;border-bottom:3px solid #c8b48f;}
+  body.biz-blendid #topbar .title{text-transform:uppercase;letter-spacing:3px;font-weight:600;}
+  body.biz-blendid .section-heading{letter-spacing:2px;}
+  body.biz-blendid .view-toggle-btn.active{color:#000;}
+  .biz-tag{display:inline-block;background:#f1ebe0;color:#6b5a3a;border-radius:6px;padding:1px 7px;font-size:12px;font-weight:700;margin-left:6px;}
   #topbar .sub{font-size:13px;opacity:.85;font-weight:400;}
   #topbar .right{display:flex;align-items:center;gap:10px;}
   .pill-btn{
@@ -2333,7 +2339,7 @@ function renderBoard() {
   // is restored afterward so it survives the 3-5s poll without resetting.
   const packerNames = Array.from(new Set(printed.map(o => o.assignedTo).filter(Boolean))).sort();
   const packerFilterEl = document.getElementById('printed-packer-filter');
-  const packerOptionsHtml = '<option value="">All packers</option>' +
+  const packerOptionsHtml = '<option value="">' + (isBlendid_() ? 'All shifts' : 'All packers') + '</option>' +
     packerNames.map(name => `<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`).join('');
   if (packerFilterEl.innerHTML !== packerOptionsHtml) packerFilterEl.innerHTML = packerOptionsHtml;
   if (printedPackerFilter && !packerNames.includes(printedPackerFilter)) printedPackerFilter = '';
