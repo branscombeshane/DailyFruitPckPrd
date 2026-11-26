@@ -427,13 +427,20 @@
   #print-report{display:none;}
   .prod-report-bar{display:flex;justify-content:flex-end;margin:0 0 10px;}
   /* Rev counter (26 Nov 2026): staff on duty vs work left, managers only */
-  .rev-bar{display:grid;grid-template-columns:repeat(auto-fit,minmax(330px,1fr));gap:12px;margin:0 0 12px;}
-  .rev-card{background:var(--card);border:2px solid var(--line);border-radius:14px;padding:10px 14px;display:flex;gap:12px;align-items:center;cursor:pointer;}
+  .rev-bar{display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:10px;margin:0 0 10px;}
+  .rev-card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:6px 12px;display:flex;gap:10px;align-items:center;cursor:pointer;}
   .rev-card:hover{border-color:var(--ink);}
-  .rev-card svg{flex:0 0 150px;width:150px;height:88px;}
-  .rev-info{flex:1;min-width:0;font-size:13px;line-height:1.45;color:var(--muted);}
-  .rev-title{display:flex;align-items:baseline;gap:8px;font-size:15px;font-weight:800;color:var(--ink);}
-  .rev-pct{font-size:22px;font-weight:800;}
+  .rev-card svg{flex:0 0 92px;width:92px;height:54px;}
+  .rev-info{flex:1;min-width:0;font-size:12.5px;line-height:1.4;color:var(--muted);}
+  .rev-title{display:flex;flex-wrap:wrap;align-items:baseline;gap:2px 8px;font-size:14px;font-weight:800;color:var(--ink);}
+  .rev-pct{font-size:18px;font-weight:800;}
+  .rev-info .rev-msg{display:inline;margin-left:6px;}
+  .fold-head{cursor:pointer;user-select:none;}
+  .fold-caret{display:inline-block;width:14px;color:var(--muted);}
+  .fold-hidden{display:none!important;}
+  .prep-recv.compact{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:10px 14px;}
+  .prep-recv.compact .prep-recv-what{flex:1;min-width:240px;font-size:14px;}
+  .prep-recv.compact button{margin:0!important;width:auto!important;white-space:nowrap;}
   .rev-ok{color:#1b7a3a;} .rev-warn{color:#b26a00;} .rev-bad{color:#b3261e;}
   .rev-msg{font-weight:700;margin-top:2px;}
   .rev-foot{grid-column:1/-1;display:flex;justify-content:space-between;gap:10px;font-size:12px;color:var(--muted);margin-top:-4px;}
@@ -753,33 +760,33 @@
 
 <!-- ============ PRODUCTION BOARD ============ -->
 <div id="production-view" class="hidden">
-  <div class="section-heading">Prep totals <span class="count" id="tally-count">0</span></div>
-  <div class="tally-shift-group compact" id="production-tally"></div>
-  <div class="empty-board hidden" id="tally-empty">Nothing to prep right now.</div>
+  <div class="rev-bar hidden" id="prod-rev-bar"></div>
+  <div class="section-heading fold-head" data-fold="prodtally"><span class="fold-caret">▾</span> Prep totals <span class="count" id="tally-count">0</span>
+    <button class="btn-secondary" id="prod-report-btn" style="margin-left:auto;padding:6px 12px;font-size:13px;text-transform:none;letter-spacing:normal;">🖨 Kitchen prep report</button></div>
+  <div class="tally-shift-group compact" id="production-tally" data-fold-body="prodtally"></div>
+  <div class="empty-board hidden" id="tally-empty" data-fold-body="prodtally">Nothing to prep right now.</div>
 
   <!-- Prep for the next shift: tiles created by PrepPlan.gs (no Sage involved) so each shift
        leaves peeled/prepared stock behind for the next one. -->
   <div id="prep-section" class="hidden">
-    <div class="section-heading" style="flex-wrap:wrap;">
-      <span>Prep stock</span> <span class="count" id="prep-count">0</span>
+    <div class="section-heading fold-head" data-fold="prepstock" style="flex-wrap:wrap;">
+      <span class="fold-caret">▾</span><span>Prep stock</span> <span class="count" id="prep-count">0</span>
       <span id="prep-manager-actions" class="hidden" style="margin-left:auto;display:flex;gap:8px;flex-wrap:wrap;text-transform:none;letter-spacing:normal;">
         <button class="btn-secondary" id="prep-why-btn" style="padding:7px 12px;font-size:13px;">ℹ️ How it's calculated</button>
         <button class="btn-secondary" id="prep-generate-btn" style="padding:7px 12px;font-size:13px;">🔄 Generate / recalculate</button>
         <button class="btn-secondary" id="prep-add-btn" style="padding:7px 12px;font-size:13px;">＋ Add a tile</button>
       </span>
     </div>
-    <div class="prep-stats" id="prep-stats"></div>
     <div id="prep-receive"></div>
-    <div class="empty-board hidden" id="prep-empty" style="padding:24px 20px;">No prep tiles for today yet. They are created automatically each morning - or tap Generate / recalculate. (Prep items and the products that use them are set up in Admin &gt; Prep.)</div>
+    <div class="prep-stats" id="prep-stats" data-fold-body="prepstock"></div>
+    <div class="empty-board hidden" id="prep-empty" data-fold-body="prepstock" style="padding:24px 20px;">No prep tiles for today yet. They are created automatically each morning - or tap Generate / recalculate. (Prep items and the products that use them are set up in Admin &gt; Prep.)</div>
   </div>
 
-  <div class="rev-bar hidden" id="prod-rev-bar"></div>
-  <div class="prod-report-bar"><button class="btn-secondary" id="prod-report-btn">🖨 Kitchen prep report</button></div>
   <div class="split-bar hidden" id="prod-split-bar"></div>
   <div class="section-heading" id="prod-needs-heading">Needs processing <span class="count" id="prod-needs-count">0</span></div>
   <!-- The prep stock tiles (#prep-grid) and the order tiles (#prod-needs-grid) share ONE grid, prep tiles first (display:contents on both). -->
   <div class="order-grid" id="prod-needs-wrap">
-    <div id="prep-grid" style="display:contents;"></div>
+    <div id="prep-grid" data-fold-body="prepstock" style="display:contents;"></div>
     <div class="order-grid" id="prod-needs-grid" style="display:contents;"></div>
   </div>
   <div class="empty-board hidden" id="prod-needs-empty">All caught up — nothing waiting on production 🎉</div>
@@ -4131,11 +4138,11 @@ function renderPrepReceive_() {
   if (!box) return;
   const list = prepReceivable_();
   if (!list.length) { box.innerHTML = ''; return; }
-  box.innerHTML = `<div class="prep-recv">
-      <h3>📦 Prep stock made for ${userShift && !prepCanManage_() ? 'your shift' : 'the shifts'} - count it and confirm</h3>
-      <div class="prep-meta" style="margin-bottom:6px;">Weigh what is actually there before you start, and enter the weights. Anything short is flagged to management.</div>
-      ${list.map(t => `<div class="prep-recv-row"><span><strong>${escapeHtml(t.prepItem)}</strong> - made by ${escapeHtml(t.shift || '?')} for ${escapeHtml(prepForText_(t))}</span><span>expected ${prepQty_(t.targetQty)} ${escapeHtml(t.unit || 'kg')}${t.qtyCompleted ? ' (logged ' + prepQty_(t.qtyCompleted) + ')' : ' (nothing logged)'}</span></div>`).join('')}
-      <button class="btn-primary" id="prep-receive-btn" style="margin-top:10px;width:100%;">⚖ Count &amp; confirm received</button>
+  // 26 Nov 2026 (Shane: screen cluttered): one line; the details are in the count window.
+  box.innerHTML = `<div class="prep-recv compact">
+      <div class="prep-recv-what">📦 <strong>${list.length} prep item${list.length === 1 ? '' : 's'} made for ${userShift && !prepCanManage_() ? 'your shift' : 'the shifts'} to count:</strong>
+        ${list.map(t => escapeHtml(t.prepItem) + ' ' + prepQty_(t.targetQty) + ' ' + escapeHtml(t.unit || 'kg')).join(' · ')}</div>
+      <button class="btn-primary" id="prep-receive-btn">⚖ Count &amp; confirm received</button>
     </div>`;
   document.getElementById('prep-receive-btn').onclick = openPrepReceiveModal_;
 }
@@ -4420,14 +4427,11 @@ function revCardHtml_(key, title, n, unit, staffWord) {
   const fmt = v => Number(v).toLocaleString('en-US', { maximumFractionDigits: 1 });
   const word = (c, w) => c === 1 ? w.replace(/s$/, '') : w;
   const msg = n.pct === null ? `No ${staffWord} clocked in - ${fmt(n.work)} ${unit} waiting`
-    : n.pct > 100 ? `Under pressure: about ${n.needMore} more ${n.needMore === 1 ? staffWord.replace(/s$/, '') : staffWord} needed`
+    : n.pct > 100 ? `about ${n.needMore} more ${n.needMore === 1 ? staffWord.replace(/s$/, '') : staffWord} needed`
     : n.pct >= 80 ? 'Tight - little room for problems' : 'On track';
   return `<div class="rev-card" data-rev="${key}">${revGaugeSvg_(n.pct)}<div class="rev-info">
-    <div class="rev-title">${escapeHtml(title)} <span class="rev-pct ${cls}">${n.pct === null ? '—' : n.pct + '%'}</span></div>
-    <div class="rev-msg ${cls}">${escapeHtml(msg)}</div>
-    <div>${fmt(n.work)} ${escapeHtml(unit)} left${n.dueToday ? ` <b class="rev-bad">(${fmt(n.dueToday)} due today, not done)</b>` : ''}</div>
-    <div>${n.onDuty} ${escapeHtml(word(n.onDuty, staffWord))} on duty${n.rosteredLater ? ' + ' + n.rosteredLater + ' coming in later' : ''}</div>
-    <div>Normal: ${fmt(n.ratePerHour)} ${escapeHtml(unit)} per person per hour</div></div></div>`;
+    <div class="rev-title"><span style="white-space:nowrap;">${escapeHtml(title)}</span> <span class="rev-pct ${cls}">${n.pct === null ? '—' : n.pct + '%'}</span><span class="rev-msg ${cls}" style="font-size:12.5px;">${escapeHtml(msg)}</span></div>
+    <div>${fmt(n.work)} ${escapeHtml(unit)} left${n.dueToday ? ` <b class="rev-bad">(${fmt(n.dueToday)} due today)</b>` : ''} · ${n.onDuty} on duty${n.rosteredLater ? ' + ' + n.rosteredLater + ' later' : ''} · normal ${fmt(n.ratePerHour)} ${escapeHtml(unit)}/person/h</div></div></div>`;
 }
 function renderRev_() {
   const html = !prepCanManage_() ? '' : (revData
@@ -4463,6 +4467,28 @@ function openRevDetail_(key) {
     + '<p class="prep-meta" style="margin-top:12px;">How it works: work left = open orders packed today or earlier' + (key === 'kitchen' ? ' (production kg not yet done, lines sold by the kg)' : ' (slips not yet printed)')
     + ' (kg logged with Log progress is taken off). Measured to the end of today\'s production: the people on duty (hours left in their shift) plus those rostered to start later today (their whole shift). Normal speed over the last 4 weeks (since ' + escapeHtml(d.since || '') + '): ' + escapeHtml(rateLine) + '. 100% = today\'s team can just finish today\'s production.</p>';
   document.getElementById('prep-info-modal').classList.remove('hidden');
+}
+
+/* ===================== FOLDING SECTIONS (26 Nov 2026) =====================
+   Headings with data-fold="key" fold/unfold every data-fold-body="key" element; remembered per device. */
+function foldIsClosed_(key) { try { return localStorage.getItem('df_fold_' + key) === '1'; } catch (e) { return false; } }
+function applyFolds_() {
+  document.querySelectorAll('[data-fold]').forEach(h => {
+    const key = h.getAttribute('data-fold'), closed = foldIsClosed_(key);
+    const c = h.querySelector('.fold-caret'); if (c) c.textContent = closed ? '▸' : '▾';
+    document.querySelectorAll('[data-fold-body="' + key + '"]').forEach(b => b.classList.toggle('fold-hidden', closed));
+  });
+}
+function wireFolds_() {
+  document.querySelectorAll('[data-fold]').forEach(h => {
+    h.addEventListener('click', e => {
+      if (e.target.closest('button')) return;
+      const key = h.getAttribute('data-fold');
+      try { localStorage.setItem('df_fold_' + key, foldIsClosed_(key) ? '0' : '1'); } catch (err) { /* private mode */ }
+      applyFolds_();
+    });
+  });
+  applyFolds_();
 }
 
 /* ===================== KITCHEN PREP REPORT (23 Nov 2026) =====================
@@ -4540,6 +4566,7 @@ function wirePrepUi() {
   document.getElementById('prep-edit-qty').addEventListener('keydown', e => { if (e.key === 'Enter') submitPrepEdit_(); });
   document.getElementById('prep-info-close-btn').onclick = () => document.getElementById('prep-info-modal').classList.add('hidden');
   document.getElementById('prod-report-btn').onclick = openProdReport_;
+  wireFolds_();
   document.getElementById('prod-report-date').onchange = loadProdReport_;
   document.getElementById('prod-report-close-btn').onclick = () => document.getElementById('prod-report-modal').classList.add('hidden');
   document.getElementById('prod-report-print-btn').onclick = printProdReport_;
