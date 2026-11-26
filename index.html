@@ -743,7 +743,7 @@
 <div id="board-view" class="hidden">
   <div class="rev-bar hidden" id="rev-bar"></div>
   <div class="split-bar hidden" id="split-bar"></div>
-  <div class="section-heading" id="unassigned-heading">Needs a packer <span class="count" id="unassigned-count">0</span></div>
+  <div class="section-heading" id="unassigned-heading"><span id="unassigned-label">Needs a packer</span> <span class="count" id="unassigned-count">0</span></div>
   <div class="order-grid" id="unassigned-grid"></div>
   <div class="empty-board hidden" id="unassigned-empty">All caught up — no unassigned orders 🎉</div>
 
@@ -2244,7 +2244,7 @@ function jumpToSection(id) {
 
 function renderQuickBar() {
   const packing = [
-    ['Needs a packer', 'unassigned-heading', document.getElementById('unassigned-count').textContent],
+    [isBlendid_() ? 'To print' : 'Needs a packer', 'unassigned-heading', document.getElementById('unassigned-count').textContent],
     ['Scheduled', 'scheduled-heading', document.getElementById('scheduled-count').textContent],
     ['Printed', 'printed-heading', document.getElementById('printed-count').textContent]
   ];
@@ -2342,6 +2342,7 @@ function renderBoard() {
   const printedFiltered = printedPackerFilter ? printed.filter(o => o.assignedTo === printedPackerFilter) : printed;
 
   document.getElementById('unassigned-count').textContent = needsPacker.length;
+  document.getElementById('unassigned-label').textContent = isBlendid_() ? 'To print' : 'Needs a packer'; // Blendid has no packers (27 Nov 2026)
   document.getElementById('scheduled-count').textContent = scheduled.length;
   document.getElementById('scheduled-empty').classList.toggle('hidden', scheduled.length > 0);
   document.getElementById('printed-count').textContent = printedFiltered.length;
@@ -3247,14 +3248,14 @@ function renderDashboard() {
   const prodPct = prodTotal ? Math.round((prodCompletedToday / prodTotal) * 100) : 100;
 
   dashBuckets = {
-    needsPacker: { label: 'Needs a packer', dept: 'Packing', emptyText: 'No orders currently need a packer.', orders: needsPackerOrders },
+    needsPacker: { label: isBlendid_() ? 'To print' : 'Needs a packer', dept: 'Packing', emptyText: 'No orders currently need a packer.', orders: needsPackerOrders },
     printedToday: { label: 'Printed today', dept: 'Packing', emptyText: 'Nothing printed yet today.', orders: printedTodayOrders },
     prodNeeds: { label: 'Needs processing', dept: 'Production', emptyText: 'Nothing waiting on production right now.', orders: prodNeedsOrders },
     completedToday: { label: 'Completed today', dept: 'Production', emptyText: 'Nothing completed in production yet today.', orders: completedTodayOrders },
     needsReview: { label: 'Needs review', dept: null, emptyText: 'Nothing needs review right now.', orders: needsReviewOrders }
   };
   const stats = [
-    { key: 'needsPacker', label: 'Needs a packer', value: packNeeds, cls: packNeeds > 0 ? (packOverdue > 0 ? 'crit' : 'warn') : '', sub: packOverdue ? packOverdue + ' overdue' : '' },
+    { key: 'needsPacker', label: isBlendid_() ? 'To print' : 'Needs a packer', value: packNeeds, cls: packNeeds > 0 ? (packOverdue > 0 ? 'crit' : 'warn') : '', sub: packOverdue ? packOverdue + ' overdue' : '' },
     { key: 'printedToday', label: 'Printed today', value: packPrintedToday, cls: '', sub: packTotal ? packPct + '% of today\'s packing done' : '' },
     { key: 'prodNeeds', label: 'Needs processing', value: prodNeeds, cls: prodNeeds > 0 ? (prodOverdue > 0 ? 'crit' : 'warn') : '', sub: prodOverdue ? prodOverdue + ' overdue' : '' },
     { key: 'completedToday', label: 'Completed today', value: prodCompletedToday, cls: '', sub: prodTotal ? prodPct + '% of today\'s production done' : '' },
