@@ -2542,6 +2542,10 @@ function renderMfg_() {
       <td class="num">${p.suggest > 0 ? `<button class="btn-secondary" data-mfg-make="${escapeHtml(p.key)}" style="padding:4px 10px;font-size:13px;white-space:nowrap;">+ Log</button>` : ''}</td></tr>`).join('')}
     </table></div><p class="prep-meta">Sorted by what runs out first. Days of stock = (in stock − orders waiting) ÷ average daily sales. Make = orders waiting + minimum − in stock, rounded up to whole runs. Minimum = ${mfgDemandText_()}; "set" = a manager's override. Tap a product for its batches, orders and settings${mfgCanManage_() ? ' (minimum, run size, shelf life)' : ''}.
     ${mfgCanManage_() ? ' <a href="#" id="mfg-refresh-demand">Re-read sales from Sage now</a>' : ''}</p>`;
+  // 27 Nov 2026: stock record status (server: first stock-take starts it; orders come off stock on their delivery day).
+  document.getElementById('mfg-planner').insertAdjacentHTML('afterbegin', mfgData.stockStartDay
+    ? `<p class="prep-meta">Stock record started at the stock-take on ${escapeHtml(mfgDate_(mfgData.stockStartDay))}. Every order comes off stock on its delivery day (earliest best-before first), printed or not. Log every batch you make.</p>`
+    : `<p class="prep-meta" style="color:var(--crit);font-weight:700;">No stock-take yet - the stock figures are not real. Count the freezer after the day's trucks have left and enter it with 📋 Stock-take; from the next day orders come off stock on their delivery day.</p>`);
   const ns = mfgData.notStock || [];
   if (ns.length) document.getElementById('mfg-planner').insertAdjacentHTML('beforeend', `<p class="prep-meta">Not stock items (left out): ${ns.map(n => mfgCanManage_() ? `<a href="#" data-mfg-restock="${escapeHtml(n)}">${escapeHtml(n)}</a>` : escapeHtml(n)).join(', ')}${mfgCanManage_() ? ' - tap one to make it a stock item again.' : ''}</p>`);
   const rb = mfgData.recentBatches || [];
