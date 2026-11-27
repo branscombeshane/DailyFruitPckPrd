@@ -2600,9 +2600,15 @@ function renderMfgSchedule_() {
   if (sc.error) html += `<p class="prep-meta" style="color:var(--crit);font-weight:700;">Shifts could not be read from the Financials app: ${escapeHtml(sc.error)}</p>`;
   const b = sc.rateBasis;
   const rateTxt = sc.rate ? `<strong>${mfgQty_(sc.rate)} units per person-hour</strong> ` + (sc.rateSource === 'set' ? '(set by a manager' + (sc.autoRate ? `; automatic would be ${mfgQty_(sc.autoRate)}` : '') + ')'
+      : sc.rateSource === 'learned' || sc.rateSource === 'mixed' ? `(${sc.rateSource === 'learned' ? 'learned from your logged batches' : 'part learned, part sales estimate ' + mfgQty_(sc.autoRate || 0)})`
       : `(automatic: ${mfgQty_(b.units)} units sold ÷ ${mfgQty_(b.hours)} hours the Blendid floor worked, ${escapeHtml(mfgDate_(b.from))} – ${escapeHtml(mfgDate_(b.to))}${b.source === 'orders' ? ' - only a few days of orders, treat as rough' : ''})`)
     : '<strong style="color:var(--crit);">capacity unknown</strong> (no hours worked or sales on record yet) - everything is listed on the first shift in order of priority';
-  html += `<p class="prep-meta">Shifts and people come from the Blendid Day Shift / Night Shift rosters in the Financials app (leave left out). Capacity = rostered hours × ${rateTxt}.${can ? ' <a href="#" id="mfg-rate-edit">Change</a>' : ''} Each shift makes what runs out soonest first, then tops stock up to the minimum, in whole runs. Log batches as you make them - the plan updates.</p>`;
+  // 27 Nov 2026: learned rate (server blendidLearnedRates_) - real output from logged batches ÷ hours worked
+  const L = sc.learned, dr = sc.deptRate || {};
+  const learnTxt = sc.rateSource === 'set' ? (L && L.rate ? ` Learned from logged batches so far: ${mfgQty_(L.rate)}.` : '')
+    : L && L.days ? ` <a href="#" id="mfg-learn-info"><strong>Learning: ${Math.round(L.weight * 100)}%</strong></a> from ${L.days} day${L.days === 1 ? '' : 's'} of logged batches (${mfgQty_(L.rate)} units per person-hour)${L.weight < 1 ? `, the rest from the sales estimate - fully learned after ${Math.ceil(L.days / L.weight)} good days` : ''}. Day Shift ${dr['Day Shift'] ? mfgQty_(dr['Day Shift']) : '-'}, Night Shift ${dr['Night Shift'] ? mfgQty_(dr['Night Shift']) : '-'} per person-hour.`
+    : ' <strong>Learning:</strong> not started - it learns the real pace from the batches you log (units made ÷ hours worked that shift), so log every batch.';
+  html += `<p class="prep-meta">Shifts and people come from the Blendid Day Shift / Night Shift rosters in the Financials app (leave left out). Capacity = rostered hours × ${rateTxt}.${can ? ' <a href="#" id="mfg-rate-edit">Change</a>' : ''}${learnTxt} Each shift makes what runs out soonest first, then tops stock up to the minimum, in whole runs. Log batches as you make them - the plan updates.</p>`;
   if ((sc.shortToday || []).length) html += `<div style="background:#fde8e8;border:2px solid var(--crit);border-radius:8px;padding:10px 12px;margin:8px 0;font-weight:700;">Short for today's orders (already too late): ${sc.shortToday.map(x => escapeHtml(x.product) + ' ' + mfgQty_(x.qty)).join(', ')}. Make these first.</div>`;
   if (!slots.length && !sc.error) html += '<p class="prep-meta">No Blendid shifts rostered in the next ' + (sc.days || 7) + ' days.</p>';
   html += '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px;">' + slots.map((sl, i) => {
@@ -2625,7 +2631,7 @@ function renderMfgSchedule_() {
     mfgModal_(mfgDayLabel_(sl.date) + ' · ' + sl.department, sl.start + '–' + sl.end + ' · rostered in the Financials app',
       `<table class="prep-table"><tr><th>Person</th><th>Shift</th><th class="num">Hours</th></tr>${sl.people.map(p => `<tr><td>${escapeHtml(p.name)}</td><td>${escapeHtml(p.start)}–${escapeHtml(p.end)}</td><td class="num">${mfgQty_(p.hours)}</td></tr>`).join('')}</table>
       ${sl.away.length ? `<p class="prep-meta" style="margin-top:8px;">Away: ${sl.away.map(a => escapeHtml(a.name) + ' (' + escapeHtml(a.why) + ')').join(', ')}</p>` : ''}
-      <p class="prep-meta" style="margin-top:8px;">${sl.capacity !== null ? `Capacity ${mfgQty_(sl.inProgress ? sl.hoursLeft : sl.hours)} h × ${mfgQty_(sc.rate)} units per person-hour ≈ ${mfgQty_(sl.capacity)} units; planned ${mfgQty_(sl.used)}.` : 'Capacity unknown.'}</p>`);
+      <p class="prep-meta" style="margin-top:8px;">${sl.capacity !== null ? `Capacity ${mfgQty_(sl.inProgress ? sl.hoursLeft : sl.hours)} h × ${mfgQty_(sl.rate || sc.rate)} units per person-hour ≈ ${mfgQty_(sl.capacity)} units; planned ${mfgQty_(sl.used)}.` : 'Capacity unknown.'}</p>`);
   });
   el.querySelectorAll('[data-mfg-slot-log]').forEach(btn => btn.onclick = (e) => {
     e.stopPropagation();
@@ -2633,6 +2639,14 @@ function renderMfgSchedule_() {
     const it = (slots[Number(i)].items || []).find(x => x.key === key);
     if (it) openMfgLogBatch_(it.product, it.qty);
   });
+  const li = document.getElementById('mfg-learn-info');
+  if (li) li.onclick = (e) => {
+    e.preventDefault();
+    mfgModal_('How the pace is learned', 'Units made (logged batches) ÷ hours that shift really worked (Financials clock-ins), last 28 days, today left out.',
+      `<table class="prep-table"><tr><th>Day</th><th>Shift</th><th class="num">Units made</th><th class="num">Hours worked</th><th class="num">Per person-hour</th></tr>
+      ${(L.list || []).map(d => `<tr><td>${escapeHtml(mfgDayLabel_(d.day))}</td><td>${escapeHtml(d.dept)}</td><td class="num">${mfgQty_(d.units)}</td><td class="num">${mfgQty_(d.hours)}</td><td class="num">${mfgQty_(d.rate)}</td></tr>`).join('')}</table>
+      <p class="prep-meta" style="margin-top:8px;">Learned ${mfgQty_(L.rate)} per person-hour from ${L.days} day(s)${sc.autoRate ? `; sales estimate ${mfgQty_(sc.autoRate)}` : ''}. Used now: ${Math.round(L.weight * 100)}% learned${L.weight < 1 ? ' + ' + (100 - Math.round(L.weight * 100)) + '% sales estimate' : ''}. A shift gets its own figure after 3 days of its own batches.${L.ignored ? ` ${L.ignored} day(s) ignored: far below the usual pace, probably not every batch was logged.` : ''}</p>`);
+  };
   const re = document.getElementById('mfg-rate-edit');
   if (re) re.onclick = (e) => {
     e.preventDefault();
