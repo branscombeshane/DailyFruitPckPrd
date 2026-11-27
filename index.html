@@ -1394,7 +1394,10 @@
    CONFIG — paste your Apps Script Web App URL here after deployment.
    ===================================================================== */
 const APP_CONFIG = {
-  API_URL: 'https://script.google.com/macros/s/AKfycbw-XsBcOz0DtO7c-OTle7heBrwqBthX40xh9YBT7Ag0PHb1PpBqfDlR32mw2jin2gVE_g/exec'
+  API_URL: 'https://script.google.com/macros/s/AKfycbw-XsBcOz0DtO7c-OTle7heBrwqBthX40xh9YBT7Ag0PHb1PpBqfDlR32mw2jin2gVE_g/exec',
+  // 27 Nov 2026: Blendid manufacturing/stock runs in its own Apps Script app (BlendidMfgPrivate); the actions in
+  // MFG_ACTIONS go there, everything else (incl. blendidRefreshDemand - the Sage read stays in Packing) to API_URL.
+  MFG_API_URL: 'https://script.google.com/macros/s/AKfycbyDFFw35FR4NXG_FSCeSrqFQDK8Y3fWTglsXqTTSmszSNJA5VM3k-c7u3H5niQxrJWH/exec'
 };
 
 /* ===================== STATE ===================== */
@@ -1636,10 +1639,12 @@ function rethrowFriendly_(err) {
 // the account any more and can't be looked up server-side from just
 // userName/userPin. Harmless to send on every other action too - they
 // simply ignore it.
+const MFG_ACTIONS = new Set(['getBlendidManufacturing', 'getBlendidBatch', 'blendidLogBatch', 'blendidSaveProduct', 'blendidAdjustStock', 'blendidStockTake', 'blendidSaveRate']);
+const apiUrlFor_ = action => MFG_ACTIONS.has(action) && APP_CONFIG.MFG_API_URL ? APP_CONFIG.MFG_API_URL : APP_CONFIG.API_URL;
 function apiGet(action, params, opts) {
   const silent = !!(opts && opts.silent);
   if (!silent) beginApiLoading_(opts && opts.loadingLabel);
-  const url = new URL(APP_CONFIG.API_URL);
+  const url = new URL(apiUrlFor_(action));
   url.searchParams.set('action', action);
   url.searchParams.set('userName', userName);
   url.searchParams.set('userPin', userPin);
@@ -1658,7 +1663,7 @@ function apiGet(action, params, opts) {
 function apiPost(action, payload, opts) {
   beginApiLoading_();
   const t0 = Date.now();
-  return fetchJsonWithRetry_(APP_CONFIG.API_URL, {
+  return fetchJsonWithRetry_(apiUrlFor_(action), {
     method: 'POST',
     headers: { 'Content-Type': 'text/plain;charset=utf-8' },
     body: JSON.stringify(Object.assign({ action: action, userName: userName, userPin: userPin, userShift: userShift, userBusiness: userBusiness }, payload || {}))
@@ -2576,7 +2581,7 @@ function renderMfg_() {
   if (rd) rd.onclick = (e) => {
     e.preventDefault();
     apiPost('blendidRefreshDemand', {}, { loadingLabel: 'Reading Blendid sales from Sage…', timeoutMs: 90000 })
-      .then(d => { mfgData = d; renderMfg_(); }).catch(err => alert(err.message));
+      .then(() => loadMfg_(true)).catch(err => alert(err.message)); // the Sage read is in Packing; the plan comes from the Blendid app
   };
   document.querySelectorAll('[data-mfg-batch]').forEach(el => el.onclick = () => openMfgBatch_(el.getAttribute('data-mfg-batch')));
   renderMfgSchedule_();
