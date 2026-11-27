@@ -2526,6 +2526,8 @@ function renderMfg_() {
       <td class="num" style="font-weight:800;${p.suggest > 0 ? 'color:var(--crit);' : ''}">${p.suggest > 0 ? mfgQty_(p.suggest) : '-'}</td></tr>`).join('')}
     </table></div><p class="prep-meta">Make = needed for open orders + minimum − in stock. Minimum = ${mfgDemandText_()}; "set" = a manager's override. Tap a product for its batches and orders${mfgCanManage_() ? ', to override its minimum and set its shelf life' : ''}.
     ${mfgCanManage_() ? ' <a href="#" id="mfg-refresh-demand">Re-read sales from Sage now</a>' : ''}</p>`;
+  const ns = mfgData.notStock || [];
+  if (ns.length) document.getElementById('mfg-planner').insertAdjacentHTML('beforeend', `<p class="prep-meta">Not stock items (left out): ${ns.map(n => mfgCanManage_() ? `<a href="#" data-mfg-restock="${escapeHtml(n)}">${escapeHtml(n)}</a>` : escapeHtml(n)).join(', ')}${mfgCanManage_() ? ' - tap one to make it a stock item again.' : ''}</p>`);
   const rb = mfgData.recentBatches || [];
   document.getElementById('mfg-batches').innerHTML = !rb.length ? '<p class="prep-meta">No batches logged yet.</p>' :
     `<div style="overflow-x:auto;"><table class="prep-table"><tr><th>Batch</th><th>Product</th><th class="num">Made</th><th class="num">Left</th><th>Best before</th><th>Made</th></tr>
@@ -2537,6 +2539,11 @@ function renderMfg_() {
     mfgFilter = mfgFilter === k ? '' : k; renderMfg_();
   });
   document.querySelectorAll('[data-mfg-product]').forEach(el => el.onclick = () => openMfgProduct_(el.getAttribute('data-mfg-product')));
+  document.querySelectorAll('[data-mfg-restock]').forEach(a => a.onclick = (e) => {
+    e.preventDefault();
+    apiPost('blendidSaveProduct', { product: a.getAttribute('data-mfg-restock'), active: true }, { loadingLabel: 'Saving…' })
+      .then(d => { mfgData = d; renderMfg_(); }).catch(err => alert(err.message));
+  });
   const rd = document.getElementById('mfg-refresh-demand');
   if (rd) rd.onclick = (e) => {
     e.preventDefault();
@@ -2549,7 +2556,7 @@ function renderMfg_() {
 function mfgDemandText_() {
   const d = (mfgData && mfgData.demand) || {};
   const days = d.minDays || 14;
-  const src = d.source === 'Sage' ? `Blendid's sales in Sage ${mfgDate_(d.from)} – ${mfgDate_(d.to)}` : `Blendid orders in this app ${mfgDate_(d.from)} – ${mfgDate_(d.to)} (Sage sales not read yet)`;
+  const src = d.source === 'Sage' ? `Blendid's sales in Sage ${mfgDate_(d.from)} – ${mfgDate_(d.to)}` : `only ${d.windowDays || 1} day${(d.windowDays || 1) === 1 ? '' : 's'} of Blendid orders in this app (${mfgDate_(d.from)} – ${mfgDate_(d.to)}) - Sage sales not read yet, so treat these minimums as rough`;
   return `${days} days of orders, from ${src}`;
 }
 function openMfgProduct_(key) {
@@ -2569,14 +2576,15 @@ function openMfgProduct_(key) {
         <label class="prep-meta">Override minimum (empty = automatic ${mfgQty_(p.autoMin)})<br><input type="number" min="0" step="any" id="mfg-min" value="${p.minOverride === null || p.minOverride === undefined ? '' : p.minOverride}" placeholder="${mfgQty_(p.autoMin)}" style="width:120px;padding:8px;border:2px solid var(--line);border-radius:8px;"></label>
         <label class="prep-meta">Shelf life (days)<br><input type="number" min="1" step="1" id="mfg-shelf" value="${p.shelfLifeDays === null ? '' : p.shelfLifeDays}" placeholder="365" style="width:120px;padding:8px;border:2px solid var(--line);border-radius:8px;"></label>
         <button class="btn-primary" id="mfg-save-product">Save</button>
-      </div>` : ''}
+      </div>
+      <label class="prep-meta" style="display:block;margin-top:10px;"><input type="checkbox" id="mfg-stock-item" checked> This is a stock item (untick for delivery charges, services etc. - it then leaves this list and is never picked)</label>` : ''}
     <button class="btn-secondary" id="mfg-log-this" style="margin-top:14px;width:100%;">+ Log a batch of ${escapeHtml(p.product)}</button>`);
   document.querySelectorAll('[data-mfg-batch2]').forEach(el => el.onclick = () => openMfgBatch_(el.getAttribute('data-mfg-batch2')));
   document.getElementById('mfg-log-this').onclick = () => openMfgLogBatch_(p.product);
   const save = document.getElementById('mfg-save-product');
   if (save) save.onclick = () => {
     save.disabled = true;
-    apiPost('blendidSaveProduct', { product: p.product, minStock: document.getElementById('mfg-min').value.trim(), shelfLifeDays: document.getElementById('mfg-shelf').value.trim() }, { loadingLabel: 'Saving…' })
+    apiPost('blendidSaveProduct', { product: p.product, minStock: document.getElementById('mfg-min').value.trim(), shelfLifeDays: document.getElementById('mfg-shelf').value.trim(), active: document.getElementById('mfg-stock-item').checked }, { loadingLabel: 'Saving…' })
       .then(d => { mfgData = d; renderMfg_(); mfgCloseModal_(); }).catch(err => { alert(err.message); save.disabled = false; });
   };
 }
