@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>Daily Fruit - Packing</title>
+<title>Packing &amp; Production</title>
 <link rel="icon" href="icons/favicon.ico?v=2026-09-28.1" sizes="any">
 <link rel="icon" href="icons/favicon-16.png?v=2026-09-28.1" sizes="16x16" type="image/png">
 <link rel="icon" href="icons/favicon-32.png?v=2026-09-28.1" sizes="32x32" type="image/png">
@@ -21,7 +21,7 @@
      chrome and use a proper icon, so it feels like an installed app. -->
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="Daily Fruit">
+<meta name="apple-mobile-web-app-title" content="Packing">
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png?v=2026-09-28.1">
 <style>
   :root{
@@ -626,19 +626,23 @@
   @keyframes df-spin{ to{ transform:rotate(360deg); } }
 
   /* ---------- site lock screen ---------- */
+  /* 27 Nov 2026 (Shane): sign-in + shift screens are neutral (no Daily Fruit orange/name) - Blendid staff sign in here too.
+     Each business's own colours start once signed in. */
   #lock-screen{
-    position:fixed;inset:0;background:var(--green-dark);z-index:300;
+    position:fixed;inset:0;background:#2b2b2b;z-index:300;
     display:flex;align-items:center;justify-content:center;padding:20px;
   }
   #shift-select-screen{
-    position:fixed;inset:0;background:var(--green-dark);z-index:301;
+    position:fixed;inset:0;background:#2b2b2b;z-index:301;
     display:flex;align-items:center;justify-content:center;padding:20px;
   }
   .lock-box{
     background:#fff;border-radius:18px;padding:36px 30px;max-width:360px;width:100%;text-align:center;
   }
   .lock-badge{font-size:40px;margin-bottom:6px;}
-  .lock-box h1{font-size:21px;margin:0 0 6px;color:var(--green-dark);}
+  .lock-box h1{font-size:21px;margin:0 0 6px;color:#222;}
+  #lock-screen .btn-confirm{background:#222;}
+  #shift-select-screen .packer-tile{border-color:#d6d6d6;}
   .lock-box p{color:var(--muted);font-size:14px;margin:0 0 20px;}
   .lock-box .field{text-align:left;margin-bottom:14px;}
   .lock-box input{
@@ -693,8 +697,8 @@
 <!-- ============ LOGIN SCREEN ============ -->
 <div id="lock-screen" class="hidden">
   <div class="lock-box">
-    <div class="lock-badge">🍈</div>
-    <h1>Daily Fruit — Packing &amp; Production</h1>
+    <div class="lock-badge">📦</div>
+    <h1>Packing &amp; Production</h1>
     <p>Sign in with your name and PIN to continue.</p>
     <div class="field">
       <label>Name</label>
