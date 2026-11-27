@@ -788,6 +788,9 @@
     </span>
   </div>
   <div class="prep-stats" id="mfg-stats"></div>
+  <div class="section-heading" style="margin-top:18px;">What to make, per shift <span class="count" id="mfg-sched-count"></span></div>
+  <div id="mfg-schedule"></div>
+  <div class="section-heading" style="margin-top:22px;">Stock per product</div>
   <div id="mfg-planner"></div>
   <div class="section-heading" style="margin-top:22px;">Recent batches</div>
   <div id="mfg-batches"></div>
@@ -2576,6 +2579,68 @@ function renderMfg_() {
       .then(d => { mfgData = d; renderMfg_(); }).catch(err => alert(err.message));
   };
   document.querySelectorAll('[data-mfg-batch]').forEach(el => el.onclick = () => openMfgBatch_(el.getAttribute('data-mfg-batch')));
+  renderMfgSchedule_();
+}
+// 27 Nov 2026: production schedule per shift (server: blendidSchedule_ - Financials roster x units per person-hour).
+function mfgDayLabel_(iso) {
+  const t = mfgData.today || '';
+  if (iso === t) return 'Today';
+  const d = new Date(iso + 'T12:00:00');
+  const tm = new Date(t + 'T12:00:00'); tm.setDate(tm.getDate() + 1);
+  if (d.toDateString() === tm.toDateString()) return 'Tomorrow';
+  return d.toLocaleDateString('en-ZA', { weekday: 'short', day: 'numeric', month: 'short' });
+}
+function renderMfgSchedule_() {
+  const el = document.getElementById('mfg-schedule');
+  const sc = mfgData.schedule || { slots: [], backlog: [] };
+  const can = mfgCanManage_();
+  const slots = sc.slots || [], backlog = sc.backlog || [];
+  document.getElementById('mfg-sched-count').textContent = slots.length ? slots.length + ' shift' + (slots.length === 1 ? '' : 's') : '';
+  let html = '';
+  if (sc.error) html += `<p class="prep-meta" style="color:var(--crit);font-weight:700;">Shifts could not be read from the Financials app: ${escapeHtml(sc.error)}</p>`;
+  const b = sc.rateBasis;
+  const rateTxt = sc.rate ? `<strong>${mfgQty_(sc.rate)} units per person-hour</strong> ` + (sc.rateSource === 'set' ? '(set by a manager' + (sc.autoRate ? `; automatic would be ${mfgQty_(sc.autoRate)}` : '') + ')'
+      : `(automatic: ${mfgQty_(b.units)} units sold ÷ ${mfgQty_(b.hours)} hours the Blendid floor worked, ${escapeHtml(mfgDate_(b.from))} – ${escapeHtml(mfgDate_(b.to))}${b.source === 'orders' ? ' - only a few days of orders, treat as rough' : ''})`)
+    : '<strong style="color:var(--crit);">capacity unknown</strong> (no hours worked or sales on record yet) - everything is listed on the first shift in order of priority';
+  html += `<p class="prep-meta">Shifts and people come from the Blendid Day Shift / Night Shift rosters in the Financials app (leave left out). Capacity = rostered hours × ${rateTxt}.${can ? ' <a href="#" id="mfg-rate-edit">Change</a>' : ''} Each shift makes what runs out soonest first, then tops stock up to the minimum, in whole runs. Log batches as you make them - the plan updates.</p>`;
+  if ((sc.shortToday || []).length) html += `<div style="background:#fde8e8;border:2px solid var(--crit);border-radius:8px;padding:10px 12px;margin:8px 0;font-weight:700;">Short for today's orders (already too late): ${sc.shortToday.map(x => escapeHtml(x.product) + ' ' + mfgQty_(x.qty)).join(', ')}. Make these first.</div>`;
+  if (!slots.length && !sc.error) html += '<p class="prep-meta">No Blendid shifts rostered in the next ' + (sc.days || 7) + ' days.</p>';
+  html += '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px;">' + slots.map((sl, i) => {
+    const pct = sl.capacity ? Math.min(100, Math.round(sl.used / sl.capacity * 100)) : 0;
+    return `<div class="order-card" style="padding:12px;">
+      <div data-mfg-slot="${i}" style="cursor:pointer;">
+        <div style="font-weight:800;font-size:16px;">${escapeHtml(mfgDayLabel_(sl.date))} · ${escapeHtml(sl.department)}${sl.inProgress ? ' <span class="prep-meta">(on now)</span>' : ''}</div>
+        <div class="prep-meta">${escapeHtml(sl.start)}–${escapeHtml(sl.end)} · ${sl.people.length} ${sl.people.length === 1 ? 'person' : 'people'}${sl.away.length ? ` (${sl.away.length} away)` : ''} · ${mfgQty_(sl.inProgress ? sl.hoursLeft : sl.hours)} h${sl.inProgress ? ' left' : ''}</div>
+        ${sl.capacity !== null ? `<div class="prep-meta">Planned ${mfgQty_(sl.used)} of ~${mfgQty_(sl.capacity)} units</div><div style="height:6px;background:var(--line);border-radius:3px;margin:4px 0 8px;"><div style="height:6px;width:${pct}%;background:${pct >= 100 ? 'var(--warn)' : 'var(--green)'};border-radius:3px;"></div></div>` : ''}
+      </div>
+      ${sl.items.length ? `<table class="prep-table" style="margin:0;">${sl.items.map(it => `<tr><td>${escapeHtml(it.product)}${it.due ? `<br><span class="prep-meta" style="${it.late ? 'color:var(--crit);font-weight:800;' : ''}">${it.late ? 'LATE - needed ' : 'for '}${escapeHtml(mfgDayLabel_(it.due).toLowerCase() === 'today' ? 'today' : mfgDayLabel_(it.due))}</span>` : '<br><span class="prep-meta">top up to minimum</span>'}</td>
+        <td class="num" style="font-weight:800;">${mfgQty_(it.qty)}${it.runs ? `<br><span class="prep-meta">${mfgQty_(it.runs)} run${it.runs === 1 ? '' : 's'}</span>` : ''}</td>
+        <td class="num"><button class="btn-secondary" data-mfg-slot-log="${i}|${escapeHtml(it.key)}" style="padding:4px 10px;font-size:13px;white-space:nowrap;">+ Log</button></td></tr>`).join('')}</table>` : '<p class="prep-meta">Nothing needed - stock is above the minimum.</p>'}
+    </div>`;
+  }).join('') + '</div>';
+  if (backlog.length) html += `<div style="background:#fff4d6;border:2px solid #e0b84a;border-radius:8px;padding:10px 12px;margin-top:12px;"><strong>Does not fit in these shifts:</strong> ${backlog.map(x => `${escapeHtml(x.product)} ${mfgQty_(x.qty)}${x.due ? ` <span style="color:var(--crit);">(needed ${escapeHtml(mfgDayLabel_(x.due))})</span>` : ''}`).join(', ')}. More people, overtime, or a lower minimum.</div>`;
+  el.innerHTML = html;
+  el.querySelectorAll('[data-mfg-slot]').forEach(h => h.onclick = () => {
+    const sl = slots[Number(h.getAttribute('data-mfg-slot'))];
+    mfgModal_(mfgDayLabel_(sl.date) + ' · ' + sl.department, sl.start + '–' + sl.end + ' · rostered in the Financials app',
+      `<table class="prep-table"><tr><th>Person</th><th>Shift</th><th class="num">Hours</th></tr>${sl.people.map(p => `<tr><td>${escapeHtml(p.name)}</td><td>${escapeHtml(p.start)}–${escapeHtml(p.end)}</td><td class="num">${mfgQty_(p.hours)}</td></tr>`).join('')}</table>
+      ${sl.away.length ? `<p class="prep-meta" style="margin-top:8px;">Away: ${sl.away.map(a => escapeHtml(a.name) + ' (' + escapeHtml(a.why) + ')').join(', ')}</p>` : ''}
+      <p class="prep-meta" style="margin-top:8px;">${sl.capacity !== null ? `Capacity ${mfgQty_(sl.inProgress ? sl.hoursLeft : sl.hours)} h × ${mfgQty_(sc.rate)} units per person-hour ≈ ${mfgQty_(sl.capacity)} units; planned ${mfgQty_(sl.used)}.` : 'Capacity unknown.'}</p>`);
+  });
+  el.querySelectorAll('[data-mfg-slot-log]').forEach(btn => btn.onclick = (e) => {
+    e.stopPropagation();
+    const [i, key] = btn.getAttribute('data-mfg-slot-log').split('|');
+    const it = (slots[Number(i)].items || []).find(x => x.key === key);
+    if (it) openMfgLogBatch_(it.product, it.qty);
+  });
+  const re = document.getElementById('mfg-rate-edit');
+  if (re) re.onclick = (e) => {
+    e.preventDefault();
+    const v = prompt('Units one person makes per hour (all products). Leave empty for automatic' + (sc.autoRate ? ' (' + sc.autoRate + ')' : '') + '.', sc.rateSource === 'set' ? sc.rate : '');
+    if (v === null) return;
+    apiPost('blendidSaveRate', { unitsPerPersonHour: v.trim() }, { loadingLabel: 'Saving…', timeoutMs: 60000 })
+      .then(d => { mfgData = d; renderMfg_(); }).catch(err => alert(err.message));
+  };
 }
 // Stock-take (27 Nov 2026): count per product; empty = not counted. The app books the differences.
 function openMfgStockTake_() {
