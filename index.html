@@ -2581,7 +2581,8 @@ function renderMfg_() {
 function openMfgStockTake_() {
   const list = (mfgData && mfgData.products || []).slice().sort((a, b) => a.product.localeCompare(b.product));
   mfgModal_('Stock-take', 'Count what is in the freezer and type it in. Leave a product empty if you did not count it. The app changes its stock to your count and keeps a record.',
-    `<input type="text" id="mfg-count-filter" placeholder="Find a product…" style="width:100%;padding:8px;border:2px solid var(--line);border-radius:8px;margin-bottom:8px;">
+    `<div style="background:#fff4d6;border:2px solid #e0b84a;border-radius:8px;padding:10px 12px;margin-bottom:10px;font-weight:700;">⚠ Do the stock-take at the END of the day, once all of today's orders have been dispatched. Orders delivered today or earlier are treated as already gone - counting before the trucks leave makes the stock too high.</div>
+    <input type="text" id="mfg-count-filter" placeholder="Find a product…" style="width:100%;padding:8px;border:2px solid var(--line);border-radius:8px;margin-bottom:8px;">
     <div style="max-height:55vh;overflow:auto;"><table class="prep-table"><tr><th>Product</th><th class="num">On record</th><th class="num">Counted</th></tr>
     ${list.map(p => `<tr data-count-row="${escapeHtml(p.product.toLowerCase())}"><td>${escapeHtml(p.product)}${p.lastCount ? `<br><span class="prep-meta">last counted ${escapeHtml(fmtTime(p.lastCount.at))}</span>` : ''}</td><td class="num">${mfgQty_(p.inStock)}</td>
       <td class="num"><input type="number" min="0" step="any" inputmode="decimal" data-count-product="${escapeHtml(p.product)}" data-count-record="${p.inStock}" style="width:100px;padding:6px;border:2px solid var(--line);border-radius:8px;"></td></tr>`).join('')}
