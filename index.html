@@ -1871,7 +1871,11 @@ function submitLogin() {
     // when there are no shifts defined at all yet - nothing to pick from.
     const shiftNames = res.data.shiftNames || [];
     if (userRole === 'Admin' && canSwitchBusiness) {
-      showBusinessSelectScreen_();
+      // 27 Nov 2026 (Shane): the address decides - ops.blendid.co.za = Blendid, pckprd.dailyfruit.co.za = Daily Fruit.
+      // No "Which business?" question; the top-bar ⇄ switch still swaps for a look at the other one.
+      userBusiness = window.SITE_BLENDID ? 'Blendid' : '';
+      sessionStorage.setItem('df_user_business', userBusiness);
+      selectLoginShift('');
     } else if (userRole !== 'Admin' && shiftNames.length) {
       showShiftSelectScreen(shiftNames);
     } else {
