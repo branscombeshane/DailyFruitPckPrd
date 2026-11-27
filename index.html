@@ -2561,7 +2561,8 @@ function mfgDemandText_() {
   const d = (mfgData && mfgData.demand) || {};
   const days = d.minDays || 14;
   const src = d.source === 'Sage' ? `Blendid's sales in Sage ${mfgDate_(d.from)} – ${mfgDate_(d.to)}` : `only ${d.windowDays || 1} day${(d.windowDays || 1) === 1 ? '' : 's'} of Blendid orders in this app (${mfgDate_(d.from)} – ${mfgDate_(d.to)}) - Sage sales not read yet, so treat these minimums as rough`;
-  return `${days} days of orders, from ${src}`;
+  const err = d.lastError ? ` <strong style="color:var(--crit);">Last Sage read failed (${escapeHtml(fmtTime(d.lastError.at))}): ${escapeHtml(d.lastError.error)}</strong>` : '';
+  return `${days} days of orders, from ${src}${err}`;
 }
 function openMfgProduct_(key) {
   const p = (mfgData.products || []).find(x => x.key === key);
@@ -2570,7 +2571,7 @@ function openMfgProduct_(key) {
   mfgModal_(p.product, `In stock ${mfgQty_(p.inStock)} · needed ${mfgQty_(p.needed)} · make ${p.suggest > 0 ? mfgQty_(p.suggest) : 'nothing'}`,
     `<div class="impact-verdict same" style="margin-top:4px;">Minimum <strong>${mfgQty_(p.minStock)}</strong> ${p.minSource === 'set' ? '(set by a manager)' : '(automatic)'}.
       Automatic = ${mfgQty_(p.sold)} sold in ${dd.windowDays || 28} days ÷ ${dd.windowDays || 28} × ${dd.minDays || 14} days = <strong>${mfgQty_(p.autoMin)}</strong>
-      <span class="prep-meta">(${escapeHtml(mfgDemandText_())})</span></div>
+      <span class="prep-meta">(${mfgDemandText_()})</span></div>
     <h3 style="margin:8px 0 4px;font-size:15px;">Batches in stock</h3>
     ${p.batches.length ? `<table class="prep-table"><tr><th>Batch</th><th class="num">Left</th><th>Best before</th></tr>${p.batches.map(b => `<tr data-mfg-batch2="${escapeHtml(b.batchNo)}" style="cursor:pointer;"><td>${escapeHtml(b.batchNo)}</td><td class="num">${mfgQty_(b.remaining)}</td><td>${escapeHtml(mfgDate_(b.bestBefore))}</td></tr>`).join('')}</table>` : '<p class="prep-meta">None.</p>'}
     <h3 style="margin:14px 0 4px;font-size:15px;">Open orders not picked yet</h3>
