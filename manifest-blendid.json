@@ -1,0 +1,37 @@
+{
+  "name": "Blendid Operations",
+  "short_name": "Blendid",
+  "description": "Blendid packing, production and stock",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#000000",
+  "theme_color": "#000000",
+  "orientation": "any",
+  "icons": [
+    {
+      "src": "icons/blendid/icon-192.png?v=2026-11-28",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icons/blendid/icon-512.png?v=2026-11-28",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icons/blendid/icon-192-maskable.png?v=2026-11-28",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "icons/blendid/icon-512-maskable.png?v=2026-11-28",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}

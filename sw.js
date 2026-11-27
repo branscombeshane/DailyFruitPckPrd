@@ -8,7 +8,7 @@
 //
 // Bump CACHE_NAME any time the list of shell files below changes so old
 // installs pick up the new set instead of serving a stale mix forever.
-const CACHE_NAME = 'df-packing-shell-v2';
+const CACHE_NAME = 'df-packing-shell-v3';
 const SHELL_FILES = [
   './',
   './index.html',

@@ -3,12 +3,12 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>Packing &amp; Production</title>
-<link rel="icon" href="icons/favicon.ico?v=2026-11-27" sizes="any">
-<link rel="icon" href="icons/favicon-16.png?v=2026-11-27" sizes="16x16" type="image/png">
-<link rel="icon" href="icons/favicon-32.png?v=2026-11-27" sizes="32x32" type="image/png">
-<link rel="icon" href="icons/icon-192.png?v=2026-11-27" sizes="192x192" type="image/png">
-<meta name="theme-color" content="#2b2b2b">
+<title>Daily Fruit - Packing</title>
+<link rel="icon" href="icons/favicon.ico?v=2026-11-28" sizes="any">
+<link rel="icon" href="icons/favicon-16.png?v=2026-11-28" sizes="16x16" type="image/png">
+<link rel="icon" href="icons/favicon-32.png?v=2026-11-28" sizes="32x32" type="image/png">
+<link rel="icon" href="icons/icon-192.png?v=2026-11-28" sizes="192x192" type="image/png">
+<meta name="theme-color" content="#BA561C">
 <!-- manifest.json + sw.js (registered near the bottom of the script below)
      are what make this installable as a real app - on a PC via the
      install icon Chrome/Edge show in the address bar, and on mobile via
@@ -21,8 +21,22 @@
      chrome and use a proper icon, so it feels like an installed app. -->
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="Packing">
-<link rel="apple-touch-icon" href="icons/apple-touch-icon.png?v=2026-11-27">
+<meta name="apple-mobile-web-app-title" content="Daily Fruit">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png?v=2026-11-28">
+<script>
+  // 27 Nov 2026 (Shane): ops.blendid.co.za (the BlendidOps copy of this site) is Blendid's own address - Blendid sign-in
+  // screen, tab title and app name there. ?site=blendid shows the same on any address (testing).
+  window.SITE_BLENDID = /blendid/i.test(location.hostname) || /[?&]site=blendid\b/i.test(location.search);
+  if (window.SITE_BLENDID) {
+    document.documentElement.classList.add('site-blendid');
+    document.title = 'Blendid Operations';
+    document.querySelector('meta[name="theme-color"]').setAttribute('content', '#000000');
+    document.querySelector('meta[name="apple-mobile-web-app-title"]').setAttribute('content', 'Blendid');
+    document.querySelector('link[rel="manifest"]').setAttribute('href', 'manifest-blendid.json');
+    // Blendid's address keeps the neutral box icon (icons/blendid/); Daily Fruit's own icons are the melon ones.
+    document.querySelectorAll('link[rel="icon"], link[rel="apple-touch-icon"]').forEach(function (l) { l.setAttribute('href', l.getAttribute('href').replace('icons/', 'icons/blendid/')); });
+  }
+</script>
 <style>
   :root{
     /* Brand accent — the real Daily Fruit logo orange (same darkened-for-
@@ -626,24 +640,33 @@
   @keyframes df-spin{ to{ transform:rotate(360deg); } }
 
   /* ---------- site lock screen ---------- */
-  /* 27 Nov 2026 (Shane): sign-in + shift screens are neutral (no Daily Fruit orange/name) - Blendid staff sign in here too.
-     Each business's own colours start once signed in. */
+  /* 27 Nov 2026 (Shane): Daily Fruit's sign-in is Daily Fruit again (pckprd.dailyfruit.co.za); Blendid signs in at its own
+     address, ops.blendid.co.za (html.site-blendid below). */
   #lock-screen{
-    position:fixed;inset:0;background:#2b2b2b;z-index:300;
+    position:fixed;inset:0;background:var(--green-dark);z-index:300;
     display:flex;align-items:center;justify-content:center;padding:20px;
   }
   #shift-select-screen{
-    position:fixed;inset:0;background:#2b2b2b;z-index:301;
+    position:fixed;inset:0;background:var(--green-dark);z-index:301;
     display:flex;align-items:center;justify-content:center;padding:20px;
   }
   .lock-box{
     background:#fff;border-radius:18px;padding:36px 30px;max-width:360px;width:100%;text-align:center;
   }
   .lock-badge{font-size:40px;margin-bottom:6px;}
-  .lock-box h1{font-size:21px;margin:0 0 6px;color:#222;}
-  #lock-screen .btn-confirm{background:#222;}
-  #shift-select-screen .packer-tile{border-color:#d6d6d6;}
+  .lock-box h1{font-size:21px;margin:0 0 6px;color:var(--green-dark);}
+  html.site-blendid #shift-select-screen .packer-tile{border-color:#d6d6d6;}
   .lock-box p{color:var(--muted);font-size:14px;margin:0 0 20px;}
+  /* Blendid's own address (ops.blendid.co.za): black + champagne, like blendid.co.za */
+  .lock-brand-blendid{display:none;}
+  html.site-blendid #lock-screen, html.site-blendid #shift-select-screen{background:#000;}
+  html.site-blendid .lock-box{border-radius:4px;border-top:4px solid #c8b48f;}
+  html.site-blendid #lock-screen .lock-badge, html.site-blendid #lock-screen .lock-default-title{display:none;}
+  html.site-blendid .lock-brand-blendid{display:block;margin-bottom:14px;}
+  .lock-brand-blendid .wordmark{font-size:30px;font-weight:700;letter-spacing:8px;color:#000;padding-left:8px;}
+  .lock-brand-blendid .sub{font-size:12px;letter-spacing:4px;text-transform:uppercase;color:#a08e68;margin-top:4px;}
+  html.site-blendid #lock-screen .btn-confirm, html.site-blendid #shift-select-screen .btn-confirm{background:#000;letter-spacing:2px;text-transform:uppercase;border-radius:2px;}
+  html.site-blendid .lock-box h1{text-transform:uppercase;letter-spacing:2px;font-size:18px;}
   .lock-box .field{text-align:left;margin-bottom:14px;}
   .lock-box input{
     width:100%;padding:14px;border:2px solid var(--line);border-radius:10px;font-size:17px;
@@ -697,8 +720,9 @@
 <!-- ============ LOGIN SCREEN ============ -->
 <div id="lock-screen" class="hidden">
   <div class="lock-box">
-    <div class="lock-badge">📦</div>
-    <h1>Packing &amp; Production</h1>
+    <div class="lock-badge">🍈</div>
+    <div class="lock-brand-blendid"><div class="wordmark">BLENDID</div><div class="sub">Operations</div></div>
+    <h1 class="lock-default-title">Daily Fruit — Packing &amp; Production</h1>
     <p>Sign in with your name and PIN to continue.</p>
     <div class="field">
       <label>Name</label>
