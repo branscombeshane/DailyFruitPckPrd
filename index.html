@@ -780,9 +780,10 @@
 <!-- ============ PRODUCTION BOARD ============ -->
 <!-- ============ BLENDID MANUFACTURING (27 Nov 2026) ============ -->
 <div id="mfg-view" class="hidden">
-  <div class="section-heading">Stock &amp; what to make
+  <div class="section-heading">Production plan
     <span style="margin-left:auto;display:flex;gap:8px;">
       <button class="btn-primary" id="mfg-log-btn" style="text-transform:none;letter-spacing:normal;">+ Log a batch</button>
+      <button class="btn-secondary" id="mfg-count-btn" style="text-transform:none;letter-spacing:normal;">📋 Stock-take</button>
       <button class="btn-secondary" id="mfg-refresh-btn" style="text-transform:none;letter-spacing:normal;">↻ Refresh</button>
     </span>
   </div>
@@ -2377,10 +2378,11 @@ function renderBoard() {
   let printedFiltered = printedPackerFilter ? printed.filter(o => o.assignedTo === printedPackerFilter) : printed;
   // Blendid (27 Nov 2026): Print slip -> Labels -> Complete. Orders with the slip printed but not completed sit in
   // "To complete" (from the live board) and are left out of Printed so they don't show twice.
-  const toComplete = isBlendid_() ? boardData.orders.filter(o => o.assignedTo && !o.productionCompletedAt)
+  // 27 Nov 2026 (Shane): Blendid is slip-only - a printed slip is done and stock comes off at print. No To complete.
+  const toComplete = false ? boardData.orders.filter(o => o.assignedTo && !o.productionCompletedAt)
     .sort((a, b) => (a.deliveryDate || '') < (b.deliveryDate || '') ? -1 : (a.deliveryDate || '') > (b.deliveryDate || '') ? 1 : new Date(a.printedAt) - new Date(b.printedAt)) : [];
   if (isBlendid_()) { const open = new Set(toComplete.map(o => o.orderId)); printedFiltered = printedFiltered.filter(o => !open.has(o.orderId)); }
-  ['tocomplete-heading', 'tocomplete-grid'].forEach(id => document.getElementById(id).classList.toggle('hidden', !isBlendid_()));
+  ['tocomplete-heading', 'tocomplete-grid'].forEach(id => document.getElementById(id).classList.add('hidden'));
   document.getElementById('tocomplete-count').textContent = toComplete.length;
   document.getElementById('tocomplete-grid').innerHTML = toComplete.map(o => `
     <div class="order-card assigned" data-order-id="${o.orderId}" data-action="view" data-search="${searchBlob(o)}">
@@ -2471,7 +2473,7 @@ function renderBoard() {
       ${isBlendid_() ? blendidStampsHtml_(o) : `<div class="assigned-strip"><span>✅ ${escapeHtml(o.assignedTo)}</span><span>printed ${fmtTime(o.printedAt)}</span></div>`}
       <div class="card-actions">
         <button class="btn-secondary" data-reprint="${o.orderId}">🖨 Reprint</button>
-        <button class="btn-secondary" data-print-packing-labels="${o.orderId}">🏷 Labels</button>
+        ${isBlendid_() ? '' : `<button class="btn-secondary" data-print-packing-labels="${o.orderId}">🏷 Labels</button>`}
       </div>
     </div>`).join('');
 
@@ -2483,9 +2485,14 @@ function renderBoard() {
 
 // Blendid time stamps (27 Nov 2026): slip printed / labels printed / completed, each with when and by whom (shift for the
 // slip, the logged-in name for labels and Complete) - the same columns Daily Fruit records.
+// Blendid printed card (27 Nov 2026, slip-only): when the slip printed and which batches the stock came from.
 function blendidStampsHtml_(o) {
-  const line = (icon, what, at, by) => `<div class="order-arrived" style="margin-top:3px;">${icon} ${what} ${at ? fmtTime(at) + (by ? ' · ' + escapeHtml(by) : '') : '<i>not yet</i>'}</div>`;
-  return `<div style="margin:8px 0 4px;">${line('🖨', 'Slip', o.printedAt, o.assignedTo)}${line('📦', 'Picked', o.pickedAt, o.pickedBy)}${line('🏷', 'Labels', o.packingLabelsPrintedAt, o.packingLabelsPrintedBy)}${line('✓', 'Completed', o.productionCompletedAt, o.productionCompletedBy)}</div>`;
+  const picks = o.picks || [];
+  const byBatch = {};
+  picks.forEach(p => { const k = p.batchNo || ''; byBatch[k] = (byBatch[k] || 0) + Number(p.qty || 0); });
+  const stockTxt = !picks.length ? (o.pickedAt ? 'nothing to take off' : '<i>not taken off yet</i>')
+    : Object.keys(byBatch).map(k => k ? `${escapeHtml(k)} × ${mfgQty_(byBatch[k])}` : `<span style="color:var(--crit);">${mfgQty_(byBatch[k])} with no stock on record</span>`).join(', ');
+  return `<div style="margin:8px 0 4px;"><div class="order-arrived">🖨 Slip ${o.printedAt ? fmtTime(o.printedAt) : ''}${o.assignedTo ? ' · ' + escapeHtml(o.assignedTo) : ''}</div><div class="order-arrived" style="margin-top:3px;">📦 Stock: ${stockTxt}</div></div>`;
 }
 /* ===================== BLENDID MANUFACTURING + PICKING (27 Nov 2026) ===================== */
 let mfgData = null, mfgFilter = '', mfgLoading = false;
@@ -2512,23 +2519,28 @@ function loadMfg_(manual) {
 function renderMfg_() {
   if (!mfgData) return;
   const list = mfgData.products || [];
-  const toMake = list.filter(p => p.suggest > 0), short = list.filter(p => p.short), inStock = list.filter(p => p.inStock > 0);
+  const toMake = list.filter(p => p.suggest > 0), short = list.filter(p => p.short), low = list.filter(p => p.cover !== null && p.cover < 3);
   const tile = (key, value, label, sub, cls) => `<div class="stat-card ${cls || ''} ${mfgFilter === key ? 'selected' : ''}" data-mfg-filter="${key}"><div class="stat-value">${value}</div><div class="stat-label">${label}</div><div class="stat-sub">${sub}</div></div>`;
   document.getElementById('mfg-stats').innerHTML =
-    tile('make', toMake.length, 'Products to make', 'Below minimum or needed for orders. Tap to list them.', toMake.length ? 'warn' : '') +
-    tile('short', short.length, 'Short for orders', 'Open orders need more than is in stock. Tap to list them.', short.length ? 'crit' : '') +
-    tile('pick', mfgData.unpicked, 'Orders to pick', 'Open orders not picked yet. Tap to go to them.', '') +
-    tile('stock', inStock.length, 'Products in stock', 'Tap to list what is in stock.', '');
-  const shown = mfgFilter === 'make' ? toMake : mfgFilter === 'short' ? short : mfgFilter === 'stock' ? inStock : list;
-  document.getElementById('mfg-planner').innerHTML = !shown.length ? '<p class="prep-meta">Nothing here yet - log the first batch with "+ Log a batch".</p>' :
-    `<div style="overflow-x:auto;"><table class="prep-table"><tr><th>Product</th><th class="num">In stock</th><th class="num">Needed (open orders)</th><th class="num">Minimum</th><th class="num">Make</th></tr>
+    tile('make', toMake.length, 'Products to make', 'Below their minimum after the orders waiting. Tap to list only these.', toMake.length ? 'warn' : '') +
+    tile('short', short.length, 'Short for orders', 'Not enough stock for the orders waiting to be packed. Tap to list them.', short.length ? 'crit' : '') +
+    tile('low', low.length, 'Under 3 days of stock', 'Will run out within 3 days of normal sales. Tap to list them.', low.length ? 'warn' : '') +
+    tile('pick', mfgData.unpicked, 'Orders to pack', 'Slips not printed yet. Tap to go to them.', '');
+  const shown = mfgFilter === 'make' ? toMake : mfgFilter === 'short' ? short : mfgFilter === 'low' ? low : list;
+  const coverTxt = p => p.cover === null ? '<span class="prep-meta">no sales</span>' : `<span style="${p.cover < 3 ? 'color:var(--crit);font-weight:800;' : p.cover < 7 ? 'color:var(--warn);font-weight:800;' : ''}">${mfgQty_(p.cover)} d</span>`;
+  document.getElementById('mfg-planner').innerHTML = !shown.length ? '<p class="prep-meta">Nothing here.</p>' :
+    `<div style="overflow-x:auto;"><table class="prep-table"><tr><th>Product</th><th class="num">Days of stock</th><th class="num">In stock</th><th class="num">Orders waiting</th><th class="num">Minimum</th><th class="num">Run size</th><th class="num">Make</th><th class="num">Made today</th><th></th></tr>
     ${shown.map(p => `<tr data-mfg-product="${escapeHtml(p.key)}" style="cursor:pointer;">
-      <td><strong>${escapeHtml(p.product)}</strong>${p.batches.length ? `<br><span class="prep-meta">${p.batches.length} batch${p.batches.length === 1 ? '' : 'es'} · next best-before ${escapeHtml(mfgDate_(p.batches[0].bestBefore))}</span>` : ''}</td>
+      <td><strong>${escapeHtml(p.product)}</strong>${p.batches.length ? `<br><span class="prep-meta">next best-before ${escapeHtml(mfgDate_(p.batches[0].bestBefore))}</span>` : ''}${p.noStockSent ? `<br><span class="prep-meta" style="color:var(--crit);">${mfgQty_(p.noStockSent)} sent with no stock on record - count it</span>` : ''}</td>
+      <td class="num">${coverTxt(p)}</td>
       <td class="num">${mfgQty_(p.inStock)}</td>
       <td class="num" ${p.short ? 'style="color:var(--crit);font-weight:800;"' : ''}>${mfgQty_(p.needed)}</td>
       <td class="num">${mfgQty_(p.minStock)} <span class="prep-meta">${p.minSource === 'set' ? 'set' : 'auto'}</span></td>
-      <td class="num" style="font-weight:800;${p.suggest > 0 ? 'color:var(--crit);' : ''}">${p.suggest > 0 ? mfgQty_(p.suggest) : '-'}</td></tr>`).join('')}
-    </table></div><p class="prep-meta">Make = needed for open orders + minimum − in stock. Minimum = ${mfgDemandText_()}; "set" = a manager's override. Tap a product for its batches and orders${mfgCanManage_() ? ', to override its minimum and set its shelf life' : ''}.
+      <td class="num">${p.runSize ? mfgQty_(p.runSize) : '<span class="prep-meta">-</span>'}</td>
+      <td class="num" style="font-weight:800;${p.suggest > 0 ? 'color:var(--crit);' : ''}">${p.suggest > 0 ? mfgQty_(p.suggest) + (p.runs ? `<br><span class="prep-meta">${p.runs} run${p.runs === 1 ? '' : 's'}</span>` : '') : '-'}</td>
+      <td class="num">${p.madeToday ? mfgQty_(p.madeToday) : '-'}</td>
+      <td class="num">${p.suggest > 0 ? `<button class="btn-secondary" data-mfg-make="${escapeHtml(p.key)}" style="padding:4px 10px;font-size:13px;white-space:nowrap;">+ Log</button>` : ''}</td></tr>`).join('')}
+    </table></div><p class="prep-meta">Sorted by what runs out first. Days of stock = (in stock − orders waiting) ÷ average daily sales. Make = orders waiting + minimum − in stock, rounded up to whole runs. Minimum = ${mfgDemandText_()}; "set" = a manager's override. Tap a product for its batches, orders and settings${mfgCanManage_() ? ' (minimum, run size, shelf life)' : ''}.
     ${mfgCanManage_() ? ' <a href="#" id="mfg-refresh-demand">Re-read sales from Sage now</a>' : ''}</p>`;
   const ns = mfgData.notStock || [];
   if (ns.length) document.getElementById('mfg-planner').insertAdjacentHTML('beforeend', `<p class="prep-meta">Not stock items (left out): ${ns.map(n => mfgCanManage_() ? `<a href="#" data-mfg-restock="${escapeHtml(n)}">${escapeHtml(n)}</a>` : escapeHtml(n)).join(', ')}${mfgCanManage_() ? ' - tap one to make it a stock item again.' : ''}</p>`);
@@ -2539,8 +2551,13 @@ function renderMfg_() {
     </table></div><p class="prep-meta">Tap a batch to see which customers it went to.</p>`;
   document.querySelectorAll('[data-mfg-filter]').forEach(el => el.onclick = () => {
     const k = el.getAttribute('data-mfg-filter');
-    if (k === 'pick') { setBoardView('packing'); setTimeout(() => { const h = document.getElementById('tocomplete-heading'); if (h) h.scrollIntoView({ behavior: 'smooth' }); }, 100); return; }
+    if (k === 'pick') { setBoardView('packing'); return; }
     mfgFilter = mfgFilter === k ? '' : k; renderMfg_();
+  });
+  document.querySelectorAll('[data-mfg-make]').forEach(btn => btn.onclick = (e) => {
+    e.stopPropagation();
+    const p = list.find(x => x.key === btn.getAttribute('data-mfg-make'));
+    if (p) openMfgLogBatch_(p.product, p.suggest);
   });
   document.querySelectorAll('[data-mfg-product]').forEach(el => el.onclick = () => openMfgProduct_(el.getAttribute('data-mfg-product')));
   document.querySelectorAll('[data-mfg-restock]').forEach(a => a.onclick = (e) => {
@@ -2556,6 +2573,39 @@ function renderMfg_() {
   };
   document.querySelectorAll('[data-mfg-batch]').forEach(el => el.onclick = () => openMfgBatch_(el.getAttribute('data-mfg-batch')));
 }
+// Stock-take (27 Nov 2026): count per product; empty = not counted. The app books the differences.
+function openMfgStockTake_() {
+  const list = (mfgData && mfgData.products || []).slice().sort((a, b) => a.product.localeCompare(b.product));
+  mfgModal_('Stock-take', 'Count what is in the freezer and type it in. Leave a product empty if you did not count it. The app changes its stock to your count and keeps a record.',
+    `<input type="text" id="mfg-count-filter" placeholder="Find a product…" style="width:100%;padding:8px;border:2px solid var(--line);border-radius:8px;margin-bottom:8px;">
+    <div style="max-height:55vh;overflow:auto;"><table class="prep-table"><tr><th>Product</th><th class="num">On record</th><th class="num">Counted</th></tr>
+    ${list.map(p => `<tr data-count-row="${escapeHtml(p.product.toLowerCase())}"><td>${escapeHtml(p.product)}${p.lastCount ? `<br><span class="prep-meta">last counted ${escapeHtml(fmtTime(p.lastCount.at))}</span>` : ''}</td><td class="num">${mfgQty_(p.inStock)}</td>
+      <td class="num"><input type="number" min="0" step="any" inputmode="decimal" data-count-product="${escapeHtml(p.product)}" data-count-record="${p.inStock}" style="width:100px;padding:6px;border:2px solid var(--line);border-radius:8px;"></td></tr>`).join('')}
+    </table></div>
+    <button class="btn-primary" id="mfg-count-save" style="margin-top:12px;width:100%;">Save count</button>`);
+  document.getElementById('mfg-count-filter').oninput = (e) => {
+    const q = e.target.value.trim().toLowerCase();
+    document.querySelectorAll('[data-count-row]').forEach(r => r.style.display = !q || r.getAttribute('data-count-row').includes(q) ? '' : 'none');
+  };
+  document.getElementById('mfg-count-save').onclick = () => {
+    const counts = [], diffs = [];
+    document.querySelectorAll('[data-count-product]').forEach(inp => {
+      const v = inp.value.trim();
+      if (v === '') return;
+      const n = Number(v);
+      if (!(n >= 0)) return;
+      counts.push({ product: inp.getAttribute('data-count-product'), counted: n });
+      const d = n - Number(inp.getAttribute('data-count-record'));
+      if (d) diffs.push(inp.getAttribute('data-count-product') + ': ' + (d > 0 ? '+' : '') + mfgQty_(d));
+    });
+    if (!counts.length) { alert('Nothing counted yet.'); return; }
+    if (!confirm(counts.length + ' product(s) counted. ' + (diffs.length ? 'Changes to the stock:\n' + diffs.join('\n') : 'Everything matches what was on record.') + '\n\nSave?')) return;
+    const btn = document.getElementById('mfg-count-save'); btn.disabled = true;
+    apiPost('blendidStockTake', { counts: counts }, { loadingLabel: 'Saving the count…' })
+      .then(r => { mfgCloseModal_(); alert('Stock-take saved: ' + r.counted + ' product(s), ' + r.changed.length + ' changed.'); loadMfg_(true); })
+      .catch(err => { alert(err.message); btn.disabled = false; });
+  };
+}
 // 27 Nov 2026: where the automatic minimum comes from.
 function mfgDemandText_() {
   const d = (mfgData && mfgData.demand) || {};
@@ -2568,37 +2618,38 @@ function openMfgProduct_(key) {
   const p = (mfgData.products || []).find(x => x.key === key);
   if (!p) return;
   const dd = (mfgData && mfgData.demand) || {};
-  mfgModal_(p.product, `In stock ${mfgQty_(p.inStock)} · needed ${mfgQty_(p.needed)} · make ${p.suggest > 0 ? mfgQty_(p.suggest) : 'nothing'}`,
+  mfgModal_(p.product, `In stock ${mfgQty_(p.inStock)} · orders waiting ${mfgQty_(p.needed)} · ${p.cover === null ? 'no sales' : mfgQty_(p.cover) + ' days of stock'} · make ${p.suggest > 0 ? mfgQty_(p.suggest) : 'nothing'}${p.lastCount ? ' · last counted ' + fmtTime(p.lastCount.at) + ' by ' + p.lastCount.by : ''}`,
     `<div class="impact-verdict same" style="margin-top:4px;">Minimum <strong>${mfgQty_(p.minStock)}</strong> ${p.minSource === 'set' ? '(set by a manager)' : '(automatic)'}.
       Automatic = ${mfgQty_(p.sold)} sold in ${dd.windowDays || 28} days ÷ ${dd.windowDays || 28} × ${dd.minDays || 14} days = <strong>${mfgQty_(p.autoMin)}</strong>
       <span class="prep-meta">(${mfgDemandText_()})</span></div>
     <h3 style="margin:8px 0 4px;font-size:15px;">Batches in stock</h3>
     ${p.batches.length ? `<table class="prep-table"><tr><th>Batch</th><th class="num">Left</th><th>Best before</th></tr>${p.batches.map(b => `<tr data-mfg-batch2="${escapeHtml(b.batchNo)}" style="cursor:pointer;"><td>${escapeHtml(b.batchNo)}</td><td class="num">${mfgQty_(b.remaining)}</td><td>${escapeHtml(mfgDate_(b.bestBefore))}</td></tr>`).join('')}</table>` : '<p class="prep-meta">None.</p>'}
-    <h3 style="margin:14px 0 4px;font-size:15px;">Open orders not picked yet</h3>
+    <h3 style="margin:14px 0 4px;font-size:15px;">Orders waiting to be packed</h3>
     ${p.neededOrders.length ? `<table class="prep-table"><tr><th>Invoice</th><th>Customer</th><th>Deliver</th><th class="num">Qty</th></tr>${p.neededOrders.map(o => `<tr><td>${escapeHtml(o.sageRef)}</td><td>${escapeHtml(o.customerName || '')}</td><td>${escapeHtml(mfgDate_(o.deliveryDate))}</td><td class="num">${mfgQty_(o.qty)}</td></tr>`).join('')}</table>` : '<p class="prep-meta">None.</p>'}
     ${mfgCanManage_() ? `<h3 style="margin:14px 0 4px;font-size:15px;">Settings</h3>
       <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;">
         <label class="prep-meta">Override minimum (empty = automatic ${mfgQty_(p.autoMin)})<br><input type="number" min="0" step="any" id="mfg-min" value="${p.minOverride === null || p.minOverride === undefined ? '' : p.minOverride}" placeholder="${mfgQty_(p.autoMin)}" style="width:120px;padding:8px;border:2px solid var(--line);border-radius:8px;"></label>
+        <label class="prep-meta">Run size (made per run; empty = any amount)<br><input type="number" min="1" step="any" id="mfg-run" value="${p.runSize || ''}" style="width:120px;padding:8px;border:2px solid var(--line);border-radius:8px;"></label>
         <label class="prep-meta">Shelf life (days)<br><input type="number" min="1" step="1" id="mfg-shelf" value="${p.shelfLifeDays === null ? '' : p.shelfLifeDays}" placeholder="365" style="width:120px;padding:8px;border:2px solid var(--line);border-radius:8px;"></label>
         <button class="btn-primary" id="mfg-save-product">Save</button>
       </div>
-      <label class="prep-meta" style="display:block;margin-top:10px;"><input type="checkbox" id="mfg-stock-item" checked> This is a stock item (untick for delivery charges, services etc. - it then leaves this list and is never picked)</label>` : ''}
+      <label class="prep-meta" style="display:block;margin-top:10px;"><input type="checkbox" id="mfg-stock-item" checked> This is a stock item (untick for delivery charges, services etc. - it then leaves this list and is never taken off stock)</label>` : ''}
     <button class="btn-secondary" id="mfg-log-this" style="margin-top:14px;width:100%;">+ Log a batch of ${escapeHtml(p.product)}</button>`);
   document.querySelectorAll('[data-mfg-batch2]').forEach(el => el.onclick = () => openMfgBatch_(el.getAttribute('data-mfg-batch2')));
-  document.getElementById('mfg-log-this').onclick = () => openMfgLogBatch_(p.product);
+  document.getElementById('mfg-log-this').onclick = () => openMfgLogBatch_(p.product, p.suggest || '');
   const save = document.getElementById('mfg-save-product');
   if (save) save.onclick = () => {
     save.disabled = true;
-    apiPost('blendidSaveProduct', { product: p.product, minStock: document.getElementById('mfg-min').value.trim(), shelfLifeDays: document.getElementById('mfg-shelf').value.trim(), active: document.getElementById('mfg-stock-item').checked }, { loadingLabel: 'Saving…' })
+    apiPost('blendidSaveProduct', { product: p.product, minStock: document.getElementById('mfg-min').value.trim(), shelfLifeDays: document.getElementById('mfg-shelf').value.trim(), runSize: document.getElementById('mfg-run').value.trim(), active: document.getElementById('mfg-stock-item').checked }, { loadingLabel: 'Saving…' })
       .then(d => { mfgData = d; renderMfg_(); mfgCloseModal_(); }).catch(err => { alert(err.message); save.disabled = false; });
   };
 }
-function openMfgLogBatch_(product) {
+function openMfgLogBatch_(product, qty) {
   const names = (mfgData && mfgData.products || []).map(p => p.product);
   mfgModal_('Log a batch', 'A batch that has been made and is in the freezer. It gets a batch number and goes into stock.',
     `<datalist id="mfg-product-list">${names.map(n => `<option value="${escapeHtml(n)}">`).join('')}</datalist>
     <div class="field"><label>Product (as on the Sage invoice)</label><input type="text" id="mfg-new-product" list="mfg-product-list" value="${escapeHtml(product || '')}" placeholder="e.g. Tropic Glo 350ml"></div>
-    <div class="field"><label>How many were made</label><input type="number" id="mfg-new-qty" min="1" step="any" inputmode="decimal"></div>
+    <div class="field"><label>How many were made</label><input type="number" id="mfg-new-qty" min="1" step="any" inputmode="decimal" value="${qty ? escapeHtml(String(qty)) : ''}"></div>
     <div class="field"><label>Best before (leave empty to use the product's shelf life)</label><input type="date" id="mfg-new-bb"></div>
     <div class="field"><label>Notes (optional)</label><input type="text" id="mfg-new-notes"></div>
     <button class="btn-primary" id="mfg-new-save" style="width:100%;">Save batch</button>`);
@@ -6305,6 +6356,7 @@ function wireStaticEvents() {
   document.getElementById('view-toggle-production').onclick = () => setBoardView('production');
   document.getElementById('view-toggle-mfg').onclick = () => setBoardView('mfg');
   document.getElementById('mfg-log-btn').onclick = () => openMfgLogBatch_('');
+  document.getElementById('mfg-count-btn').onclick = () => openMfgStockTake_();
   document.getElementById('mfg-refresh-btn').onclick = () => loadMfg_(true);
   document.getElementById('view-toggle-dashboard').onclick = () => setBoardView('dashboard');
   document.getElementById('view-toggle-history').onclick = () => setBoardView('history');
