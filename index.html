@@ -113,7 +113,7 @@
   .empty-note{color:var(--muted);text-align:center;font-size:15px;max-width:420px;}
 
   /* ---------- board ---------- */
-  #board-view{padding:18px;max-width:1400px;margin:0 auto;}
+  #board-view,#mfg-view{padding:18px;max-width:1400px;margin:0 auto;}
   .section-heading{
     font-size:15px;font-weight:700;color:var(--muted);text-transform:uppercase;
     letter-spacing:.6px;margin:26px 0 12px;display:flex;align-items:center;gap:10px;
@@ -728,6 +728,7 @@
     <div class="view-toggle">
       <button class="view-toggle-btn" data-view="packing" id="view-toggle-packing">Packing</button>
       <button class="view-toggle-btn" data-view="production" id="view-toggle-production">Production</button>
+      <button class="view-toggle-btn hidden" data-view="mfg" id="view-toggle-mfg">Manufacturing</button>
       <button class="view-toggle-btn hidden" data-view="dashboard" id="view-toggle-dashboard">Dashboard</button>
       <button class="view-toggle-btn hidden" data-view="history" id="view-toggle-history">Data History</button>
     </div>
@@ -773,6 +774,20 @@
 </div>
 
 <!-- ============ PRODUCTION BOARD ============ -->
+<!-- ============ BLENDID MANUFACTURING (27 Nov 2026) ============ -->
+<div id="mfg-view" class="hidden">
+  <div class="section-heading">Stock &amp; what to make
+    <span style="margin-left:auto;display:flex;gap:8px;">
+      <button class="btn-primary" id="mfg-log-btn" style="text-transform:none;letter-spacing:normal;">+ Log a batch</button>
+      <button class="btn-secondary" id="mfg-refresh-btn" style="text-transform:none;letter-spacing:normal;">↻ Refresh</button>
+    </span>
+  </div>
+  <div class="prep-stats" id="mfg-stats"></div>
+  <div id="mfg-planner"></div>
+  <div class="section-heading" style="margin-top:22px;">Recent batches</div>
+  <div id="mfg-batches"></div>
+</div>
+
 <div id="production-view" class="hidden">
   <div class="rev-bar hidden" id="prod-rev-bar"></div>
   <div class="section-heading fold-head" data-fold="prodtally"><span class="fold-caret">▾</span> Prep totals <span class="count" id="tally-count">0</span>
@@ -1412,7 +1427,7 @@ function businessName_() { return isBlendid_() ? 'Blendid' : ((boardData && boar
 let printedDate = todayDateStr(); // date shown in the "Printed" section - defaults to today
 let printedHistoryOrders = []; // always fetched via getOrdersForDate (today included - see refreshTodayHistories) - the live board payload no longer carries done orders at all
 let printedPackerFilter = ''; // '' = all packers; otherwise only show this packer's printed orders
-let boardView = ['packing', 'production', 'dashboard', 'history'].includes(localStorage.getItem('df_board_view')) ? localStorage.getItem('df_board_view') : 'packing';
+let boardView = ['packing', 'production', 'mfg', 'dashboard', 'history'].includes(localStorage.getItem('df_board_view')) ? localStorage.getItem('df_board_view') : 'packing';
 let prodCompletedDate = todayDateStr(); // date shown in Production's "Completed" section
 let prodCompletedHistoryOrders = []; // always fetched via getOrdersForDate (today included - see refreshTodayHistories)
 let dashSelectedStat = null; // key of the currently-selected Dashboard stat tile, or null if none picked
@@ -1922,7 +1937,9 @@ function applyRoleUI() {
   // Blendid: packing only for now (no Production, prep, rev counter or Sunday split).
   document.body.classList.toggle('biz-blendid', isBlendid_());
   document.getElementById('view-toggle-production').classList.toggle('hidden', isBlendid_());
-  if (isBlendid_() && boardView === 'production') setBoardView('packing');
+  document.getElementById('view-toggle-mfg').classList.toggle('hidden', !isBlendid_());
+  if (isBlendid_() && boardView === 'production') setBoardView('mfg');
+  if (!isBlendid_() && boardView === 'mfg') setBoardView('production');
   const sw = document.getElementById('biz-switch-btn');
   sw.classList.toggle('hidden', !(userRole === 'Admin' && canSwitchBusiness));
   sw.textContent = '⇄ ' + (isBlendid_() ? 'Daily Fruit' : 'Blendid');
@@ -1933,20 +1950,23 @@ function applyRoleUI() {
 function applyBoardView() {
   document.getElementById('board-view').classList.toggle('hidden', boardView !== 'packing');
   document.getElementById('production-view').classList.toggle('hidden', boardView !== 'production');
+  document.getElementById('mfg-view').classList.toggle('hidden', boardView !== 'mfg');
+  document.getElementById('view-toggle-mfg').classList.toggle('active', boardView === 'mfg');
   document.getElementById('dashboard-view').classList.toggle('hidden', boardView !== 'dashboard');
   document.getElementById('history-view').classList.toggle('hidden', boardView !== 'history');
   document.getElementById('view-toggle-packing').classList.toggle('active', boardView === 'packing');
   document.getElementById('view-toggle-production').classList.toggle('active', boardView === 'production');
   document.getElementById('view-toggle-dashboard').classList.toggle('active', boardView === 'dashboard');
   document.getElementById('view-toggle-history').classList.toggle('active', boardView === 'history');
-  document.getElementById('quick-bar').classList.toggle('hidden', boardView === 'dashboard' || boardView === 'history');
+  document.getElementById('quick-bar').classList.toggle('hidden', boardView === 'dashboard' || boardView === 'history' || boardView === 'mfg');
   document.getElementById('quick-pills-packing').classList.toggle('hidden', boardView !== 'packing');
   document.getElementById('quick-pills-production').classList.toggle('hidden', boardView !== 'production');
   const companyName = businessName_();
-  const viewLabel = boardView === 'production' ? ' — Production' : boardView === 'dashboard' ? ' — Dashboard' : boardView === 'history' ? ' — Data History' : ' — Packing';
+  const viewLabel = boardView === 'mfg' ? ' — Manufacturing' : boardView === 'production' ? ' — Production' : boardView === 'dashboard' ? ' — Dashboard' : boardView === 'history' ? ' — Data History' : ' — Packing';
   document.getElementById('company-title').textContent = companyName + viewLabel;
   if (boardView === 'dashboard') renderDashboard();
   if (boardView === 'history') renderHistoryView();
+  if (boardView === 'mfg') loadMfg_(false);
   measureStickyOffset();
 }
 
@@ -2372,8 +2392,9 @@ function renderBoard() {
       ${blendidStampsHtml_(o)}
       <div class="card-actions">
         <button class="btn-secondary" data-reprint="${o.orderId}">🖨 Reprint</button>
+        <button class="${o.pickedAt ? 'btn-secondary' : 'btn-primary'}" data-blendid-pick="${o.orderId}">📦 ${o.pickedAt ? 'Re-pick' : 'Pick'}</button>
         <button class="btn-secondary" data-print-packing-labels="${o.orderId}">🏷 Labels</button>
-        <button class="btn-primary" data-blendid-complete="${o.orderId}">✓ Complete</button>
+        <button class="${o.pickedAt ? 'btn-primary' : 'btn-secondary'}" data-blendid-complete="${o.orderId}">✓ Complete</button>
       </div>
     </div>`).join('');
 
@@ -2460,8 +2481,160 @@ function renderBoard() {
 // slip, the logged-in name for labels and Complete) - the same columns Daily Fruit records.
 function blendidStampsHtml_(o) {
   const line = (icon, what, at, by) => `<div class="order-arrived" style="margin-top:3px;">${icon} ${what} ${at ? fmtTime(at) + (by ? ' · ' + escapeHtml(by) : '') : '<i>not yet</i>'}</div>`;
-  return `<div style="margin:8px 0 4px;">${line('🖨', 'Slip', o.printedAt, o.assignedTo)}${line('🏷', 'Labels', o.packingLabelsPrintedAt, o.packingLabelsPrintedBy)}${line('✓', 'Completed', o.productionCompletedAt, o.productionCompletedBy)}</div>`;
+  return `<div style="margin:8px 0 4px;">${line('🖨', 'Slip', o.printedAt, o.assignedTo)}${line('📦', 'Picked', o.pickedAt, o.pickedBy)}${line('🏷', 'Labels', o.packingLabelsPrintedAt, o.packingLabelsPrintedBy)}${line('✓', 'Completed', o.productionCompletedAt, o.productionCompletedBy)}</div>`;
 }
+/* ===================== BLENDID MANUFACTURING + PICKING (27 Nov 2026) ===================== */
+let mfgData = null, mfgFilter = '', mfgLoading = false;
+const mfgCanManage_ = () => userRole === 'Production Manager' || userRole === 'Admin';
+// Best-before dates are often a year away - always with the year (fmtDateLong has none).
+const mfgDate_ = iso => { if (!iso) return ''; const d = new Date(String(iso).slice(0, 10) + 'T12:00:00'); return isNaN(d) ? String(iso) : d.toLocaleDateString('en-ZA', { day: 'numeric', month: 'short', year: 'numeric' }); };
+const mfgQty_ = n => (Math.round(Number(n || 0) * 100) / 100).toLocaleString();
+function mfgModal_(title, sub, html) {
+  document.getElementById('prep-info-title').textContent = title;
+  document.getElementById('prep-info-sub').textContent = sub || '';
+  document.getElementById('prep-info-body').innerHTML = html;
+  document.getElementById('prep-info-modal').classList.remove('hidden');
+}
+function mfgCloseModal_() { document.getElementById('prep-info-modal').classList.add('hidden'); }
+function loadMfg_(manual) {
+  if (!isBlendid_() || mfgLoading) return;
+  mfgLoading = true;
+  if (!mfgData) document.getElementById('mfg-planner').innerHTML = '<p class="prep-meta">Loading stock…</p>';
+  apiGet('getBlendidManufacturing', {}, manual || !mfgData ? { loadingLabel: 'Loading stock…', timeoutMs: 60000 } : { silent: true, timeoutMs: 60000 })
+    .then(d => { mfgData = d; renderMfg_(); })
+    .catch(err => { document.getElementById('mfg-planner').innerHTML = '<p class="prep-meta">Could not load stock: ' + escapeHtml(err.message) + '</p>'; })
+    .finally(() => { mfgLoading = false; });
+}
+function renderMfg_() {
+  if (!mfgData) return;
+  const list = mfgData.products || [];
+  const toMake = list.filter(p => p.suggest > 0), short = list.filter(p => p.short), inStock = list.filter(p => p.inStock > 0);
+  const tile = (key, value, label, sub, cls) => `<div class="stat-card ${cls || ''} ${mfgFilter === key ? 'selected' : ''}" data-mfg-filter="${key}"><div class="stat-value">${value}</div><div class="stat-label">${label}</div><div class="stat-sub">${sub}</div></div>`;
+  document.getElementById('mfg-stats').innerHTML =
+    tile('make', toMake.length, 'Products to make', 'Below minimum or needed for orders. Tap to list them.', toMake.length ? 'warn' : '') +
+    tile('short', short.length, 'Short for orders', 'Open orders need more than is in stock. Tap to list them.', short.length ? 'crit' : '') +
+    tile('pick', mfgData.unpicked, 'Orders to pick', 'Open orders not picked yet. Tap to go to them.', '') +
+    tile('stock', inStock.length, 'Products in stock', 'Tap to list what is in stock.', '');
+  const shown = mfgFilter === 'make' ? toMake : mfgFilter === 'short' ? short : mfgFilter === 'stock' ? inStock : list;
+  document.getElementById('mfg-planner').innerHTML = !shown.length ? '<p class="prep-meta">Nothing here yet - log the first batch with "+ Log a batch".</p>' :
+    `<div style="overflow-x:auto;"><table class="prep-table"><tr><th>Product</th><th class="num">In stock</th><th class="num">Needed (open orders)</th><th class="num">Minimum</th><th class="num">Make</th></tr>
+    ${shown.map(p => `<tr data-mfg-product="${escapeHtml(p.key)}" style="cursor:pointer;">
+      <td><strong>${escapeHtml(p.product)}</strong>${p.batches.length ? `<br><span class="prep-meta">${p.batches.length} batch${p.batches.length === 1 ? '' : 'es'} · next best-before ${escapeHtml(mfgDate_(p.batches[0].bestBefore))}</span>` : ''}</td>
+      <td class="num">${mfgQty_(p.inStock)}</td>
+      <td class="num" ${p.short ? 'style="color:var(--crit);font-weight:800;"' : ''}>${mfgQty_(p.needed)}</td>
+      <td class="num">${p.minStock === null ? '<span class="prep-meta">not set</span>' : mfgQty_(p.minStock)}</td>
+      <td class="num" style="font-weight:800;${p.suggest > 0 ? 'color:var(--crit);' : ''}">${p.suggest > 0 ? mfgQty_(p.suggest) : '-'}</td></tr>`).join('')}
+    </table></div><p class="prep-meta">Make = needed for open orders + minimum − in stock. Tap a product for its batches and orders${mfgCanManage_() ? ' and to set its minimum and shelf life' : ''}.</p>`;
+  const rb = mfgData.recentBatches || [];
+  document.getElementById('mfg-batches').innerHTML = !rb.length ? '<p class="prep-meta">No batches logged yet.</p>' :
+    `<div style="overflow-x:auto;"><table class="prep-table"><tr><th>Batch</th><th>Product</th><th class="num">Made</th><th class="num">Left</th><th>Best before</th><th>Made</th></tr>
+    ${rb.map(b => `<tr data-mfg-batch="${escapeHtml(b.batchNo)}" style="cursor:pointer;"><td><strong>${escapeHtml(b.batchNo)}</strong></td><td>${escapeHtml(b.product)}</td><td class="num">${mfgQty_(b.qty)}</td><td class="num">${mfgQty_(b.remaining)}</td><td>${escapeHtml(mfgDate_(b.bestBefore))}</td><td>${b.madeAt ? fmtTime(b.madeAt) : ''}${b.madeBy ? ' · ' + escapeHtml(b.madeBy) : ''}</td></tr>`).join('')}
+    </table></div><p class="prep-meta">Tap a batch to see which customers it went to.</p>`;
+  document.querySelectorAll('[data-mfg-filter]').forEach(el => el.onclick = () => {
+    const k = el.getAttribute('data-mfg-filter');
+    if (k === 'pick') { setBoardView('packing'); setTimeout(() => { const h = document.getElementById('tocomplete-heading'); if (h) h.scrollIntoView({ behavior: 'smooth' }); }, 100); return; }
+    mfgFilter = mfgFilter === k ? '' : k; renderMfg_();
+  });
+  document.querySelectorAll('[data-mfg-product]').forEach(el => el.onclick = () => openMfgProduct_(el.getAttribute('data-mfg-product')));
+  document.querySelectorAll('[data-mfg-batch]').forEach(el => el.onclick = () => openMfgBatch_(el.getAttribute('data-mfg-batch')));
+}
+function openMfgProduct_(key) {
+  const p = (mfgData.products || []).find(x => x.key === key);
+  if (!p) return;
+  mfgModal_(p.product, `In stock ${mfgQty_(p.inStock)} · needed ${mfgQty_(p.needed)} · make ${p.suggest > 0 ? mfgQty_(p.suggest) : 'nothing'}`,
+    `<h3 style="margin:8px 0 4px;font-size:15px;">Batches in stock</h3>
+    ${p.batches.length ? `<table class="prep-table"><tr><th>Batch</th><th class="num">Left</th><th>Best before</th></tr>${p.batches.map(b => `<tr data-mfg-batch2="${escapeHtml(b.batchNo)}" style="cursor:pointer;"><td>${escapeHtml(b.batchNo)}</td><td class="num">${mfgQty_(b.remaining)}</td><td>${escapeHtml(mfgDate_(b.bestBefore))}</td></tr>`).join('')}</table>` : '<p class="prep-meta">None.</p>'}
+    <h3 style="margin:14px 0 4px;font-size:15px;">Open orders not picked yet</h3>
+    ${p.neededOrders.length ? `<table class="prep-table"><tr><th>Invoice</th><th>Customer</th><th>Deliver</th><th class="num">Qty</th></tr>${p.neededOrders.map(o => `<tr><td>${escapeHtml(o.sageRef)}</td><td>${escapeHtml(o.customerName || '')}</td><td>${escapeHtml(mfgDate_(o.deliveryDate))}</td><td class="num">${mfgQty_(o.qty)}</td></tr>`).join('')}</table>` : '<p class="prep-meta">None.</p>'}
+    ${mfgCanManage_() ? `<h3 style="margin:14px 0 4px;font-size:15px;">Settings</h3>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;">
+        <label class="prep-meta">Minimum stock<br><input type="number" min="0" step="any" id="mfg-min" value="${p.minStock === null ? '' : p.minStock}" style="width:120px;padding:8px;border:2px solid var(--line);border-radius:8px;"></label>
+        <label class="prep-meta">Shelf life (days)<br><input type="number" min="1" step="1" id="mfg-shelf" value="${p.shelfLifeDays === null ? '' : p.shelfLifeDays}" placeholder="365" style="width:120px;padding:8px;border:2px solid var(--line);border-radius:8px;"></label>
+        <button class="btn-primary" id="mfg-save-product">Save</button>
+      </div>` : ''}
+    <button class="btn-secondary" id="mfg-log-this" style="margin-top:14px;width:100%;">+ Log a batch of ${escapeHtml(p.product)}</button>`);
+  document.querySelectorAll('[data-mfg-batch2]').forEach(el => el.onclick = () => openMfgBatch_(el.getAttribute('data-mfg-batch2')));
+  document.getElementById('mfg-log-this').onclick = () => openMfgLogBatch_(p.product);
+  const save = document.getElementById('mfg-save-product');
+  if (save) save.onclick = () => {
+    save.disabled = true;
+    apiPost('blendidSaveProduct', { product: p.product, minStock: document.getElementById('mfg-min').value.trim(), shelfLifeDays: document.getElementById('mfg-shelf').value.trim() }, { loadingLabel: 'Saving…' })
+      .then(d => { mfgData = d; renderMfg_(); mfgCloseModal_(); }).catch(err => { alert(err.message); save.disabled = false; });
+  };
+}
+function openMfgLogBatch_(product) {
+  const names = (mfgData && mfgData.products || []).map(p => p.product);
+  mfgModal_('Log a batch', 'A batch that has been made and is in the freezer. It gets a batch number and goes into stock.',
+    `<datalist id="mfg-product-list">${names.map(n => `<option value="${escapeHtml(n)}">`).join('')}</datalist>
+    <div class="field"><label>Product (as on the Sage invoice)</label><input type="text" id="mfg-new-product" list="mfg-product-list" value="${escapeHtml(product || '')}" placeholder="e.g. Tropic Glo 350ml"></div>
+    <div class="field"><label>How many were made</label><input type="number" id="mfg-new-qty" min="1" step="any" inputmode="decimal"></div>
+    <div class="field"><label>Best before (leave empty to use the product's shelf life)</label><input type="date" id="mfg-new-bb"></div>
+    <div class="field"><label>Notes (optional)</label><input type="text" id="mfg-new-notes"></div>
+    <button class="btn-primary" id="mfg-new-save" style="width:100%;">Save batch</button>`);
+  document.getElementById('mfg-new-save').onclick = () => {
+    const btn = document.getElementById('mfg-new-save');
+    btn.disabled = true;
+    apiPost('blendidLogBatch', { product: document.getElementById('mfg-new-product').value.trim(), qty: document.getElementById('mfg-new-qty').value.trim(),
+      bestBefore: document.getElementById('mfg-new-bb').value, notes: document.getElementById('mfg-new-notes').value.trim() }, { loadingLabel: 'Saving batch…' })
+      .then(b => { mfgCloseModal_(); alert('Saved: batch ' + b.batchNo + ' - ' + mfgQty_(b.qty) + ' x ' + b.product + ', best before ' + mfgDate_(b.bestBefore) + '. Write this batch number on the stock.'); loadMfg_(true); })
+      .catch(err => { alert(err.message); btn.disabled = false; });
+  };
+}
+function openMfgBatch_(batchNo) {
+  apiGet('getBlendidBatch', { batchNo: batchNo }, { loadingLabel: 'Loading batch…' }).then(d => {
+    const b = d.batch;
+    mfgModal_('Batch ' + b.batchNo, `${b.product} · made ${mfgQty_(b.qty)}${b.madeAt ? ' on ' + fmtTime(b.madeAt) : ''}${b.madeBy ? ' by ' + b.madeBy : ''} · best before ${mfgDate_(b.bestBefore)} · ${mfgQty_(b.remaining)} left`,
+      `<h3 style="margin:8px 0 4px;font-size:15px;">Went to</h3>
+      ${d.picks.length ? `<table class="prep-table"><tr><th>Customer</th><th>Invoice</th><th class="num">Qty</th><th>Picked</th></tr>${d.picks.map(p => `<tr><td>${escapeHtml(p.customerName)}</td><td>${escapeHtml(p.sageRef)}</td><td class="num">${mfgQty_(p.qty)}</td><td>${p.pickedAt ? fmtTime(p.pickedAt) : ''}${p.pickedBy ? ' · ' + escapeHtml(p.pickedBy) : ''}</td></tr>`).join('')}</table>` : '<p class="prep-meta">Not picked for any order yet.</p>'}
+      ${d.adjustments.length ? `<h3 style="margin:14px 0 4px;font-size:15px;">Stock corrections</h3><table class="prep-table"><tr><th>When</th><th>By</th><th class="num">Change</th><th>Why</th></tr>${d.adjustments.map(a => `<tr><td>${a.at ? fmtTime(a.at) : ''}</td><td>${escapeHtml(a.by)}</td><td class="num">${a.qty > 0 ? '+' : ''}${mfgQty_(a.qty)}</td><td>${escapeHtml(a.reason)}</td></tr>`).join('')}</table>` : ''}
+      ${b.notes ? `<p class="prep-meta">Notes: ${escapeHtml(b.notes)}</p>` : ''}
+      ${mfgCanManage_() ? `<h3 style="margin:14px 0 4px;font-size:15px;">Correct the stock (stock-take, damaged…)</h3>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;">
+          <label class="prep-meta">Change (e.g. -3 or 2)<br><input type="number" step="any" id="mfg-adj-qty" style="width:120px;padding:8px;border:2px solid var(--line);border-radius:8px;"></label>
+          <label class="prep-meta" style="flex:1;">Why<br><input type="text" id="mfg-adj-reason" placeholder="stock-take" style="width:100%;padding:8px;border:2px solid var(--line);border-radius:8px;"></label>
+          <button class="btn-primary" id="mfg-adj-save">Save</button>
+        </div>` : ''}`);
+    const save = document.getElementById('mfg-adj-save');
+    if (save) save.onclick = () => {
+      save.disabled = true;
+      apiPost('blendidAdjustStock', { batchNo: b.batchNo, qty: document.getElementById('mfg-adj-qty').value.trim(), reason: document.getElementById('mfg-adj-reason').value.trim() }, { loadingLabel: 'Saving…' })
+        .then(() => { mfgCloseModal_(); loadMfg_(true); }).catch(err => { alert(err.message); save.disabled = false; });
+    };
+  }).catch(err => alert(err.message));
+}
+// Pick window: per line, batches (first expiry first) with quantities pre-filled from the server's suggestion.
+function openBlendidPick_(order) {
+  apiGet('getBlendidPickPlan', { orderId: order.orderId }, { loadingLabel: 'Checking stock…' }).then(plan => {
+    const optHtml = (line, sel) => line.options.map(b => `<option value="${escapeHtml(b.batchNo)}" ${b.batchNo === sel ? 'selected' : ''}>${escapeHtml(b.batchNo)} · ${mfgQty_(b.available)} left · best before ${escapeHtml(mfgDate_(b.bestBefore))}</option>`).join('');
+    const rowHtml = (line, sel, qty) => `<div class="pick-row" style="display:flex;gap:8px;margin:4px 0;"><select class="pick-batch" style="flex:1;padding:8px;border:2px solid var(--line);border-radius:8px;">${optHtml(line, sel)}</select><input class="pick-qty" type="number" min="0" step="any" value="${qty}" style="width:90px;padding:8px;border:2px solid var(--line);border-radius:8px;"></div>`;
+    mfgModal_('Pick ' + plan.sageRef, (plan.customerName || '') + ' · the oldest best-before is filled in first',
+      plan.lines.map(l => `<div class="pick-line" data-line="${l.lineNo}" style="border-bottom:1px solid var(--line);padding:10px 0;">
+        <div><strong>${escapeHtml(l.product)}</strong> · need ${mfgQty_(l.qty)}</div>
+        ${l.options.length ? `<div class="pick-rows">${(l.suggested.length ? l.suggested : [{ batchNo: l.options[0].batchNo, qty: 0 }]).map(sg => rowHtml(l, sg.batchNo, sg.qty)).join('')}</div>
+          <button class="btn-secondary pick-add" style="padding:4px 10px;font-size:13px;">+ another batch</button>` : ''}
+        ${l.shortBy > 0 ? `<div style="color:var(--crit);font-weight:700;font-size:13px;margin-top:4px;">Not enough in stock: short ${mfgQty_(l.shortBy)}${l.options.length ? '' : ' (none in stock - log a batch on Manufacturing first)'}</div>` : ''}
+      </div>`).join('') + `<button class="btn-primary" id="pick-save" style="margin-top:12px;width:100%;">Save pick</button>`);
+    document.querySelectorAll('.pick-add').forEach(btn => btn.onclick = () => {
+      const el = btn.closest('.pick-line'); const l = plan.lines.find(x => String(x.lineNo) === el.getAttribute('data-line'));
+      el.querySelector('.pick-rows').insertAdjacentHTML('beforeend', rowHtml(l, '', 0));
+    });
+    document.getElementById('pick-save').onclick = () => {
+      const picks = [];
+      document.querySelectorAll('.pick-line').forEach(el => el.querySelectorAll('.pick-row').forEach(r => {
+        const q = Number(r.querySelector('.pick-qty').value);
+        if (q > 0) picks.push({ lineNo: Number(el.getAttribute('data-line')), batchNo: r.querySelector('.pick-batch').value, qty: q });
+      }));
+      if (!picks.length) { alert('Nothing picked yet.'); return; }
+      const shortLines = plan.lines.filter(l => picks.filter(p => p.lineNo === l.lineNo).reduce((a, p) => a + p.qty, 0) < l.qty);
+      if (shortLines.length && !confirm(shortLines.length + ' line(s) are picked short of the order quantity. Save anyway?')) return;
+      const btn = document.getElementById('pick-save'); btn.disabled = true;
+      apiPost('blendidPickOrder', { orderId: order.orderId, picks: picks }, { loadingLabel: 'Saving pick…' })
+        .then(() => { mfgCloseModal_(); mfgData = null; loadBoard(false); })
+        .catch(err => { alert(err.message); btn.disabled = false; });
+    };
+  }).catch(err => alert(err.message));
+}
+
 function markBlendidComplete_(orderId) {
   apiPost('markProductionComplete', { orderId: orderId, kitchenManagerName: userName }, { loadingLabel: 'Completing…' }).then(() => {
     loadBoard(false);
@@ -2470,6 +2643,9 @@ function markBlendidComplete_(orderId) {
 }
 
 function attachCardHandlers() {
+  document.querySelectorAll('#board-view [data-blendid-pick]').forEach(btn => {
+    btn.onclick = (e) => { e.stopPropagation(); const o = boardData.orders.find(x => x.orderId === btn.getAttribute('data-blendid-pick')); if (o) openBlendidPick_(o); };
+  });
   document.querySelectorAll('#board-view [data-blendid-complete]').forEach(btn => {
     btn.onclick = (e) => { e.stopPropagation(); btn.disabled = true; markBlendidComplete_(btn.getAttribute('data-blendid-complete')); };
   });
@@ -3157,19 +3333,29 @@ async function printProductionLabelsForOrder(order) {
 // Blendid labels (27 Nov 2026, interim until Shane's per-customer label designs): BLENDID wordmark, product + qty, customer,
 // invoice, batch no., packed date (delivery date, as for Daily Fruit), best before only when Settings BlendidShelfLifeDays
 // is set, "keep frozen". Same 58x43 mm labels, same markPackingLabelsPrinted time stamp afterwards.
-function printBlendidLabels_(order, packItems, batchNo) {
+function printBlendidLabels_(order, packItems) {
+  // 27 Nov 2026 (manufacturing): one label per picked batch of each line, with that batch's number and best-before.
+  let picks = order.picks || [];
+  if (!picks.length) {
+    const required = !(boardData && boardData.settings && boardData.settings.blendidPickRequired === false);
+    if (required) { alert('Pick this order first (📦 Pick) - the labels carry the batch numbers.'); return; }
+    // Switch-over (Settings BlendidPickRequired = FALSE): labels without a batch until opening stock is logged.
+    picks = packItems.map(it => ({ lineNo: it.lineNo, qty: it.qty, batchNo: '-', bestBefore: '' }));
+  }
   const packedStr = order.deliveryDate || dateOnlyStr(new Date());
-  const days = Number(boardData && boardData.settings && boardData.settings.blendidShelfLifeDays) || 0;
-  document.getElementById('print-labels-body').innerHTML = packItems.map(it => `
+  const byLine = {};
+  packItems.forEach(it => { byLine[Number(it.lineNo)] = it; });
+  const labelRows = picks.filter(p => byLine[Number(p.lineNo)]).map(p => Object.assign({}, byLine[Number(p.lineNo)], { qty: p.qty, batchNo: p.batchNo, bestBefore: p.bestBefore }));
+  document.getElementById('print-labels-body').innerHTML = labelRows.map(it => `
         <div class="label-page">
           <div class="label-logo-row" style="font-weight:700;letter-spacing:3px;font-size:13px;">BLENDID</div>
           <div class="label-product">${escapeHtml(formatQty(it.qty))}${it.unit ? escapeHtml(' ' + it.unit) : ''} ${escapeHtml(it.description)}</div>
           <div class="label-details">
             <div class="label-row"><span>Customer</span><b>${escapeHtml(order.customerName || '')}</b></div>
             <div class="label-row"><span>Invoice</span><b>${escapeHtml(order.sageRef)}</b></div>
-            <div class="label-row"><span>Batch No.</span><b>${escapeHtml(batchNo)}</b></div>
+            <div class="label-row"><span>Batch No.</span><b>${escapeHtml(it.batchNo)}</b></div>
             <div class="label-row"><span>Packed</span><b>${escapeHtml(fmtDateLong(packedStr))}</b></div>
-            ${days > 0 ? `<div class="label-row"><span>Best before</span><b>${escapeHtml(fmtDateLong(addDaysStr(packedStr, days)))}</b></div>` : ''}
+            ${it.bestBefore ? `<div class="label-row"><span>Best before</span><b>${escapeHtml(mfgDate_(it.bestBefore))}</b></div>` : ''}
           </div>
           <div class="label-notice">Keep frozen at -18 °C or below.</div>
         </div>`).join('');
@@ -3191,6 +3377,7 @@ async function printPackingLabelsForOrder(order) {
   const packItems = order.items.filter(it => it.department === 'Packing');
   if (!packItems.length) { alert('This order has no Packing items to label.'); return; }
   const blendidLabel = isBlendid_() || order.business === 'Blendid';
+  if (blendidLabel) { printBlendidLabels_(order, packItems); return; }
 
   let batchNo = '';
   try {
@@ -3201,7 +3388,6 @@ async function printPackingLabelsForOrder(order) {
     return;
   }
 
-  if (blendidLabel) { printBlendidLabels_(order, packItems, batchNo); return; }
   const shelfDays = shelfLifeDaysForOrder(order);
   // "Produced" shows the order's DELIVERY date, not the actual date/time the
   // label is printed (Shane's request) - falls back to today for an order
@@ -6086,6 +6272,9 @@ function wireStaticEvents() {
 
   document.getElementById('view-toggle-packing').onclick = () => setBoardView('packing');
   document.getElementById('view-toggle-production').onclick = () => setBoardView('production');
+  document.getElementById('view-toggle-mfg').onclick = () => setBoardView('mfg');
+  document.getElementById('mfg-log-btn').onclick = () => openMfgLogBatch_('');
+  document.getElementById('mfg-refresh-btn').onclick = () => loadMfg_(true);
   document.getElementById('view-toggle-dashboard').onclick = () => setBoardView('dashboard');
   document.getElementById('view-toggle-history').onclick = () => setBoardView('history');
 }
