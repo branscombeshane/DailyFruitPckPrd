@@ -659,7 +659,6 @@
   .lock-box p{color:var(--muted);font-size:14px;margin:0 0 20px;}
   /* Blendid's own address (ops.blendid.co.za): black + champagne, like blendid.co.za */
   .lock-brand-blendid{display:none;}
-  .lock-pw-link{display:none;} html.site-blendid .lock-pw-link{display:block;}
   html.site-blendid #lock-screen, html.site-blendid #shift-select-screen{background:#000;}
   html.site-blendid .lock-box{border-radius:4px;border-top:4px solid #c8b48f;}
   html.site-blendid #lock-screen .lock-badge, html.site-blendid #lock-screen .lock-default-title{display:none;}
@@ -724,26 +723,17 @@
     <div class="lock-badge">🍈</div>
     <div class="lock-brand-blendid"><div class="wordmark">BLENDID</div><div class="sub">Operations</div></div>
     <h1 class="lock-default-title">Daily Fruit — Packing &amp; Production</h1>
-    <p id="login-intro">Sign in with your name and PIN to continue.</p>
-    <div id="login-fields">
+    <p>Sign in with your name and PIN to continue.</p>
     <div class="field">
       <label>Name</label>
       <input type="text" id="login-name" placeholder="Your full name" autocomplete="off" autocapitalize="words">
     </div>
     <div class="field">
-      <label id="login-pin-label">PIN</label>
+      <label>PIN</label>
       <input type="password" id="login-pin" inputmode="numeric" placeholder="PIN" autocomplete="off">
-    </div>
-    </div>
-    <!-- 28 Nov 2026: Blendid logins choose a password (Blendid Manufacturing app, Auth.gs) -->
-    <div id="pw-set-box" class="hidden">
-      <div class="field"><label>New password</label><input type="password" id="pw-new" autocomplete="new-password" placeholder="At least 8 letters and numbers"></div>
-      <div class="field"><label>New password again</label><input type="password" id="pw-new2" autocomplete="new-password"></div>
-      <p class="prep-meta" style="margin:-4px 0 12px;text-align:left;">At least 8 characters, letters and at least one number, not your name. Only you know it - a manager can reset it.</p>
     </div>
     <div class="result-box error hidden" id="login-error"></div>
     <button class="btn-confirm" id="login-btn" style="width:100%;padding:15px;font-size:17px;">Sign in</button>
-    <p class="lock-pw-link" style="margin:14px 0 0;"><a href="#" id="pw-change-link">Change my password</a></p>
   </div>
 </div>
 
@@ -1859,7 +1849,6 @@ function logoutUser(message) {
   document.getElementById('dashboard-view').classList.add('hidden');
   document.getElementById('admin-overlay').classList.add('hidden');
   document.getElementById('shift-select-screen').classList.add('hidden');
-  if (typeof resetLoginBox_ === 'function') { resetLoginBox_(); pwChangeWanted = false; }
   document.getElementById('login-error').textContent = message || '';
   document.getElementById('login-error').classList.toggle('hidden', !message);
   document.getElementById('login-name').value = '';
@@ -1867,81 +1856,10 @@ function logoutUser(message) {
   document.getElementById('lock-screen').classList.remove('hidden');
   setTimeout(() => document.getElementById('login-name').focus(), 50);
 }
-// 28 Nov 2026 (Shane): Blendid logins sign in with a PASSWORD. The Blendid app (Auth.gs) checks it and hands back the login's
-// key, which then goes everywhere a PIN went (userPin). Daily Fruit / Admin logins: PIN exactly as before (on pckprd the
-// Blendid app is only asked when the Packing app says "Incorrect PIN.", i.e. a Blendid login typed a password there).
-let pwChangeWanted = false, pwSet = null;
-function showLoginError_(msg) {
-  document.getElementById('login-error').textContent = msg;
-  document.getElementById('login-error').classList.toggle('hidden', !msg);
-}
-function blendidAuthCall_(payload) {
-  return fetchJsonWithRetry_(APP_CONFIG.MFG_API_URL, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify(payload) });
-}
 function submitLogin() {
-  if (pwSet) { savePassword_(); return; }
   const name = document.getElementById('login-name').value.trim();
-  const secret = document.getElementById('login-pin').value;
-  if (!name || !secret) return;
-  showLoginError_('');
-  if (window.SITE_BLENDID) blendidSignIn_(name, secret, () => packingLogin_(name, secret));
-  else packingLogin_(name, secret, null, 0, err => err === 'Incorrect PIN.' ? blendidSignIn_(name, secret, () => showLoginError_(err)) : showLoginError_(err));
-}
-function blendidSignIn_(name, secret, notBlendid) {
-  const btn = document.getElementById('login-btn');
-  btn.disabled = true;
-  beginApiLoading_();
-  blendidAuthCall_({ action: 'blendidSignIn', userName: name, password: secret }).finally(endApiLoading_).then(res => {
-    btn.disabled = false;
-    if (!res.ok) { showLoginError_(res.error); return; }
-    if (res.data.notBlendid || !res.data.key) { pwChangeWanted = false; notBlendid(); return; }
-    if (res.data.mustSetPassword || pwChangeWanted) { showSetPassword_(res.data.name, res.data.key, !res.data.mustSetPassword); return; }
-    packingLogin_(res.data.name, res.data.key);
-  }).catch(() => { btn.disabled = false; showLoginError_('Could not reach the server — check the connection.'); });
-}
-function showSetPassword_(name, key, isChange) {
-  pwSet = { name: name, key: key };
-  pwChangeWanted = false;
-  document.getElementById('login-fields').classList.add('hidden');
-  document.getElementById('pw-set-box').classList.remove('hidden');
-  document.getElementById('login-intro').textContent = (isChange ? 'Choose your new password, ' : 'Welcome ' ) + name + (isChange ? '.' : ' - choose your own password. You sign in with it from now on (the PIN stops working).');
-  document.getElementById('login-btn').textContent = 'Save password and sign in';
-  showLoginError_('');
-  setTimeout(() => document.getElementById('pw-new').focus(), 50);
-}
-function resetLoginBox_() {
-  pwSet = null;
-  document.getElementById('login-fields').classList.remove('hidden');
-  document.getElementById('pw-set-box').classList.add('hidden');
-  document.getElementById('pw-new').value = ''; document.getElementById('pw-new2').value = '';
-  document.getElementById('login-btn').textContent = 'Sign in';
-  applyLoginWording_();
-}
-function savePassword_() {
-  const a = document.getElementById('pw-new').value, b = document.getElementById('pw-new2').value;
-  if (!a) return;
-  if (a !== b) { showLoginError_('The two passwords are not the same.'); return; }
-  const btn = document.getElementById('login-btn');
-  btn.disabled = true;
-  beginApiLoading_();
-  blendidAuthCall_({ action: 'blendidSetPassword', userName: pwSet.name, key: pwSet.key, newPassword: a }).finally(endApiLoading_).then(res => {
-    btn.disabled = false;
-    if (!res.ok) { showLoginError_(res.error); return; }
-    resetLoginBox_();
-    packingLogin_(res.data.name, res.data.key, null, Date.now());
-  }).catch(() => { btn.disabled = false; showLoginError_('Could not reach the server — check the connection.'); });
-}
-function applyLoginWording_() {
-  if (!window.SITE_BLENDID) return;
-  const pin = document.getElementById('login-pin');
-  pin.removeAttribute('inputmode');
-  pin.setAttribute('placeholder', 'Password');
-  document.getElementById('login-pin-label').textContent = 'Password';
-  document.getElementById('login-intro').textContent = 'Sign in with your name and password. First time: use the PIN your manager gave you, then choose a password.';
-}
-// keyChangedAt: the Packing app caches logins for a minute, so a key that was just changed can be refused there for that
-// long - wait and try again instead of showing "Incorrect PIN.".
-function packingLogin_(name, pin, _unused, keyChangedAt, onFail) {
+  const pin = document.getElementById('login-pin').value;
+  if (!name || !pin) return;
   const btn = document.getElementById('login-btn');
   btn.disabled = true;
   beginApiLoading_();
@@ -1960,16 +1878,10 @@ function packingLogin_(name, pin, _unused, keyChangedAt, onFail) {
   }).finally(endApiLoading_).then(res => {
     btn.disabled = false;
     if (!res.ok) {
-      if (res.error === 'Incorrect PIN.' && keyChangedAt && Date.now() - keyChangedAt < 90000) {
-        showLoginError_('Password saved - finishing sign-in (can take up to a minute)…');
-        btn.disabled = true;
-        setTimeout(() => packingLogin_(name, pin, null, keyChangedAt, onFail), 10000);
-        return;
-      }
-      if (onFail) onFail(res.error); else showLoginError_(res.error);
+      document.getElementById('login-error').textContent = res.error;
+      document.getElementById('login-error').classList.remove('hidden');
       return;
     }
-    showLoginError_('');
     userName = res.data.name;
     userPin = pin;
     userRole = res.data.role;
@@ -2078,14 +1990,6 @@ function init() {
 
 function wireLoginScreenEvents() {
   document.getElementById('login-btn').onclick = submitLogin;
-  applyLoginWording_();
-  document.getElementById('pw-new2').addEventListener('keyup', e => { if (e.key === 'Enter') submitLogin(); });
-  document.getElementById('pw-change-link').onclick = (e) => {
-    e.preventDefault();
-    resetLoginBox_();
-    pwChangeWanted = true;
-    document.getElementById('login-intro').textContent = 'Change your password: type your name and CURRENT password, tap Sign in, then choose the new one.';
-  };
   document.getElementById('login-name').addEventListener('keyup', e => { if (e.key === 'Enter') document.getElementById('login-pin').focus(); });
   document.getElementById('login-pin').addEventListener('keyup', e => { if (e.key === 'Enter') submitLogin(); });
 }
