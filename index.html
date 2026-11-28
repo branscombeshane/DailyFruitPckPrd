@@ -816,6 +816,14 @@
   <div id="mfg-schedule"></div>
   <div class="section-heading" style="margin-top:22px;">Stock per product</div>
   <div id="mfg-planner"></div>
+  <div class="section-heading" style="margin-top:22px;">Bulk fruit
+    <span style="margin-left:auto;display:flex;gap:8px;flex-wrap:wrap;" id="mfg-bulk-btns">
+      <button class="btn-primary" id="mfg-receive-btn" style="text-transform:none;letter-spacing:normal;">+ Receive bulk</button>
+      <button class="btn-secondary" id="mfg-bulkcount-btn" style="text-transform:none;letter-spacing:normal;">📋 Freezer room count</button>
+      <button class="btn-secondary" id="mfg-usage-btn" style="text-transform:none;letter-spacing:normal;">Usage per year</button>
+    </span>
+  </div>
+  <div id="mfg-bulk"></div>
   <div class="section-heading" style="margin-top:22px;">Recent batches</div>
   <div id="mfg-batches"></div>
 </div>
@@ -1663,7 +1671,8 @@ function rethrowFriendly_(err) {
 // the account any more and can't be looked up server-side from just
 // userName/userPin. Harmless to send on every other action too - they
 // simply ignore it.
-const MFG_ACTIONS = new Set(['getBlendidManufacturing', 'getBlendidBatch', 'blendidLogBatch', 'blendidSaveProduct', 'blendidAdjustStock', 'blendidStockTake', 'blendidSaveRate']);
+const MFG_ACTIONS = new Set(['getBlendidManufacturing', 'getBlendidBatch', 'blendidLogBatch', 'blendidSaveProduct', 'blendidAdjustStock', 'blendidStockTake', 'blendidSaveRate',
+  'getBlendidLot', 'blendidBulkReceive', 'blendidBulkMove', 'blendidBulkAdjust', 'blendidBulkCount', 'blendidBulkSaveLoss']);
 const apiUrlFor_ = action => MFG_ACTIONS.has(action) && APP_CONFIG.MFG_API_URL ? APP_CONFIG.MFG_API_URL : APP_CONFIG.API_URL;
 function apiGet(action, params, opts) {
   const silent = !!(opts && opts.silent);
@@ -2613,6 +2622,164 @@ function renderMfg_() {
   };
   document.querySelectorAll('[data-mfg-batch]').forEach(el => el.onclick = () => openMfgBatch_(el.getAttribute('data-mfg-batch')));
   renderMfgSchedule_();
+  renderMfgBulk_();
+}
+// 28 Nov 2026: BULK FRUIT (server: Bulk.gs). Farm lots -> off-site cold store (pallets) -> freezer room (kg) -> packed into
+// the Frozen products (oldest lot first, + packing loss %). Receive / move / counts = managers.
+const mfgKg_ = n => mfgQty_(Math.round(Number(n || 0) * 10) / 10) + ' kg';
+function renderMfgBulk_() {
+  const el = document.getElementById('mfg-bulk');
+  const B = mfgData.bulk || { fruits: [], lots: [] };
+  const can = mfgCanManage_();
+  ['mfg-receive-btn', 'mfg-bulkcount-btn'].forEach(id => document.getElementById(id).classList.toggle('hidden', !can));
+  if (B.error) { el.innerHTML = '<p class="prep-meta">Bulk fruit could not load: ' + escapeHtml(B.error) + '</p>'; return; }
+  const fr = B.fruits || [];
+  const statusTxt = f => f.status === 'buy' ? `<span style="color:var(--crit);font-weight:800;">Not enough bulk - short ${mfgKg_(f.buyKg)}</span>`
+    : f.status === 'move' ? `<span style="color:var(--warn);font-weight:800;">Move ${mfgKg_(f.moveKg)} from the cold store</span>`
+    : f.status === 'low' ? `<span style="color:var(--warn);font-weight:800;">Under 4 weeks left</span>` : '';
+  let html = !B.started ? `<p class="prep-meta">No bulk received yet. ${can ? 'Tap <strong>+ Receive bulk</strong> for each lot in the cold store and the freezer room now (use the date it came in), then' : 'Once a manager has entered the bulk lots,'} every batch of a Frozen product takes its fruit from the freezer room, oldest lot first.</p>` : '';
+  if (fr.length) html += `<div style="overflow-x:auto;"><table class="prep-table"><tr><th>Fruit</th><th class="num">Cold store</th><th class="num">Freezer room</th><th class="num">Plan needs</th><th class="num">Weeks left</th><th></th></tr>
+    ${fr.map(f => `<tr data-mfg-fruit="${escapeHtml(f.key)}" style="cursor:pointer;">
+      <td><strong>${escapeHtml(f.fruit)}</strong>${f.lots ? `<br><span class="prep-meta">${f.lots} lot${f.lots === 1 ? '' : 's'}</span>` : ''}</td>
+      <td class="num">${f.coldPallets ? `${mfgQty_(f.coldPallets)} pallet${f.coldPallets === 1 ? '' : 's'}<br><span class="prep-meta">${mfgKg_(f.coldKg)}</span>` : '-'}</td>
+      <td class="num">${mfgKg_(f.freezerNet)}${f.shortKg ? `<br><span class="prep-meta" style="color:var(--crit);">${mfgKg_(f.shortKg)} packed with no bulk on record - count it</span>` : ''}</td>
+      <td class="num">${Math.max(f.planKg, f.weekKg) ? mfgKg_(Math.max(f.planKg, f.weekKg)) : '-'}</td>
+      <td class="num">${f.weeksLeft === null ? '<span class="prep-meta">no sales</span>' : mfgQty_(f.weeksLeft)}</td>
+      <td>${statusTxt(f)}</td></tr>`).join('')}</table></div>`;
+  const pd = B.pallets || {};
+  html += `<p class="prep-meta">Plan needs = the bigger of "make now" and this week's shifts, in kg of fruit incl. ${mfgQty_(B.lossPct)}% packing loss${can ? ' (<a href="#" id="mfg-loss-edit">change</a>)' : ''}. Weeks left = cold store + freezer room ÷ the sales pace. ${B.started ? `Cold store: <strong>${mfgQty_(pd.now || 0)} pallets</strong> now; ${mfgQty_(pd.thisMonth || 0)} pallet-days this month, ${mfgQty_(pd.lastMonth || 0)} last month (to check the cold store's bill).` : ''} Tap a fruit for its lots${can ? ' and to move pallets' : ''}.</p>`;
+  el.innerHTML = html;
+  el.querySelectorAll('[data-mfg-fruit]').forEach(r => r.onclick = () => openMfgFruit_(r.getAttribute('data-mfg-fruit')));
+  const le = document.getElementById('mfg-loss-edit');
+  if (le) le.onclick = (e) => {
+    e.preventDefault();
+    const v = prompt('Packing loss in % (fruit lost when repacking). Empty = 2.', String(B.lossPct));
+    if (v === null) return;
+    apiPost('blendidBulkSaveLoss', { lossPct: v.trim() }, { loadingLabel: 'Saving…' }).then(() => loadMfg_(true)).catch(err => alert(err.message));
+  };
+}
+function mfgKnownFruits_() {
+  const B = (mfgData && mfgData.bulk) || {};
+  const set = new Set();
+  (B.fruits || []).forEach(f => set.add(f.fruit));
+  (mfgData.products || []).forEach(p => { if (p.fruit) set.add(p.fruit); });
+  return [...set].sort();
+}
+function openMfgReceive_() {
+  const today = (mfgData && mfgData.today) || new Date().toISOString().slice(0, 10);
+  const farms = [...new Set(((mfgData.bulk || {}).recentLots || []).map(l => l.farm).filter(Boolean))].sort();
+  mfgModal_('Receive bulk fruit', 'One lot = one delivery of one fruit from one farm. It gets a lot number - write it on the pallets.',
+    `<datalist id="mfg-fruit-list">${mfgKnownFruits_().map(n => `<option value="${escapeHtml(n)}">`).join('')}</datalist>
+    <datalist id="mfg-farm-list">${farms.map(n => `<option value="${escapeHtml(n)}">`).join('')}</datalist>
+    <div class="field"><label>Farm</label><input type="text" id="mfg-rc-farm" list="mfg-farm-list"></div>
+    <div class="field"><label>Fruit (as in the product names, e.g. Strawberries)</label><input type="text" id="mfg-rc-fruit" list="mfg-fruit-list"></div>
+    <div class="field"><label>Farm's lot / batch reference (optional)</label><input type="text" id="mfg-rc-ref"></div>
+    <div style="display:flex;gap:10px;"><div class="field" style="flex:1;"><label>Kg</label><input type="number" id="mfg-rc-kg" min="0" step="any" inputmode="decimal"></div>
+    <div class="field" style="flex:1;"><label>Pallets</label><input type="number" id="mfg-rc-pal" min="0" step="1" inputmode="numeric"></div></div>
+    <div class="field"><label>Received on</label><input type="date" id="mfg-rc-date" value="${escapeHtml(today)}" max="${escapeHtml(today)}"></div>
+    <div class="field"><label>Goes into</label><select id="mfg-rc-where"><option value="cold">The cold store (off-site)</option><option value="freezer">Straight into the freezer room</option></select></div>
+    <div class="field"><label>Notes (optional)</label><input type="text" id="mfg-rc-notes"></div>
+    <button class="btn-primary" id="mfg-rc-save" style="width:100%;">Save lot</button>`);
+  document.getElementById('mfg-rc-save').onclick = () => {
+    const btn = document.getElementById('mfg-rc-save'); btn.disabled = true;
+    const v = id => document.getElementById(id).value.trim();
+    apiPost('blendidBulkReceive', { farm: v('mfg-rc-farm'), fruit: v('mfg-rc-fruit'), farmLotRef: v('mfg-rc-ref'), kg: v('mfg-rc-kg'), pallets: v('mfg-rc-pal'), receivedOn: v('mfg-rc-date'), where: v('mfg-rc-where'), notes: v('mfg-rc-notes') }, { loadingLabel: 'Saving lot…' })
+      .then(r => { mfgCloseModal_(); alert('Saved: lot ' + r.lotNo + ' - ' + mfgKg_(r.kg) + ' ' + r.fruit + (r.pallets ? ', ' + r.pallets + ' pallet(s)' : '') + ' in the ' + r.where.toLowerCase() + '. Write the lot number on the pallets.'); loadMfg_(true); })
+      .catch(err => { alert(err.message); btn.disabled = false; });
+  };
+}
+function openMfgFruit_(key) {
+  const B = mfgData.bulk || {};
+  const f = (B.fruits || []).find(x => x.key === key);
+  if (!f) return;
+  const lots = (B.lots || []).filter(l => l.fruitKey === key);
+  const can = mfgCanManage_();
+  mfgModal_(f.fruit, `Cold store ${mfgQty_(f.coldPallets)} pallets / ${mfgKg_(f.coldKg)} · freezer room ${mfgKg_(f.freezerNet)} · plan needs ${mfgKg_(Math.max(f.planKg, f.weekKg))} · about ${mfgKg_(f.dailyKg * 7)} a week at the sales pace`,
+    `${f.products.length ? `<p class="prep-meta">Packed into: ${f.products.map(escapeHtml).join(', ')}</p>` : ''}
+    <h3 style="margin:8px 0 4px;font-size:15px;">Lots in stock (oldest first - packing takes these first)</h3>
+    ${lots.length ? `<table class="prep-table"><tr><th>Lot</th><th>Farm</th><th class="num">Cold store</th><th class="num">Freezer room</th><th></th></tr>${lots.map(l => `<tr>
+      <td><a href="#" data-mfg-lot="${escapeHtml(l.lotNo)}"><strong>${escapeHtml(l.lotNo)}</strong></a><br><span class="prep-meta">in ${escapeHtml(mfgDate_(l.receivedOn))}</span></td>
+      <td>${escapeHtml(l.farm)}${l.farmLotRef ? `<br><span class="prep-meta">${escapeHtml(l.farmLotRef)}</span>` : ''}</td>
+      <td class="num">${l.coldPallets > 0 ? `${mfgQty_(l.coldPallets)} pal<br><span class="prep-meta">${mfgKg_(l.coldKg)}</span>` : '-'}</td>
+      <td class="num">${l.freezerKg > 0 ? mfgKg_(l.freezerKg) : '-'}</td>
+      <td>${can && l.coldPallets > 0 ? `<button class="btn-secondary" data-mfg-move="${escapeHtml(l.lotNo)}" style="padding:4px 10px;font-size:13px;white-space:nowrap;">Move pallets</button>` : ''}</td></tr>`).join('')}</table>` : '<p class="prep-meta">None on record.</p>'}
+    ${f.shortKg ? `<p style="color:var(--crit);font-weight:700;">${mfgKg_(f.shortKg)} packed with no bulk on record. Do a freezer room count to put it right.</p>` : ''}`);
+  document.querySelectorAll('[data-mfg-lot]').forEach(a => a.onclick = (e) => { e.preventDefault(); openMfgLot_(a.getAttribute('data-mfg-lot')); });
+  document.querySelectorAll('[data-mfg-move]').forEach(b => b.onclick = () => openMfgMove_(b.getAttribute('data-mfg-move')));
+}
+function openMfgMove_(lotNo) {
+  const l = ((mfgData.bulk || {}).lots || []).find(x => x.lotNo === lotNo);
+  if (!l) return;
+  const per = l.coldPallets > 0 ? l.coldKg / l.coldPallets : 0;
+  mfgModal_('Move pallets to the freezer room', `Lot ${l.lotNo} · ${l.fruit} · ${l.farm} · ${mfgQty_(l.coldPallets)} pallets / ${mfgKg_(l.coldKg)} in the cold store`,
+    `<div style="display:flex;gap:10px;"><div class="field" style="flex:1;"><label>Pallets</label><input type="number" id="mfg-mv-pal" min="1" max="${l.coldPallets}" step="1" value="1" inputmode="numeric"></div>
+    <div class="field" style="flex:1;"><label>Kg (empty = about <span id="mfg-mv-est">${mfgQty_(Math.round(per * 10) / 10)}</span>)</label><input type="number" id="mfg-mv-kg" min="0" step="any" inputmode="decimal"></div></div>
+    <div class="field"><label>Notes (optional)</label><input type="text" id="mfg-mv-notes"></div>
+    <button class="btn-primary" id="mfg-mv-save" style="width:100%;">Move</button>`);
+  document.getElementById('mfg-mv-pal').oninput = (e) => {
+    const n = Number(e.target.value) || 0;
+    document.getElementById('mfg-mv-est').textContent = mfgQty_(n >= l.coldPallets ? l.coldKg : Math.round(per * n * 10) / 10);
+  };
+  document.getElementById('mfg-mv-save').onclick = () => {
+    const btn = document.getElementById('mfg-mv-save'); btn.disabled = true;
+    apiPost('blendidBulkMove', { lotNo: l.lotNo, pallets: document.getElementById('mfg-mv-pal').value.trim(), kg: document.getElementById('mfg-mv-kg').value.trim(), notes: document.getElementById('mfg-mv-notes').value.trim() }, { loadingLabel: 'Moving…' })
+      .then(r => { mfgCloseModal_(); alert('Moved ' + r.pallets + ' pallet(s), ' + mfgKg_(r.kg) + ' of ' + r.fruit + ' (lot ' + r.lotNo + ') to the freezer room.'); loadMfg_(true); })
+      .catch(err => { alert(err.message); btn.disabled = false; });
+  };
+}
+function openMfgLot_(lotNo) {
+  apiGet('getBlendidLot', { lotNo: lotNo }, { loadingLabel: 'Loading lot…' }).then(d => {
+    const l = d.lot, can = mfgCanManage_();
+    mfgModal_('Lot ' + l.lotNo, `${l.fruit} · ${l.farm}${l.farmLotRef ? ' (' + l.farmLotRef + ')' : ''} · received ${mfgDate_(l.receivedOn)}: ${mfgKg_(l.kg)}, ${mfgQty_(l.pallets)} pallets · now cold store ${mfgQty_(l.coldPallets)} pal / ${mfgKg_(l.coldKg)}, freezer room ${mfgKg_(l.freezerKg)}`,
+      `<h3 style="margin:8px 0 4px;font-size:15px;">Packed into</h3>
+      ${d.batches.length ? `<table class="prep-table"><tr><th>Batch</th><th>Product</th><th class="num">Fruit</th><th>Went to</th></tr>${d.batches.map(b => `<tr><td><a href="#" data-mfg-lotbatch="${escapeHtml(b.batchNo)}">${escapeHtml(b.batchNo)}</a></td><td>${escapeHtml(b.product)}</td><td class="num">${mfgKg_(b.kg)}</td><td>${b.customers.length ? b.customers.map(c => escapeHtml(c.customerName) + ' ' + escapeHtml(c.sageRef) + ' × ' + mfgQty_(c.qty)).join('<br>') : '<span class="prep-meta">still in stock</span>'}</td></tr>`).join('')}</table>` : '<p class="prep-meta">Not packed yet.</p>'}
+      ${d.moves.length ? `<h3 style="margin:14px 0 4px;font-size:15px;">Moved to the freezer room</h3><table class="prep-table"><tr><th>When</th><th>By</th><th class="num">Pallets</th><th class="num">Kg</th></tr>${d.moves.map(m => `<tr><td>${m.at ? fmtTime(m.at) : ''}</td><td>${escapeHtml(m.by)}</td><td class="num">${mfgQty_(m.pallets)}</td><td class="num">${mfgQty_(m.kg)}</td></tr>`).join('')}</table>` : ''}
+      ${d.adjustments.length ? `<h3 style="margin:14px 0 4px;font-size:15px;">Corrections</h3><table class="prep-table"><tr><th>When</th><th>Where</th><th class="num">Change</th><th>Why</th></tr>${d.adjustments.map(a => `<tr><td>${a.at ? fmtTime(a.at) : ''}<br><span class="prep-meta">${escapeHtml(a.by)}</span></td><td>${escapeHtml(a.where)}</td><td class="num">${a.kg ? (a.kg > 0 ? '+' : '') + mfgKg_(a.kg) : ''}${a.pallets ? ' ' + (a.pallets > 0 ? '+' : '') + a.pallets + ' pal' : ''}</td><td>${escapeHtml(a.reason)}</td></tr>`).join('')}</table>` : ''}
+      ${l.notes ? `<p class="prep-meta">Notes: ${escapeHtml(l.notes)}</p>` : ''}
+      ${can ? `<h3 style="margin:14px 0 4px;font-size:15px;">Correct this lot</h3>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;">
+          <label class="prep-meta">Where<br><select id="mfg-la-where" style="padding:8px;border:2px solid var(--line);border-radius:8px;"><option value="cold">Cold store</option><option value="freezer">Freezer room</option></select></label>
+          <label class="prep-meta">Kg (+/-)<br><input type="number" step="any" id="mfg-la-kg" style="width:100px;padding:8px;border:2px solid var(--line);border-radius:8px;"></label>
+          <label class="prep-meta">Pallets (+/-)<br><input type="number" step="1" id="mfg-la-pal" style="width:90px;padding:8px;border:2px solid var(--line);border-radius:8px;"></label>
+          <label class="prep-meta" style="flex:1;">Why<br><input type="text" id="mfg-la-reason" placeholder="cold store invoice, damaged…" style="width:100%;padding:8px;border:2px solid var(--line);border-radius:8px;"></label>
+          <button class="btn-primary" id="mfg-la-save">Save</button>
+        </div>` : ''}`);
+    document.querySelectorAll('[data-mfg-lotbatch]').forEach(a => a.onclick = (e) => { e.preventDefault(); openMfgBatch_(a.getAttribute('data-mfg-lotbatch')); });
+    const save = document.getElementById('mfg-la-save');
+    if (save) save.onclick = () => {
+      save.disabled = true;
+      const v = id => document.getElementById(id).value.trim();
+      apiPost('blendidBulkAdjust', { lotNo: l.lotNo, where: v('mfg-la-where'), kg: v('mfg-la-kg'), pallets: v('mfg-la-pal'), reason: v('mfg-la-reason') }, { loadingLabel: 'Saving…' })
+        .then(() => { mfgCloseModal_(); loadMfg_(true); }).catch(err => { alert(err.message); save.disabled = false; });
+    };
+  }).catch(err => alert(err.message));
+}
+function openMfgBulkCount_() {
+  const fr = ((mfgData.bulk || {}).fruits || []).slice().sort((a, b) => a.fruit.localeCompare(b.fruit));
+  mfgModal_('Freezer room count', 'Weigh the bulk fruit in the factory freezer room and type the kg per fruit. Leave a fruit empty if you did not count it. The record changes to your count (oldest lots first) and a record is kept.',
+    `<table class="prep-table"><tr><th>Fruit</th><th class="num">On record</th><th class="num">Counted kg</th></tr>
+    ${fr.map(f => `<tr><td>${escapeHtml(f.fruit)}</td><td class="num">${mfgKg_(f.freezerNet)}</td><td class="num"><input type="number" min="0" step="any" inputmode="decimal" data-bulkcount="${escapeHtml(f.fruit)}" style="width:110px;padding:6px;border:2px solid var(--line);border-radius:8px;"></td></tr>`).join('')}
+    <tr><td><input type="text" id="mfg-bc-newfruit" list="mfg-fruit-list2" placeholder="another fruit" style="width:100%;padding:6px;border:2px solid var(--line);border-radius:8px;"><datalist id="mfg-fruit-list2">${mfgKnownFruits_().map(n => `<option value="${escapeHtml(n)}">`).join('')}</datalist></td><td></td><td class="num"><input type="number" min="0" step="any" id="mfg-bc-newkg" style="width:110px;padding:6px;border:2px solid var(--line);border-radius:8px;"></td></tr></table>
+    <button class="btn-primary" id="mfg-bc-save" style="margin-top:12px;width:100%;">Save count</button>`);
+  document.getElementById('mfg-bc-save').onclick = () => {
+    const counts = [];
+    document.querySelectorAll('[data-bulkcount]').forEach(i => { if (i.value.trim() !== '') counts.push({ fruit: i.getAttribute('data-bulkcount'), kg: i.value.trim() }); });
+    const nf = document.getElementById('mfg-bc-newfruit').value.trim(), nk = document.getElementById('mfg-bc-newkg').value.trim();
+    if (nf && nk !== '') counts.push({ fruit: nf, kg: nk });
+    if (!counts.length) { alert('Nothing counted yet.'); return; }
+    const btn = document.getElementById('mfg-bc-save'); btn.disabled = true;
+    apiPost('blendidBulkCount', { counts: counts }, { loadingLabel: 'Saving count…' })
+      .then(r => { mfgCloseModal_(); alert('Count saved: ' + r.counted + ' fruit(s)' + (r.changed.length ? ', changed: ' + r.changed.map(c => c.fruit + ' ' + (c.diff > 0 ? '+' : '') + mfgKg_(c.diff)).join(', ') : ', all matched') + '.'); loadMfg_(true); })
+      .catch(err => { alert(err.message); btn.disabled = false; });
+  };
+}
+function openMfgUsage_() {
+  const U = (mfgData.bulk || {}).usage || { years: [], fruits: [] };
+  const ys = U.years || [];
+  mfgModal_('Bulk fruit usage per year', 'Kg of bulk fruit used (packed + packing loss) and received per fruit - for next season\'s buying. "A year at today\'s pace" = what the Frozen products sell now × 365 days.',
+    !U.fruits.length ? '<p class="prep-meta">Nothing yet.</p>' : `<div style="overflow-x:auto;"><table class="prep-table"><tr><th>Fruit</th><th class="num">A year at today's pace</th><th class="num">Used, last 12 months</th><th class="num">Received, last 12 months</th>${ys.map(y => `<th class="num">${escapeHtml(y)} used / received</th>`).join('')}</tr>
+    ${U.fruits.map(f => `<tr><td><strong>${escapeHtml(f.fruit)}</strong></td><td class="num">${f.yearKg ? mfgKg_(f.yearKg) : '-'}</td><td class="num">${mfgKg_(f.used12)}${f.loss12 ? `<br><span class="prep-meta">${mfgKg_(f.loss12)} loss</span>` : ''}</td><td class="num">${mfgKg_(f.received12)}</td>${ys.map(y => { const b = f.byYear[y]; return `<td class="num">${b ? mfgQty_(b.used) + ' / ' + mfgQty_(b.received) : '-'}</td>`; }).join('')}</tr>`).join('')}</table></div>
+    <p class="prep-meta">The bulk record started with the first lot received, so the first year is part of a year.</p>`);
 }
 // 27 Nov 2026: production schedule per shift (server: blendidSchedule_ - Financials roster x units per person-hour).
 function mfgDayLabel_(iso) {
@@ -2748,6 +2915,8 @@ function openMfgProduct_(key) {
         <label class="prep-meta">Override minimum (empty = automatic ${mfgQty_(p.autoMin)})<br><input type="number" min="0" step="any" id="mfg-min" value="${p.minOverride === null || p.minOverride === undefined ? '' : p.minOverride}" placeholder="${mfgQty_(p.autoMin)}" style="width:120px;padding:8px;border:2px solid var(--line);border-radius:8px;"></label>
         <label class="prep-meta">Run size (made per run; empty = any amount)<br><input type="number" min="1" step="any" id="mfg-run" value="${p.runSize || ''}" style="width:120px;padding:8px;border:2px solid var(--line);border-radius:8px;"></label>
         <label class="prep-meta">Shelf life (days)<br><input type="number" min="1" step="1" id="mfg-shelf" value="${p.shelfLifeDays === null ? '' : p.shelfLifeDays}" placeholder="365" style="width:120px;padding:8px;border:2px solid var(--line);border-radius:8px;"></label>
+        <label class="prep-meta">Bulk fruit (empty = from the name${p.fruit ? ': ' + escapeHtml(p.fruit) : ''})<br><input type="text" id="mfg-fruit" value="${escapeHtml(p.fruitSet || '')}" style="width:150px;padding:8px;border:2px solid var(--line);border-radius:8px;"></label>
+        <label class="prep-meta">Kg per pack${p.packKg ? ' (' + mfgQty_(p.packKg) + ')' : ''}<br><input type="number" min="0" step="any" id="mfg-packkg" value="${p.packKgSet || ''}" style="width:100px;padding:8px;border:2px solid var(--line);border-radius:8px;"></label>
         <button class="btn-primary" id="mfg-save-product">Save</button>
       </div>
       <label class="prep-meta" style="display:block;margin-top:10px;"><input type="checkbox" id="mfg-stock-item" checked> This is a stock item (untick for delivery charges, services etc. - it then leaves this list and is never taken off stock)</label>` : ''}
@@ -2757,7 +2926,7 @@ function openMfgProduct_(key) {
   const save = document.getElementById('mfg-save-product');
   if (save) save.onclick = () => {
     save.disabled = true;
-    apiPost('blendidSaveProduct', { product: p.product, minStock: document.getElementById('mfg-min').value.trim(), shelfLifeDays: document.getElementById('mfg-shelf').value.trim(), runSize: document.getElementById('mfg-run').value.trim(), active: document.getElementById('mfg-stock-item').checked }, { loadingLabel: 'Saving…' })
+    apiPost('blendidSaveProduct', { product: p.product, minStock: document.getElementById('mfg-min').value.trim(), shelfLifeDays: document.getElementById('mfg-shelf').value.trim(), runSize: document.getElementById('mfg-run').value.trim(), active: document.getElementById('mfg-stock-item').checked, fruit: document.getElementById('mfg-fruit').value.trim(), packKg: document.getElementById('mfg-packkg').value.trim() }, { loadingLabel: 'Saving…' })
       .then(d => { mfgData = d; renderMfg_(); mfgCloseModal_(); }).catch(err => { alert(err.message); save.disabled = false; });
   };
 }
@@ -2775,7 +2944,10 @@ function openMfgLogBatch_(product, qty) {
     btn.disabled = true;
     apiPost('blendidLogBatch', { product: document.getElementById('mfg-new-product').value.trim(), qty: document.getElementById('mfg-new-qty').value.trim(),
       bestBefore: document.getElementById('mfg-new-bb').value, notes: document.getElementById('mfg-new-notes').value.trim() }, { loadingLabel: 'Saving batch…' })
-      .then(b => { mfgCloseModal_(); alert('Saved: batch ' + b.batchNo + ' - ' + mfgQty_(b.qty) + ' x ' + b.product + ', best before ' + mfgDate_(b.bestBefore) + '. Write this batch number on the stock.'); loadMfg_(true); })
+      .then(b => {
+        mfgCloseModal_();
+        const bk = b.bulk && !b.bulk.notStarted && !b.bulk.error && b.bulk.kg ? '\n\nBulk ' + b.bulk.fruit + ': ' + mfgKg_(b.bulk.kg) + ' taken from the freezer room' + (b.bulk.lots.length ? ' (lot ' + b.bulk.lots.map(l => l.lotNo).join(', ') + ')' : '') + (b.bulk.shortKg ? '. ' + mfgKg_(b.bulk.shortKg) + ' of it is NOT on record - tell a manager (freezer room count / move pallets).' : '.') : '';
+        alert('Saved: batch ' + b.batchNo + ' - ' + mfgQty_(b.qty) + ' x ' + b.product + ', best before ' + mfgDate_(b.bestBefore) + '. Write this batch number on the stock.' + bk); loadMfg_(true); })
       .catch(err => { alert(err.message); btn.disabled = false; });
   };
 }
@@ -2783,7 +2955,8 @@ function openMfgBatch_(batchNo) {
   apiGet('getBlendidBatch', { batchNo: batchNo }, { loadingLabel: 'Loading batch…' }).then(d => {
     const b = d.batch;
     mfgModal_('Batch ' + b.batchNo, `${b.product} · made ${mfgQty_(b.qty)}${b.madeAt ? ' on ' + fmtTime(b.madeAt) : ''}${b.madeBy ? ' by ' + b.madeBy : ''} · best before ${mfgDate_(b.bestBefore)} · ${mfgQty_(b.remaining)} left`,
-      `<h3 style="margin:8px 0 4px;font-size:15px;">Went to</h3>
+      `${(d.lots || []).length ? `<h3 style="margin:8px 0 4px;font-size:15px;">Packed from bulk</h3><table class="prep-table"><tr><th>Lot</th><th>Farm</th><th class="num">Kg</th></tr>${d.lots.map(l => `<tr><td>${l.lotNo ? `<a href="#" data-mfg-batchlot="${escapeHtml(l.lotNo)}">${escapeHtml(l.lotNo)}</a>` : '<span style="color:var(--crit);">no bulk on record</span>'}</td><td>${escapeHtml(l.farm)}${l.farmLotRef ? ' (' + escapeHtml(l.farmLotRef) + ')' : ''}${l.receivedOn ? `<br><span class="prep-meta">in ${escapeHtml(mfgDate_(l.receivedOn))}</span>` : ''}</td><td class="num">${mfgQty_(l.kg)}</td></tr>`).join('')}</table>` : ''}
+      <h3 style="margin:8px 0 4px;font-size:15px;">Went to</h3>
       ${d.picks.length ? `<table class="prep-table"><tr><th>Customer</th><th>Invoice</th><th class="num">Qty</th><th>Picked</th></tr>${d.picks.map(p => `<tr><td>${escapeHtml(p.customerName)}</td><td>${escapeHtml(p.sageRef)}</td><td class="num">${mfgQty_(p.qty)}</td><td>${p.pickedAt ? fmtTime(p.pickedAt) : ''}${p.pickedBy ? ' · ' + escapeHtml(p.pickedBy) : ''}</td></tr>`).join('')}</table>` : '<p class="prep-meta">Not picked for any order yet.</p>'}
       ${d.adjustments.length ? `<h3 style="margin:14px 0 4px;font-size:15px;">Stock corrections</h3><table class="prep-table"><tr><th>When</th><th>By</th><th class="num">Change</th><th>Why</th></tr>${d.adjustments.map(a => `<tr><td>${a.at ? fmtTime(a.at) : ''}</td><td>${escapeHtml(a.by)}</td><td class="num">${a.qty > 0 ? '+' : ''}${mfgQty_(a.qty)}</td><td>${escapeHtml(a.reason)}</td></tr>`).join('')}</table>` : ''}
       ${b.notes ? `<p class="prep-meta">Notes: ${escapeHtml(b.notes)}</p>` : ''}
@@ -2793,6 +2966,7 @@ function openMfgBatch_(batchNo) {
           <label class="prep-meta" style="flex:1;">Why<br><input type="text" id="mfg-adj-reason" placeholder="stock-take" style="width:100%;padding:8px;border:2px solid var(--line);border-radius:8px;"></label>
           <button class="btn-primary" id="mfg-adj-save">Save</button>
         </div>` : ''}`);
+    document.querySelectorAll('[data-mfg-batchlot]').forEach(a => a.onclick = (e) => { e.preventDefault(); openMfgLot_(a.getAttribute('data-mfg-batchlot')); });
     const save = document.getElementById('mfg-adj-save');
     if (save) save.onclick = () => {
       save.disabled = true;
@@ -6474,6 +6648,9 @@ function wireStaticEvents() {
   document.getElementById('view-toggle-mfg').onclick = () => setBoardView('mfg');
   document.getElementById('mfg-log-btn').onclick = () => openMfgLogBatch_('');
   document.getElementById('mfg-count-btn').onclick = () => openMfgStockTake_();
+  document.getElementById('mfg-receive-btn').onclick = () => openMfgReceive_();
+  document.getElementById('mfg-bulkcount-btn').onclick = () => openMfgBulkCount_();
+  document.getElementById('mfg-usage-btn').onclick = () => openMfgUsage_();
   document.getElementById('mfg-refresh-btn').onclick = () => loadMfg_(true);
   document.getElementById('view-toggle-dashboard').onclick = () => setBoardView('dashboard');
   document.getElementById('view-toggle-history').onclick = () => setBoardView('history');
