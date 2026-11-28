@@ -804,6 +804,26 @@
 <!-- ============ PRODUCTION BOARD ============ -->
 <!-- ============ BLENDID MANUFACTURING (27 Nov 2026) ============ -->
 <div id="mfg-view" class="hidden">
+  <div style="display:flex;gap:8px;margin-bottom:14px;" id="mfg-tabs">
+    <button class="btn-primary" data-mfg-tab="prod" style="text-transform:none;letter-spacing:normal;">Production</button>
+    <button class="btn-secondary" data-mfg-tab="cost" style="text-transform:none;letter-spacing:normal;">Recipes &amp; costing</button>
+  </div>
+  <div id="mfg-cost" class="hidden">
+    <div class="section-heading">Recipes <span class="count" id="cost-count"></span>
+      <span style="margin-left:auto;display:flex;gap:8px;flex-wrap:wrap;">
+        <button class="btn-primary" id="cost-new-btn" style="text-transform:none;letter-spacing:normal;">+ New recipe</button>
+        <button class="btn-secondary" id="cost-ing-btn" style="text-transform:none;letter-spacing:normal;">Ingredients</button>
+        <button class="btn-secondary" id="cost-refresh-btn" style="text-transform:none;letter-spacing:normal;">↻ Refresh</button>
+      </span>
+    </div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;">
+      <input type="text" id="cost-search" placeholder="Find a recipe, ingredient or product…" style="flex:1;min-width:220px;padding:8px;border:2px solid var(--line);border-radius:8px;">
+      <select id="cost-list" style="padding:8px;border:2px solid var(--line);border-radius:8px;"></select>
+      <label class="prep-meta" style="display:flex;align-items:center;gap:4px;"><input type="checkbox" id="cost-sold"> Sold in Sage only</label>
+    </div>
+    <div id="cost-body"></div>
+  </div>
+  <div id="mfg-prod">
   <div class="section-heading">Production plan
     <span style="margin-left:auto;display:flex;gap:8px;">
       <button class="btn-primary" id="mfg-log-btn" style="text-transform:none;letter-spacing:normal;">+ Log a batch</button>
@@ -826,6 +846,7 @@
   <div id="mfg-bulk"></div>
   <div class="section-heading" style="margin-top:22px;">Recent batches</div>
   <div id="mfg-batches"></div>
+  </div>
 </div>
 
 <div id="production-view" class="hidden">
@@ -1672,7 +1693,8 @@ function rethrowFriendly_(err) {
 // userName/userPin. Harmless to send on every other action too - they
 // simply ignore it.
 const MFG_ACTIONS = new Set(['getBlendidManufacturing', 'getBlendidBatch', 'blendidLogBatch', 'blendidSaveProduct', 'blendidAdjustStock', 'blendidStockTake', 'blendidSaveRate',
-  'getBlendidLot', 'blendidBulkReceive', 'blendidBulkMove', 'blendidBulkAdjust', 'blendidBulkCount', 'blendidBulkSaveLoss']);
+  'getBlendidLot', 'blendidBulkReceive', 'blendidBulkMove', 'blendidBulkAdjust', 'blendidBulkCount', 'blendidBulkSaveLoss',
+  'getBlendidCostings', 'blendidSaveIngredient', 'blendidSaveRecipe', 'blendidDeleteRecipe', 'blendidSaveCostSettings']);
 const apiUrlFor_ = action => MFG_ACTIONS.has(action) && APP_CONFIG.MFG_API_URL ? APP_CONFIG.MFG_API_URL : APP_CONFIG.API_URL;
 function apiGet(action, params, opts) {
   const silent = !!(opts && opts.silent);
@@ -2545,7 +2567,8 @@ const mfgCanManage_ = () => userRole === 'Production Manager' || userRole === 'A
 // Best-before dates are often a year away - always with the year (fmtDateLong has none).
 const mfgDate_ = iso => { if (!iso) return ''; const d = new Date(String(iso).slice(0, 10) + 'T12:00:00'); return isNaN(d) ? String(iso) : d.toLocaleDateString('en-ZA', { day: 'numeric', month: 'short', year: 'numeric' }); };
 const mfgQty_ = n => (Math.round(Number(n || 0) * 100) / 100).toLocaleString();
-function mfgModal_(title, sub, html) {
+function mfgModal_(title, sub, html, wide) {
+  document.querySelector('#prep-info-modal .modal-box').style.maxWidth = wide ? '920px' : '600px';
   document.getElementById('prep-info-title').textContent = title;
   document.getElementById('prep-info-sub').textContent = sub || '';
   document.getElementById('prep-info-body').innerHTML = html;
@@ -2553,6 +2576,7 @@ function mfgModal_(title, sub, html) {
 }
 function mfgCloseModal_() { document.getElementById('prep-info-modal').classList.add('hidden'); }
 function loadMfg_(manual) {
+  if (mfgTab === 'cost') { loadCost_(manual); return; }
   if (!isBlendid_() || mfgLoading) return;
   mfgLoading = true;
   if (!mfgData) document.getElementById('mfg-planner').innerHTML = '<p class="prep-meta">Loading stock…</p>';
@@ -2780,6 +2804,172 @@ function openMfgUsage_() {
     !U.fruits.length ? '<p class="prep-meta">Nothing yet.</p>' : `<div style="overflow-x:auto;"><table class="prep-table"><tr><th>Fruit</th><th class="num">A year at today's pace</th><th class="num">Used, last 12 months</th><th class="num">Received, last 12 months</th>${ys.map(y => `<th class="num">${escapeHtml(y)} used / received</th>`).join('')}</tr>
     ${U.fruits.map(f => `<tr><td><strong>${escapeHtml(f.fruit)}</strong></td><td class="num">${f.yearKg ? mfgKg_(f.yearKg) : '-'}</td><td class="num">${mfgKg_(f.used12)}${f.loss12 ? `<br><span class="prep-meta">${mfgKg_(f.loss12)} loss</span>` : ''}</td><td class="num">${mfgKg_(f.received12)}</td>${ys.map(y => { const b = f.byYear[y]; return `<td class="num">${b ? mfgQty_(b.used) + ' / ' + mfgQty_(b.received) : '-'}</td>`; }).join('')}</tr>`).join('')}</table></div>
     <p class="prep-meta">The bulk record started with the first lot received, so the first year is part of a year.</p>`);
+}
+// 28 Nov 2026: RECIPES AND COSTING (server: Costing.gs; imported from Shane's BLENDID.xlsx). Everyone sees recipes (what
+// goes in, kg); managers also see costs, prices and GP and can edit. cost = ingredients x (1 + %) + packaging.
+let mfgTab = localStorage.getItem('df_mfg_tab') === 'cost' ? 'cost' : 'prod', costData = null, costLoading = false;
+const costR_ = n => n === null || n === undefined ? '-' : 'R' + (Math.round(Number(n) * 100) / 100).toFixed(2);
+const costGp_ = g => g === null || g === undefined ? '-' : `<span style="font-weight:800;${g < 40 ? 'color:var(--crit);' : g < 55 ? 'color:var(--warn);' : 'color:var(--green);'}">${mfgQty_(g)}%</span>`;
+function setMfgTab_(t) {
+  mfgTab = t; localStorage.setItem('df_mfg_tab', t);
+  document.getElementById('mfg-prod').classList.toggle('hidden', t !== 'prod');
+  document.getElementById('mfg-cost').classList.toggle('hidden', t !== 'cost');
+  document.querySelectorAll('[data-mfg-tab]').forEach(b => { const on = b.getAttribute('data-mfg-tab') === t; b.classList.toggle('btn-primary', on); b.classList.toggle('btn-secondary', !on); });
+  if (boardView === 'mfg') loadMfg_(false);
+}
+function loadCost_(manual) {
+  if (!isBlendid_() || costLoading) return;
+  costLoading = true;
+  if (!costData) document.getElementById('cost-body').innerHTML = '<p class="prep-meta">Loading recipes…</p>';
+  apiGet('getBlendidCostings', {}, manual || !costData ? { loadingLabel: 'Loading recipes…', timeoutMs: 60000 } : { silent: true, timeoutMs: 60000 })
+    .then(d => { costData = d; renderCost_(); })
+    .catch(err => { document.getElementById('cost-body').innerHTML = '<p class="prep-meta">Could not load recipes: ' + escapeHtml(err.message) + '</p>'; })
+    .finally(() => { costLoading = false; });
+}
+function renderCost_() {
+  if (!costData) return;
+  const money = costData.withMoney, can = mfgCanManage_();
+  document.getElementById('cost-new-btn').classList.toggle('hidden', !can);
+  const sel = document.getElementById('cost-list');
+  const cur = sel.value || localStorage.getItem('df_cost_list') || '';
+  sel.innerHTML = `<option value="">All price lists</option>` + costData.priceLists.map(l => `<option ${l === cur ? 'selected' : ''}>${escapeHtml(l)}</option>`).join('');
+  const list = sel.value;
+  const q = document.getElementById('cost-search').value.trim().toLowerCase();
+  const soldOnly = document.getElementById('cost-sold').checked;
+  const rows = costData.recipes.filter(r => (!list || r.prices.some(p => p.priceList === list))
+    && (!soldOnly || r.products.length)
+    && (!q || (r.name + ' ' + r.source + ' ' + r.lines.map(l => l.ingredient).join(' ') + ' ' + r.products.map(p => p.product).join(' ') + ' ' + r.prices.map(p => p.priceList).join(' ')).toLowerCase().includes(q)))
+    .sort((a, b) => (b.active - a.active) || a.name.localeCompare(b.name));
+  document.getElementById('cost-count').textContent = rows.length + ' of ' + costData.recipes.length;
+  const priceOf = r => { const ps = r.prices.filter(p => !list || p.priceList === list).filter(p => p.price !== null && p.price !== undefined); return ps; };
+  const noPrice = costData.ingredients.filter(i => money && i.pricePerKg === null && i.usedIn);
+  let html = money ? `<p class="prep-meta">Cost = ingredients × (1 + <strong>${mfgQty_(costData.upliftPct)}%</strong>)${can ? ' (<a href="#" id="cost-uplift">change</a>)' : ''} + packaging, as in the BLENDID worksheet (×1.1). GP = (price − cost) ÷ price.${noPrice.length ? ` <span style="color:var(--crit);">${noPrice.length} ingredient${noPrice.length === 1 ? ' has' : 's have'} no price - those recipes cost too low (marked ⚠). <a href="#" id="cost-noprice">Show them</a>.</span>` : ''}</p>` : '';
+  html += !rows.length ? '<p class="prep-meta">No recipes match.</p>' : `<div style="overflow-x:auto;"><table class="prep-table"><tr><th>Recipe</th><th>Size</th><th>Sage product</th><th class="num">Kg</th>${money ? '<th class="num">Cost</th><th class="num">Price</th><th class="num">GP</th>' : '<th>Price lists</th>'}</tr>
+    ${rows.map(r => { const ps = priceOf(r); return `<tr data-cost-recipe="${escapeHtml(r.id)}" style="cursor:pointer;${r.active ? '' : 'opacity:.5;'}">
+      <td><strong>${escapeHtml(r.name)}</strong>${r.missing && r.missing.length && money ? ' <span title="Missing prices: ' + escapeHtml(r.missing.join(', ')) + '" style="color:var(--crit);">⚠</span>' : ''}<br><span class="prep-meta">${escapeHtml(r.id)} · ${escapeHtml(r.source)}${r.active ? '' : ' · not in use'}</span></td>
+      <td>${escapeHtml(r.size || '')}</td>
+      <td>${r.products.length ? r.products.map(p => escapeHtml(p.product) + (p.soldPerWeek ? ` <span class="prep-meta">${mfgQty_(p.soldPerWeek)}/wk</span>` : '')).join('<br>') : '<span class="prep-meta">-</span>'}</td>
+      <td class="num">${mfgQty_(r.kg)}</td>
+      ${money ? `<td class="num">${costR_(r.cost)}</td><td class="num">${ps.length ? ps.map(p => costR_(p.price) + (list ? '' : `<br><span class="prep-meta">${escapeHtml(p.priceList)}</span>`)).slice(0, list ? 1 : 3).join('<br>') + (!list && ps.length > 3 ? `<br><span class="prep-meta">+${ps.length - 3} more</span>` : '') : '-'}</td>
+        <td class="num">${ps.length ? (list ? costGp_(ps[0].gp) : costGp_(Math.min(...ps.map(p => p.gp)))  + (ps.length > 1 ? `<br><span class="prep-meta">lowest</span>` : '')) : '-'}</td>`
+        : `<td class="prep-meta">${r.prices.map(p => escapeHtml(p.priceList)).join(', ')}</td>`}</tr>`; }).join('')}</table></div>`;
+  document.getElementById('cost-body').innerHTML = html;
+  document.querySelectorAll('[data-cost-recipe]').forEach(el => el.onclick = () => openCostRecipe_(el.getAttribute('data-cost-recipe')));
+  const up = document.getElementById('cost-uplift');
+  if (up) up.onclick = (e) => {
+    e.preventDefault();
+    const v = prompt('% added on top of the ingredient cost (waste, labour...). The worksheet uses 10. Empty = 10.', String(costData.upliftPct));
+    if (v === null) return;
+    apiPost('blendidSaveCostSettings', { upliftPct: v.trim() }, { loadingLabel: 'Saving…' }).then(() => loadCost_(true)).catch(err => alert(err.message));
+  };
+  const np = document.getElementById('cost-noprice');
+  if (np) np.onclick = (e) => { e.preventDefault(); openCostIngredients_(true); };
+}
+function openCostRecipe_(id) {
+  const r = costData.recipes.find(x => x.id === id);
+  if (!r) return;
+  const money = costData.withMoney, can = mfgCanManage_();
+  const body = (n) => `<table class="prep-table"><tr><th>Ingredient</th><th class="num">Kg each</th><th class="num">Kg for ${mfgQty_(n)}</th>${money ? '<th class="num">R/kg</th><th class="num">Cost</th>' : ''}</tr>
+    ${r.lines.map((l, i) => `${l.part && (i === 0 || r.lines[i - 1].part !== l.part) ? `<tr><td colspan="5" class="prep-meta" style="font-weight:800;">${escapeHtml(l.part)}</td></tr>` : ''}<tr>
+      <td>${l.part ? '&nbsp;&nbsp;' : ''}${escapeHtml(l.ingredient)}</td><td class="num">${mfgQty_(l.kg * 1000)} g</td><td class="num"><strong>${mfgQty_(Math.round(l.kg * n * 1000) / 1000)} kg</strong></td>
+      ${money ? `<td class="num">${l.pricePerKg === null ? '<span style="color:var(--crit);">no price</span>' : costR_(l.pricePerKg)}</td><td class="num">${costR_(l.cost)}</td>` : ''}</tr>`).join('')}
+    <tr><td><strong>Total</strong></td><td class="num"><strong>${mfgQty_(r.kg * 1000)} g</strong></td><td class="num"><strong>${mfgQty_(Math.round(r.kg * n * 1000) / 1000)} kg</strong></td>${money ? `<td></td><td class="num"><strong>${costR_(r.ingredientCost)}</strong></td>` : ''}</tr></table>`;
+  mfgModal_(r.name + (r.size ? ' ' + r.size : ''), `${r.id} · ${r.source}${r.active ? '' : ' · not in use'}${r.updatedBy && r.updatedBy !== 'Import BLENDID.xlsx' ? ' · changed by ' + r.updatedBy : ''}`,
+    `<div class="prep-meta" style="margin-bottom:6px;">Make <input type="number" id="cost-scale" value="1" min="1" step="1" inputmode="numeric" style="width:90px;padding:6px;border:2px solid var(--line);border-radius:8px;"> → kg of each ingredient:</div>
+    <div id="cost-lines">${body(1)}</div>
+    ${money ? `<div class="impact-verdict same" style="margin-top:10px;">Cost <strong>${costR_(r.cost)}</strong> = ${costR_(r.ingredientCost)} ingredients × ${mfgQty_(1 + costData.upliftPct / 100)}${r.packaging ? ' + ' + costR_(r.packaging) + ' packaging' : ''}${r.missing.length ? `<br><span style="color:var(--crit);">Missing prices: ${escapeHtml(r.missing.join(', '))} - cost too low.</span>` : ''}</div>
+      <h3 style="margin:14px 0 4px;font-size:15px;">Price lists</h3>
+      ${r.prices.length ? `<table class="prep-table"><tr><th>Price list</th><th class="num">Price</th><th class="num">GP</th><th class="num">Profit each</th></tr>${r.prices.map(p => `<tr><td>${escapeHtml(p.priceList)}</td><td class="num">${costR_(p.price)}</td><td class="num">${costGp_(p.gp)}</td><td class="num">${p.price ? costR_(p.price - r.cost) : '-'}</td></tr>`).join('')}</table>` : '<p class="prep-meta">On no price list.</p>'}` : ''}
+    <h3 style="margin:14px 0 4px;font-size:15px;">Sage product</h3>
+    ${r.products.length ? r.products.map(p => `<div>${escapeHtml(p.product)}${p.soldPerWeek ? ` <span class="prep-meta">· about ${mfgQty_(p.soldPerWeek)} a week</span>` : ''}</div>`).join('') : '<p class="prep-meta">Not tied to a Sage product.</p>'}
+    ${r.notes ? `<p class="prep-meta">Notes: ${escapeHtml(r.notes)}</p>` : ''}
+    ${can ? `<div style="display:flex;gap:8px;margin-top:14px;"><button class="btn-primary" id="cost-edit" style="flex:1;">Edit</button><button class="btn-secondary" id="cost-copy" style="flex:1;">Copy as a new recipe</button></div>` : ''}`, true);
+  document.getElementById('cost-scale').oninput = (e) => { document.getElementById('cost-lines').innerHTML = body(Math.max(0, Number(e.target.value) || 0)); };
+  const ed = document.getElementById('cost-edit'); if (ed) ed.onclick = () => openCostEdit_(r, false);
+  const cp = document.getElementById('cost-copy'); if (cp) cp.onclick = () => openCostEdit_(r, true);
+}
+function openCostEdit_(r, copy) {
+  const isNew = !r || copy;
+  r = r || { name: '', size: '350ml', active: true, packaging: null, notes: '', lines: [], prices: [], products: [] };
+  const inp = 'padding:6px;border:2px solid var(--line);border-radius:8px;';
+  const lineRow = l => `<tr class="ce-line"><td><input class="ce-ing" list="ce-ing-list" value="${escapeHtml(l.ingredient || '')}" style="width:100%;${inp}"></td>
+    <td><input class="ce-kg" type="number" min="0" step="any" inputmode="decimal" value="${l.kg ? Math.round(l.kg * 1000 * 1000) / 1000 : ''}" style="width:80px;${inp}"></td>
+    <td><select class="ce-part" style="${inp}"><option value="">Main</option><option ${l.part === 'Powerball' ? 'selected' : ''}>Powerball</option></select></td><td><button class="btn-secondary ce-del" style="padding:4px 8px;">✕</button></td></tr>`;
+  const priceRow = p => `<tr class="ce-price"><td><input class="ce-pl" list="ce-pl-list" value="${escapeHtml(p.priceList || '')}" style="width:100%;${inp}"></td><td><input class="ce-pr" type="number" min="0" step="any" value="${p.price === null || p.price === undefined ? '' : p.price}" style="width:90px;${inp}"></td><td><button class="btn-secondary ce-del" style="padding:4px 8px;">✕</button></td></tr>`;
+  const prodRow = p => `<tr class="ce-prod"><td><input class="ce-pd" list="ce-pd-list" value="${escapeHtml(p || '')}" style="width:100%;${inp}"></td><td><button class="btn-secondary ce-del" style="padding:4px 8px;">✕</button></td></tr>`;
+  mfgModal_(isNew ? (copy ? 'Copy of ' + r.name : 'New recipe') : 'Edit ' + r.name, isNew ? 'A new recipe gets its own number.' : r.id + ' · changes apply to every price list this recipe is on.',
+    `<datalist id="ce-ing-list">${costData.ingredients.map(i => `<option value="${escapeHtml(i.name)}">`).join('')}</datalist>
+    <datalist id="ce-pl-list">${costData.priceLists.map(l => `<option value="${escapeHtml(l)}">`).join('')}</datalist>
+    <datalist id="ce-pd-list">${(costData.sageProducts || []).map(p => `<option value="${escapeHtml(p.product)}">`).join('')}</datalist>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;">
+      <div class="field" style="flex:2;min-width:200px;"><label>Name</label><input type="text" id="ce-name" value="${escapeHtml(copy ? r.name + ' (copy)' : r.name)}"></div>
+      <div class="field" style="flex:1;min-width:90px;"><label>Size</label><input type="text" id="ce-size" value="${escapeHtml(r.size || '')}" placeholder="350ml"></div>
+      <div class="field" style="flex:1;min-width:110px;"><label>Packaging (R each)</label><input type="number" min="0" step="any" id="ce-pack" value="${r.packaging === null || r.packaging === undefined ? '' : r.packaging}"></div>
+    </div>
+    <h3 style="margin:8px 0 4px;font-size:15px;">Ingredients (grams in one)</h3>
+    <table class="prep-table" id="ce-lines"><tr><th>Ingredient</th><th>Grams</th><th>Part</th><th></th></tr>${(r.lines.length ? r.lines : [{}]).map(lineRow).join('')}</table>
+    <button class="btn-secondary" id="ce-add-line" style="padding:4px 10px;font-size:13px;margin-top:4px;">+ ingredient</button>
+    <h3 style="margin:14px 0 4px;font-size:15px;">Price lists</h3>
+    <table class="prep-table" id="ce-prices"><tr><th>Price list (customer)</th><th>Price R</th><th></th></tr>${r.prices.map(priceRow).join('')}</table>
+    <button class="btn-secondary" id="ce-add-price" style="padding:4px 10px;font-size:13px;margin-top:4px;">+ price list</button>
+    <h3 style="margin:14px 0 4px;font-size:15px;">Sage product(s) made with this recipe</h3>
+    <table class="prep-table" id="ce-prods">${(copy ? [] : r.products.map(p => p.product)).map(prodRow).join('')}</table>
+    <button class="btn-secondary" id="ce-add-prod" style="padding:4px 10px;font-size:13px;margin-top:4px;">+ Sage product</button>
+    <p class="prep-meta">A Sage product belongs to one recipe: adding it here takes it off any other.</p>
+    <div class="field"><label>Notes</label><input type="text" id="ce-notes" value="${escapeHtml(r.notes || '')}"></div>
+    <label class="prep-meta" style="display:block;margin:6px 0;"><input type="checkbox" id="ce-active" ${r.active ? 'checked' : ''}> In use (untick for old / trial recipes)</label>
+    <button class="btn-primary" id="ce-save" style="width:100%;margin-top:8px;">Save recipe</button>
+    ${!isNew ? '<button class="btn-secondary" id="ce-delete" style="width:100%;margin-top:8px;color:var(--crit);">Delete recipe</button>' : ''}`, true);
+  const wire = () => document.querySelectorAll('.ce-del').forEach(b => b.onclick = () => b.closest('tr').remove());
+  wire();
+  document.getElementById('ce-add-line').onclick = () => { document.getElementById('ce-lines').insertAdjacentHTML('beforeend', lineRow({})); wire(); };
+  document.getElementById('ce-add-price').onclick = () => { document.getElementById('ce-prices').insertAdjacentHTML('beforeend', priceRow({})); wire(); };
+  document.getElementById('ce-add-prod').onclick = () => { document.getElementById('ce-prods').insertAdjacentHTML('beforeend', prodRow('')); wire(); };
+  document.getElementById('ce-save').onclick = () => {
+    const lines = [...document.querySelectorAll('.ce-line')].map(tr => ({ ingredient: tr.querySelector('.ce-ing').value.trim(), kg: (Number(tr.querySelector('.ce-kg').value) || 0) / 1000, part: tr.querySelector('.ce-part').value })).filter(l => l.ingredient);
+    const prices = [...document.querySelectorAll('.ce-price')].map(tr => ({ priceList: tr.querySelector('.ce-pl').value.trim(), price: tr.querySelector('.ce-pr').value.trim() })).filter(p => p.priceList);
+    const products = [...document.querySelectorAll('.ce-pd')].map(i => i.value.trim()).filter(Boolean);
+    const btn = document.getElementById('ce-save'); btn.disabled = true;
+    apiPost('blendidSaveRecipe', { id: isNew ? '' : r.id, name: document.getElementById('ce-name').value.trim(), size: document.getElementById('ce-size').value.trim(), packaging: document.getElementById('ce-pack').value.trim(),
+      notes: document.getElementById('ce-notes').value.trim(), active: document.getElementById('ce-active').checked, lines: lines, prices: prices, products: products }, { loadingLabel: 'Saving recipe…' })
+      .then(res => apiGet('getBlendidCostings', {}, { loadingLabel: 'Re-costing…', timeoutMs: 60000 }).then(d => { costData = d; renderCost_(); openCostRecipe_(res.id); }))
+      .catch(err => { alert(err.message); btn.disabled = false; });
+  };
+  const del = document.getElementById('ce-delete');
+  if (del) del.onclick = () => {
+    if (!confirm('Delete ' + r.name + ' (' + r.id + ')? Its price lists and Sage product link go too. Unticking "In use" keeps it instead.')) return;
+    apiPost('blendidDeleteRecipe', { id: r.id }, { loadingLabel: 'Deleting…' }).then(() => { mfgCloseModal_(); loadCost_(true); }).catch(err => alert(err.message));
+  };
+}
+function openCostIngredients_(noPriceOnly) {
+  const money = costData.withMoney, can = mfgCanManage_();
+  const list = costData.ingredients.filter(i => !noPriceOnly || (i.pricePerKg === null && i.usedIn));
+  mfgModal_(noPriceOnly ? 'Ingredients with no price' : 'Ingredients', (money ? 'Price per kg (from the worksheet\'s Stock sheet). Change a price and every recipe re-costs. ' : '') + 'Kg a week = what the Sage products tied to recipes sell, × the recipe.',
+    `<input type="text" id="ci-find" placeholder="Find…" style="width:100%;padding:8px;border:2px solid var(--line);border-radius:8px;margin-bottom:8px;">
+    <table class="prep-table"><tr><th>Ingredient</th>${money ? '<th class="num">R per kg</th>' : ''}<th class="num">In recipes</th><th class="num">Kg a week</th>${can ? '<th></th>' : ''}</tr>
+    ${list.map(i => `<tr data-ci="${escapeHtml(i.name.toLowerCase())}"><td>${escapeHtml(i.name)}${i.notes ? `<br><span class="prep-meta">${escapeHtml(i.notes)}</span>` : ''}</td>
+      ${money ? `<td class="num">${i.pricePerKg === null ? '<span style="color:var(--crit);">no price</span>' : costR_(i.pricePerKg)}</td>` : ''}
+      <td class="num">${i.usedIn}</td><td class="num">${i.kgPerWeek ? mfgQty_(i.kgPerWeek) : '-'}</td>
+      ${can ? `<td><button class="btn-secondary" data-ci-edit="${escapeHtml(i.name)}" style="padding:4px 10px;font-size:13px;">Edit</button></td>` : ''}</tr>`).join('')}</table>
+    ${can ? '<button class="btn-primary" id="ci-new" style="width:100%;margin-top:10px;">+ New ingredient</button>' : ''}`, true);
+  document.getElementById('ci-find').oninput = (e) => { const q = e.target.value.trim().toLowerCase(); document.querySelectorAll('[data-ci]').forEach(tr => tr.style.display = !q || tr.getAttribute('data-ci').includes(q) ? '' : 'none'); };
+  const edit = (i) => {
+    const inp = 'padding:8px;border:2px solid var(--line);border-radius:8px;';
+    mfgModal_(i ? i.name : 'New ingredient', i ? `In ${i.usedIn} recipe(s). Renaming changes them all.` : '',
+      `<div class="field"><label>Name</label><input type="text" id="ci-name" value="${escapeHtml(i ? i.name : '')}"></div>
+      <div style="display:flex;gap:10px;"><div class="field" style="flex:1;"><label>Price R per kg (empty = unknown)</label><input type="number" min="0" step="any" id="ci-price" value="${i && i.pricePerKg !== null ? i.pricePerKg : ''}"></div>
+      <div class="field" style="flex:1;"><label>Unit</label><input type="text" id="ci-unit" value="${escapeHtml(i ? i.unit : 'kg')}" style="${inp}"></div></div>
+      <div class="field"><label>Notes (supplier…)</label><input type="text" id="ci-notes" value="${escapeHtml(i ? i.notes : '')}"></div>
+      <button class="btn-primary" id="ci-save" style="width:100%;">Save</button>`);
+    document.getElementById('ci-save').onclick = () => {
+      const btn = document.getElementById('ci-save'); btn.disabled = true;
+      apiPost('blendidSaveIngredient', { oldName: i ? i.name : '', name: document.getElementById('ci-name').value.trim(), pricePerKg: document.getElementById('ci-price').value.trim(), unit: document.getElementById('ci-unit').value.trim(), notes: document.getElementById('ci-notes').value.trim() }, { loadingLabel: 'Saving…' })
+        .then(() => apiGet('getBlendidCostings', {}, { loadingLabel: 'Re-costing…', timeoutMs: 60000 })).then(d => { costData = d; renderCost_(); openCostIngredients_(noPriceOnly); })
+        .catch(err => { alert(err.message); btn.disabled = false; });
+    };
+  };
+  document.querySelectorAll('[data-ci-edit]').forEach(b => b.onclick = () => edit(costData.ingredients.find(x => x.name === b.getAttribute('data-ci-edit'))));
+  const nw = document.getElementById('ci-new'); if (nw) nw.onclick = () => edit(null);
 }
 // 27 Nov 2026: production schedule per shift (server: blendidSchedule_ - Financials roster x units per person-hour).
 function mfgDayLabel_(iso) {
@@ -6649,6 +6839,14 @@ function wireStaticEvents() {
   document.getElementById('mfg-log-btn').onclick = () => openMfgLogBatch_('');
   document.getElementById('mfg-count-btn').onclick = () => openMfgStockTake_();
   document.getElementById('mfg-receive-btn').onclick = () => openMfgReceive_();
+  document.querySelectorAll('[data-mfg-tab]').forEach(b => b.onclick = () => setMfgTab_(b.getAttribute('data-mfg-tab')));
+  setMfgTab_(mfgTab);
+  document.getElementById('cost-refresh-btn').onclick = () => loadCost_(true);
+  document.getElementById('cost-new-btn').onclick = () => { if (costData) openCostEdit_(null, false); };
+  document.getElementById('cost-ing-btn').onclick = () => { if (costData) openCostIngredients_(false); };
+  document.getElementById('cost-search').oninput = () => renderCost_();
+  document.getElementById('cost-list').onchange = (e) => { localStorage.setItem('df_cost_list', e.target.value); renderCost_(); };
+  document.getElementById('cost-sold').onchange = () => renderCost_();
   document.getElementById('mfg-bulkcount-btn').onclick = () => openMfgBulkCount_();
   document.getElementById('mfg-usage-btn').onclick = () => openMfgUsage_();
   document.getElementById('mfg-refresh-btn').onclick = () => loadMfg_(true);
