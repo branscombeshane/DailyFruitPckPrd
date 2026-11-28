@@ -2009,9 +2009,20 @@ function applyRoleUI() {
   // Blendid: packing only for now (no Production, prep, rev counter or Sunday split).
   document.body.classList.toggle('biz-blendid', isBlendid_());
   document.getElementById('view-toggle-production').classList.toggle('hidden', isBlendid_());
-  document.getElementById('view-toggle-mfg').classList.toggle('hidden', !isBlendid_());
-  if (isBlendid_() && boardView === 'production') setBoardView('mfg');
+  // 28 Nov 2026 (Shane: "separate Blendid completely"): Blendid manufacturing moved to Blendid's own site
+  // (ops.blendid.co.za, own logins) - no Manufacturing tab here any more; a Blendid login sees a pointer to it.
+  document.getElementById('view-toggle-mfg').classList.add('hidden');
+  if (isBlendid_() && (boardView === 'production' || boardView === 'mfg')) setBoardView('packing');
   if (!isBlendid_() && boardView === 'mfg') setBoardView('production');
+  let moved = document.getElementById('blendid-moved-note');
+  if (!moved) {
+    moved = document.createElement('div');
+    moved.id = 'blendid-moved-note';
+    moved.style.cssText = 'margin:10px 18px 0;padding:10px 14px;border:2px solid #c8b48f;border-radius:6px;font-weight:700;background:#fff;';
+    moved.innerHTML = 'Blendid production, stock, bulk fruit and recipes have moved to Blendid\'s own site: <a href="https://ops.blendid.co.za">ops.blendid.co.za</a> (sign in there with your name; first time with your PIN, then you choose a password).';
+    document.getElementById('board-view').insertAdjacentElement('beforebegin', moved);
+  }
+  moved.classList.toggle('hidden', !isBlendid_());
   const sw = document.getElementById('biz-switch-btn');
   sw.classList.toggle('hidden', !(userRole === 'Admin' && canSwitchBusiness));
   sw.textContent = '⇄ ' + (isBlendid_() ? 'Daily Fruit' : 'Blendid');
